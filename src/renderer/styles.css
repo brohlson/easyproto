@@ -1,31 +1,103 @@
-:root { font-family: "Instrument Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif; color: #1e2d28; background: #f6f5f0; font-size: 13px; color-scheme: light; }
+@font-face {
+  font-family: Inter;
+  src: url("./fonts/InterVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--foreground);
+  background: var(--background);
+  --background: #fff;
+  --foreground: #171717;
+  --muted-foreground: #525252;
+  --canvas: #fafafa;
+  --grid: #d4d4d4;
+  --border: #e5e5e5;
+  --control-border: #ccc;
+  --artboard-border: #a3a3a3;
+  --accent: #f0f0f0;
+  --primary: #171717;
+  --primary-foreground: #fafafa;
+  --ring: #404040;
+  --radius: 6px;
+  --shadow: 0 3px 12px #00000014;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #111;
+  --foreground: #fafafa;
+  --muted-foreground: #b5b5b5;
+  --canvas: #171717;
+  --grid: #3a3a3a;
+  --border: #292929;
+  --control-border: #535353;
+  --artboard-border: #737373;
+  --accent: #292929;
+  --primary: #ededed;
+  --primary-foreground: #171717;
+  --ring: #fafafa;
+  --shadow: 0 3px 12px #0005;
+}
+
 * { box-sizing: border-box; }
 html, body, #root { width: 100%; height: 100%; margin: 0; }
 .workspace { height: 100%; display: grid; grid-template-rows: 58px 1fr 36px; }
-header, footer { display: flex; align-items: center; gap: 15px; padding: 0 22px; background: #fbfaf5; z-index: 1; }
-header { border-bottom: 1px solid #e0e3db; }
-footer { border-top: 1px solid #e0e3db; justify-content: space-between; color: #506359; font-size: 12px; }
-.brand { display: flex; align-items: center; gap: 9px; font-weight: 740; color: #163d31; letter-spacing: -.02em; font-size: 16px; white-space: nowrap; }
-.brand-icon { width: 22px; height: 22px; border-radius: 6px; background: #205747; position: relative; }
-.brand-icon::before, .brand-icon::after { content: ""; position: absolute; width: 8px; height: 7px; border: 1px solid #d7edde; border-radius: 2px; }
+header, footer { display: flex; align-items: center; gap: 12px; padding: 0 20px; background: var(--background); z-index: 1; }
+header { border-bottom: 1px solid var(--border); }
+footer { border-top: 1px solid var(--border); justify-content: space-between; color: var(--muted-foreground); font-size: 12px; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 650; letter-spacing: -.02em; font-size: 15px; white-space: nowrap; }
+.brand-icon { width: 22px; height: 22px; border-radius: var(--radius); background: var(--primary); position: relative; }
+.brand-icon::before, .brand-icon::after { content: ""; position: absolute; width: 8px; height: 7px; border: 1px solid var(--primary-foreground); border-radius: 2px; }
 .brand-icon::before { left: 5px; top: 5px; }
-.brand-icon::after { left: 8px; top: 8px; background: #205747; }
-.divider { width: 1px; height: 20px; background: #dee2d9; }
-.folder { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.save-status { margin-left: auto; color: #496253; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.project-actions { display: flex; gap: 6px; }
-.project-actions button { font: inherit; white-space: nowrap; color: #25483b; background: #fffefa; border: 1px solid #cad4cb; border-radius: 6px; padding: 7px 10px; }
-.project-actions button:hover:enabled { background: #e9f1e9; }
-.project-actions button:focus-visible { outline: 2px solid #276b55; outline-offset: 2px; }
+.brand-icon::after { left: 8px; top: 8px; background: var(--primary); }
+.divider { flex: none; width: 1px; height: 20px; background: var(--border); }
+.folder { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 550; }
+.save-status { margin-left: auto; color: var(--muted-foreground); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.project-actions { display: flex; gap: 6px; flex: none; }
+.project-actions > *, .error button {
+  min-height: 32px; padding: 6px 9px; border: 1px solid var(--control-border);
+  border-radius: var(--radius); background: var(--background); color: var(--foreground);
+  font: inherit; font-weight: 500; white-space: nowrap;
+}
+.project-actions button:hover:enabled, .project-actions select:hover, .error button:hover { background: var(--accent); }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .project-actions button:disabled { opacity: .55; }
-.canvas { position: relative; min-height: 0; background: #edf0eb; }
-.artboard { position: relative; background: white; outline: 1px solid #9aa59e; box-shadow: 0 6px 20px #172c2318; }
-.react-flow__node.selected .artboard, .react-flow__node:focus-visible .artboard { outline: 2px solid #276b55; }
-.artboard-label { position: absolute; bottom: calc(100% + 9px); left: 0; right: 0; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; color: #365044; font-size: 12px; font-weight: 650; }
+.canvas { position: relative; min-width: 0; min-height: 0; background: var(--canvas); }
+.artboard { position: relative; background: #fff; outline: 1px solid var(--artboard-border); box-shadow: var(--shadow); }
+.react-flow__node.selected .artboard, .react-flow__node:focus-visible .artboard { outline: 2px solid var(--ring); }
+.artboard-label { position: absolute; bottom: calc(100% + 9px); left: 0; right: 0; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; color: var(--foreground); font-size: 12px; font-weight: 600; }
+.artboard-label span { background: var(--canvas); border-radius: 3px; padding: 1px 3px; }
 .artboard-label span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.artboard-label span:last-child { flex: none; font-weight: 500; font-variant-numeric: tabular-nums; }
-.artboard iframe { display: block; border: 0; pointer-events: none; }
-.react-flow__controls { border: 1px solid #d1d9d1; border-radius: 7px; overflow: hidden; }
-.react-flow__controls button { width: 34px; height: 34px; }
-.error { position: absolute; left: 20px; bottom: 16px; max-width: calc(100% - 110px); padding: 10px 14px; background: #fff8ed; border: 1px solid #bc8165; border-radius: 6px; color: #6d3926; z-index: 3; }
-.error button { margin-left: 8px; font: inherit; }
+.artboard-label span:last-child { flex: none; color: var(--muted-foreground); font-weight: 500; font-variant-numeric: tabular-nums; }
+.artboard iframe { display: block; border: 0; pointer-events: none; color-scheme: light; }
+@media (prefers-color-scheme: dark) { .artboard iframe { color-scheme: dark; } }
+.resize-handle {
+  position: absolute; right: 0; bottom: 0; width: 24px; height: 24px; padding: 0;
+  transform: translate(50%, 50%) scale(var(--resize-inverse-zoom, 1));
+  border: 0; border-radius: var(--radius); background: transparent; color: var(--ring);
+  cursor: nwse-resize; touch-action: none;
+}
+.resize-handle::after {
+  content: ""; display: block; margin: auto; width: 10px; height: 10px;
+  border: 2px solid currentColor; border-radius: 2px; background: var(--background);
+}
+.resize-handle:hover::after, .resize-handle:active::after { background: var(--accent); }
+.resize-handle[aria-disabled="true"] { cursor: default; }
+.react-flow__controls { border: 1px solid var(--control-border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.react-flow__controls button { width: 34px; height: 34px; color: var(--foreground); background: var(--background); border-color: var(--border); }
+.react-flow__controls button:hover { background: var(--accent); }
+.react-flow__controls button:first-child { border-radius: 5px 5px 0 0; }
+.react-flow__controls button:last-child { border-radius: 0 0 5px 5px; }
+.error { display: flex; align-items: center; gap: 10px; position: absolute; left: 20px; bottom: 16px; max-width: calc(100% - 110px); padding: 10px 14px; background: var(--background); border: 1px solid var(--control-border); border-radius: var(--radius); color: var(--foreground); box-shadow: var(--shadow); z-index: 3; }
+
+@media (max-width: 720px) {
+  header, footer { gap: 8px; padding-inline: 12px; }
+  .brand { gap: 6px; font-size: 14px; }
+  .project-actions { gap: 4px; }
+  .project-actions > * { padding-inline: 7px; }
+}

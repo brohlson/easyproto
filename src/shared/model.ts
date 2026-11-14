@@ -1,15 +1,19 @@
 import { z } from "zod";
+import { artboardSize } from "./artboard-size";
 
 export const id = z.uuid();
 export const revision = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const coordinate = z.number().min(-100_000).max(100_000);
+const dimension = z.number().int().min(artboardSize.min).max(artboardSize.max);
 export const layout = z.strictObject({
   name: z.string().trim().min(1).max(100),
   x: coordinate,
   y: coordinate,
-  width: z.number().int().min(100).max(2560),
-  height: z.number().int().min(100).max(2560),
+  width: dimension,
+  height: dimension,
 });
+export const geometryPatch = layout.omit({ name: true }).partial().refine((patch) => Object.keys(patch).length > 0);
+export type GeometryPatch = z.infer<typeof geometryPatch>;
 const utf8 = (value: string) => !/[\uD800-\uDFFF]/u.test(value);
 export const source = z.strictObject({
   html: z.string().max(256_000).refine(utf8, "HTML must be valid Unicode."),
@@ -62,10 +66,10 @@ export type Scene = {
 export type DesktopBridge = {
   getScene(): Promise<Scene>;
   onScene(listener: (scene: Scene) => void): () => void;
-  moveArtboard(generation: number, command: Command): Promise<Commit>;
+  arrangeArtboard(generation: number, command: Command): Promise<Commit>;
   chooseProject(mode: "create" | "open"): Promise<void>;
 };
 
 export const ipc = {
-  scene: "project:scene", changed: "project:changed", move: "project:move", choose: "project:choose",
+  scene: "project:scene", changed: "project:changed", arrange: "project:arrange", choose: "project:choose",
 } as const;

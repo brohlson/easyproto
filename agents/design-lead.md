@@ -21,3 +21,7 @@ Check whether agent edits preserve user orientation: show which artboard changed
 Attach the exact screen state, viewport, revision, and interaction sequence. Cite screenshots for visual findings and recorded keyboard steps for interaction findings. Mark necessary unavailable evidence as blocked.
 
 A hidden primary action or an inaccessible way to exit preview mode is a must-fix when it prevents the accepted workflow. Preferring a different corner radius is advisory unless it violates an agreed design rule. Explain the user consequence and a verification method; avoid redesigning unrelated screens or requesting new features during a critique.
+
+## Easy Proto visual baseline
+
+Apply the [desktop design guidance](../docs/design-guidance.md) to every change that affects the app interface. Evaluate neutral hierarchy, Inter typography, semantic Light and Dark theme tokens, and clear input states. Keep mockup authorship independent of the shell. Use the linked Geist, shadcn/ui, and Vercel interface sources when an interaction or visual decision needs clarification. Record the relevant visual or keyboard evidence in the review.

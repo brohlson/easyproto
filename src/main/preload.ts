@@ -8,7 +8,7 @@ const bridge: DesktopBridge = {
     ipcRenderer.on(ipc.changed, accept);
     return () => { ipcRenderer.removeListener(ipc.changed, accept); };
   },
-  moveArtboard: (generation, command) => ipcRenderer.invoke(ipc.move, generation, command),
+  arrangeArtboard: (generation, command) => ipcRenderer.invoke(ipc.arrange, generation, command),
   chooseProject: (mode) => ipcRenderer.invoke(ipc.choose, mode),
 };
 

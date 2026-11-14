@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 import { Menu, app, BrowserWindow, dialog, ipcMain, session, type IpcMainInvokeEvent } from "electron";
 import { z } from "zod";
-import { commandSchema, ipc, type Scene } from "../shared/model";
+import { commandSchema, geometryPatch, ipc, type Scene } from "../shared/model";
 import { listen, type ActiveProject } from "./mcp";
 import { chromeUrl, Preview, securePreferences } from "./preview";
 import { Project, ProjectError } from "./project";
@@ -34,7 +34,7 @@ async function start() {
   await preview.install(join(app.getAppPath(), "dist", "ui"));
   const window = new BrowserWindow({
     title: "Easy Proto", width: 1180, height: 770, minWidth: 660, minHeight: 480,
-    show: false, backgroundColor: "#f6f5f0",
+    show: false, backgroundColor: "#fafafa",
     webPreferences: {
       ...securePreferences, session: isolatedSession, preload: join(app.getAppPath(), "dist", "preload.cjs"),
     },
@@ -101,11 +101,11 @@ async function start() {
     allowSender(event, window);
     return scene();
   });
-  ipcMain.handle(ipc.move, async (event, selectedGeneration: unknown, input: unknown) => {
+  ipcMain.handle(ipc.arrange, async (event, selectedGeneration: unknown, input: unknown) => {
     allowSender(event, window);
     const command = commandSchema.parse(input);
-    if (command.operation !== "update_artboard" || !Object.keys(command.arguments.patch).every((key) => key === "x" || key === "y")) {
-      throw new Error("This control can only move an artboard.");
+    if (command.operation !== "update_artboard" || !geometryPatch.safeParse(command.arguments.patch).success) {
+      throw new Error("This control can only change artboard position and size.");
     }
     try {
       if (selectedGeneration !== generation) throw new ProjectError("PROJECT_SCOPE", "The project selection changed.");
@@ -115,7 +115,7 @@ async function start() {
       return commit;
     } catch (error) {
       if (error instanceof ProjectError) throw new Error(error.message);
-      throw new Error("The artboard could not be moved.");
+      throw new Error("The artboard layout could not be saved.");
     }
   });
 

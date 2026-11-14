@@ -7,3 +7,7 @@ Route document/capture/MCP checks to Architecture and Reliability, preview/trans
 ## Project picker
 
 The desktop can create a project in an empty folder, open a saved project, and retain the current project after cancellation or an invalid selection. Verify the same SDK connection can find the new context and that the prior activation cannot read, write, capture, or replay commands against the new active folder. Include same-ID copies, pending capture cancellation, and reopening while an admitted save finishes. Route fixed-revision review to Security and Architecture and Reliability.
+
+## Artboard resizing and appearance
+
+A selected artboard can be resized with its corner handle or the keyboard. The live iframe should respond to the new CSS viewport during the gesture, while chrome zoom preserves both dimensions and the current media-query layout. Verify one durable commit on release, rollback on conflict and cancellation, capture dimensions, and persistence. Use Vercel Geist and shadcn/ui as the desktop styling references. Verify bundled Inter and neutral Light, Dark, and System modes with real renderer evidence. Route to Frontend and Design, with Architecture and Reliability looking at saves and capture.

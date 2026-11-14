@@ -73,7 +73,9 @@ function reply(body: BodyInit, type: string, policy?: string) {
   return new Response(body, { headers });
 }
 
-const chromeMime = new Map([[".js", "text/javascript"], [".css", "text/css"], [".html", "text/html; charset=utf-8"]]);
+const chromeMime = new Map([
+  [".js", "text/javascript"], [".css", "text/css"], [".html", "text/html; charset=utf-8"], [".woff2", "font/woff2"],
+]);
 
 function timeout<T>(work: Promise<T>, ms: number, message: string, code = "RENDER_TIMEOUT"): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
@@ -164,7 +166,7 @@ export class Preview {
       if (url.host === "ui") {
         const file = chromeFiles.get(url.pathname);
         if (file) return reply(new Uint8Array(file.bytes), file.mime,
-          `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src ${artOrigin}; img-src 'self' data:; base-uri 'none'; form-action 'none'`);
+          `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-src ${artOrigin}; img-src 'self' data:; base-uri 'none'; form-action 'none'`);
       }
       return new Response(null, { status: 404 });
     });

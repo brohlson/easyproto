@@ -542,7 +542,7 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
     BrowserWindow.getAllWindows()[0].webContents.session.fetch(url).then((response) => response.status), previousUrl);
   assert.equal(oldStatus, 404);
   await assert.rejects(desktop.evaluate(({ generation, projectId, artboardId, commandId }) =>
-    window.easyProto.moveArtboard(generation, {
+    window.easyProto.arrangeArtboard(generation, {
       projectId, commandId, expectedRevision: 8, operation: "update_artboard", arguments: { artboardId, patch: { x: 5 } },
     }), { generation: beforeSwitch.generation, projectId, artboardId, commandId: randomUUID() }), /project selection changed/i);
   assert.equal((await data("get_artboard", { ...oldScope, activationId: switched.activationId })).html, "<h1>Copy only</h1>");
@@ -603,4 +603,156 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   if (evidence) {
     await desktop.screenshot({ path: join(evidence, "project-picker-canvas.png"), animations: "disabled" });
   }
+
+  const responsive = {
+    projectId, activationId: reopenedCopy.activationId, commandId: randomUUID(), expectedRevision: 9,
+    arguments: { artboardId, patch: {
+      width: 320, height: 240,
+      html: '<main><h1>Responsive fixture</h1><p class="compact">Compact layout</p><p class="wide">Wide layout</p></main>',
+      css: 'body{margin:0;background:white;color:#171717;font:16px system-ui}main{padding:24px}.wide{display:none}@media(min-width:400px){.wide{display:block}.compact{display:none}}',
+    } },
+  };
+  const responsiveCommit = await data("update_artboard", responsive);
+  const responsiveNode = desktop.locator(".react-flow__node").filter({ hasText: "Agent mockup" });
+  await desktop.getByRole("button", { name: /fit view/i }).click();
+  const responsiveFrame = desktop.frameLocator('iframe[title="Agent mockup"]');
+  await responsiveFrame.getByText("Compact layout").waitFor();
+  const inside = desktop.frames().find((frame) => frame.url().includes(artboardId));
+  const frameUrl = inside.url();
+  const iframe = desktop.locator('iframe[title="Agent mockup"]');
+  assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [320, 240]);
+  const beforeZoomBox = await iframe.boundingBox();
+  const beforeResizeZoom = await canvasTransform();
+  await desktop.getByRole("button", { name: /zoom in/i }).click();
+  await desktop.waitForFunction((before) => document.querySelector(".react-flow__viewport").getAttribute("style") !== before, beforeResizeZoom);
+  await desktop.evaluate(async () => {
+    const viewport = document.querySelector(".react-flow__viewport");
+    let last = "";
+    let stable = 0;
+    while (stable < 3) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const transform = viewport.style.transform;
+      stable = transform === last ? stable + 1 : 0;
+      last = transform;
+    }
+  });
+  const afterZoomBox = await iframe.boundingBox();
+  assert.ok(afterZoomBox.width > beforeZoomBox.width);
+  assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [320, 240]);
+  assert.equal(await responsiveFrame.getByText("Compact layout").isVisible(), true);
+  assert.equal((await data("get_context")).revision, 10);
+  const turnZoom = await desktop.locator(".react-flow__viewport").evaluate((element) =>
+    new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
+  await responsiveNode.click({ position: { x: 28, y: 30 } });
+  const handle = responsiveNode.getByRole("button", { name: "Resize Agent mockup" });
+  const handleBox = await handle.boundingBox();
+  assert.ok(handleBox.width >= 23.9);
+  const hx = handleBox.x + handleBox.width / 2;
+  const hy = handleBox.y + handleBox.height / 2;
+  await desktop.mouse.move(hx, hy);
+  await desktop.mouse.down();
+  await desktop.mouse.move(hx + 128 * turnZoom, hy + 45 * turnZoom, { steps: 7 });
+  await responsiveFrame.getByText("Wide layout").waitFor({ timeout: 5000 });
+  const draft = await inside.evaluate(() => [innerWidth, innerHeight]);
+  assert.ok(Math.abs(draft[0] - 448) <= 1 && Math.abs(draft[1] - 285) <= 1, String(draft));
+  assert.equal((await data("get_context")).revision, 10);
+  await desktop.mouse.up();
+  await desktop.getByText("Saved · Revision 11", { exact: true }).waitFor({ timeout: 5000 });
+  const resized = await data("get_artboard", { projectId, activationId: reopenedCopy.activationId, artboardId });
+  assert.deepEqual([resized.artboard.width, resized.artboard.height], draft);
+  assert.deepEqual([resized.artboard.x, resized.artboard.y], [responsiveCommit.artboard.x, responsiveCommit.artboard.y]);
+  assert.equal(resized.artboard.sourceRevision, responsiveCommit.artboard.sourceRevision);
+  assert.equal(desktop.frames().find((frame) => frame.url().includes(artboardId)), inside);
+  assert.equal(inside.url(), frameUrl);
+  statuses.push({ resize: { before: [320, 240], during: draft, after: [resized.artboard.width, resized.artboard.height], zoom: turnZoom,
+    zoomedDisplayWidth: afterZoomBox.width, initialDisplayWidth: beforeZoomBox.width, committedRevision: 11,
+    mediaQuery: "compact before and after zoom, wide during and after resize" } });
+
+  await handle.press("Shift+ArrowLeft");
+  await desktop.getByText("Saved · Revision 12", { exact: true }).waitFor({ timeout: 5000 });
+  const keyboardWidth = draft[0] - 20;
+  assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [keyboardWidth, draft[1]]);
+  const keyboardLocation = await handle.boundingBox();
+  const cancelX = keyboardLocation.x + keyboardLocation.width / 2;
+  const cancelY = keyboardLocation.y + keyboardLocation.height / 2;
+  await desktop.mouse.move(cancelX, cancelY);
+  await desktop.mouse.down();
+  await desktop.mouse.move(cancelX + 35 * turnZoom, cancelY, { steps: 4 });
+  await desktop.keyboard.press("Escape");
+  await desktop.mouse.up();
+  await desktop.waitForFunction((width) =>
+    document.querySelector('iframe[title="Agent mockup"]').width === String(width), keyboardWidth, { timeout: 5000 });
+  assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [keyboardWidth, draft[1]]);
+  assert.equal((await data("get_context")).revision, 12);
+
+  const conflictBox = await handle.boundingBox();
+  const conflictX = conflictBox.x + conflictBox.width / 2;
+  const conflictY = conflictBox.y + conflictBox.height / 2;
+  await desktop.mouse.move(conflictX, conflictY);
+  await desktop.mouse.down();
+  await desktop.mouse.move(conflictX + 35 * turnZoom, conflictY, { steps: 4 });
+  await data("update_artboard", {
+    projectId, activationId: reopenedCopy.activationId, commandId: randomUUID(), expectedRevision: 12,
+    arguments: { artboardId, patch: { width: 380 } },
+  });
+  await desktop.mouse.up();
+  const resizeError = desktop.getByRole("alert");
+  assert.match(await resizeError.innerText({ timeout: 5000 }), /refresh the project revision/i);
+  await resizeError.getByRole("button", { name: "Dismiss" }).click();
+  await responsiveFrame.getByText("Compact layout").waitFor();
+  assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [380, draft[1]]);
+  assert.equal((await data("get_context")).revision, 13);
+  statuses.push("Keyboard resize committed with Shift step; Escape canceled a draft; a stale resize rolled back to the newer MCP width.");
+
+  const sizeCapture = await client.callTool({ name: "capture_artboard", arguments: {
+    projectId, artboardId, activationId: reopenedCopy.activationId, revision: 13,
+  } });
+  assert.equal(sizeCapture.isError, undefined, JSON.stringify(sizeCapture.content));
+  assert.deepEqual([sizeCapture.structuredContent.pixelWidth, sizeCapture.structuredContent.pixelHeight], [380, draft[1]]);
+  const afterResizeReopen = await choose("Open Project", copy);
+  assert.equal(afterResizeReopen.revision, 13);
+  await responsiveFrame.getByText("Compact layout").waitFor();
+  const reopenedFrame = desktop.frames().find((frame) => frame.url().includes(artboardId));
+  assert.deepEqual(await reopenedFrame.evaluate(() => [innerWidth, innerHeight]), [380, draft[1]]);
+  statuses.push("Capture and folder reopen matched the committed resized viewport.");
+
+  const appearance = desktop.getByRole("combobox", { name: "Appearance" });
+  const themeInfo = () => desktop.evaluate(async () => {
+    await document.fonts.ready;
+    const inter = [...document.fonts].find((font) => font.family === "Inter");
+    return { scheme: getComputedStyle(document.documentElement).colorScheme,
+      background: getComputedStyle(document.querySelector("header")).backgroundColor, inter: inter?.status };
+  });
+  await appearance.selectOption("light");
+  await desktop.waitForFunction(() => document.documentElement.dataset.theme === "light");
+  const light = await themeInfo();
+  assert.deepEqual(light, { scheme: "light", background: "rgb(255, 255, 255)", inter: "loaded" });
+  await responsiveNode.click({ position: { x: 28, y: 30 } });
+  await handle.getAttribute("aria-label");
+  const appArtboardColor = await reopenedFrame.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  if (evidence) await desktop.screenshot({ path: join(evidence, "artboard-resize-light.png"), animations: "disabled" });
+  await appearance.selectOption("dark");
+  await desktop.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+  const dark = await themeInfo();
+  assert.deepEqual(dark, { scheme: "dark", background: "rgb(17, 17, 17)", inter: "loaded" });
+  assert.equal(await reopenedFrame.evaluate(() => getComputedStyle(document.body).backgroundColor), appArtboardColor);
+  assert.equal(desktop.frames().find((frame) => frame.url().includes(artboardId)), reopenedFrame);
+  if (evidence) await desktop.screenshot({ path: join(evidence, "artboard-resize-dark.png"), animations: "disabled" });
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((window) => window.isVisible()).setSize(660, 480));
+  await desktop.waitForFunction(() => innerWidth === 660);
+  await desktop.waitForFunction(() => document.querySelector('select[aria-label="Appearance"]').getBoundingClientRect().right <= innerWidth,
+    undefined, { timeout: 5000 });
+  if (evidence) await desktop.screenshot({ path: join(evidence, "artboard-resize-dark-minimum.png"), animations: "disabled" });
+  await appearance.selectOption("light");
+  await desktop.waitForFunction(() => document.documentElement.dataset.theme === "light");
+  if (evidence) await desktop.screenshot({ path: join(evidence, "artboard-resize-light-minimum.png"), animations: "disabled" });
+  await appearance.selectOption("system");
+  await desktop.waitForFunction(() => document.documentElement.dataset.theme ===
+    (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+  const system = await themeInfo();
+  const opposite = system.scheme === "dark" ? "light" : "dark";
+  await desktop.emulateMedia({ colorScheme: opposite });
+  await desktop.waitForFunction((scheme) => document.documentElement.dataset.theme === scheme, opposite);
+  await desktop.emulateMedia({ colorScheme: null });
+  statuses.push({ appearance: { light, dark, system, systemPreferenceChange: opposite, authoredArtboardBackground: appArtboardColor } });
 });

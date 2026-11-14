@@ -9,3 +9,5 @@ Use this procedure for changes to the canvas workflow, application chrome, or us
 5. Capture each problematic state with its revision, dimensions, and reproduction steps.
 
 Report the user consequence, the smallest useful correction, and a verification step. A missing screenshot blocks a visual conclusion when the appearance cannot otherwise be inspected. A screenshot alone does not prove keyboard behavior. Keep speculative enhancements in an advisory section rather than expanding the accepted feature.
+
+For desktop chrome, compare the changed states against the [desktop design guidance](../../docs/design-guidance.md). Review both themes and at least the default and minimum window sizes, check the Inter font actually loads, and inspect contrast, consistent borders, click targets and visible focus. For canvas controls, distinguish CSS viewport sizing from camera zoom. Include the recorded dimensions and pointer or keyboard steps when those behaviors change.
