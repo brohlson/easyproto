@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Background, Controls, ReactFlow, applyNodeChanges, useNodesState,
@@ -31,6 +31,10 @@ const ArtboardNode = memo(function ArtboardNode({ data }: NodeProps<BoardNode>) 
 });
 
 const nodeTypes = { artboard: ArtboardNode };
+const arrows = new Map([
+  ["ArrowUp", { x: 0, y: -1 }], ["ArrowDown", { x: 0, y: 1 }],
+  ["ArrowLeft", { x: -1, y: 0 }], ["ArrowRight", { x: 1, y: 0 }],
+]);
 
 function App() {
   const [scene, setScene] = useState<Scene>();
@@ -64,19 +68,15 @@ function App() {
     return unsubscribe;
   }, []);
 
-  async function move(node: BoardNode) {
+  async function move(artboardId: string, x: number, y: number, expectedRevision: number) {
     const current = latest.current;
-    const gesture = drag.current;
-    drag.current = null;
-    if (!current || !gesture || gesture.id !== node.id) return;
-    const { x, y } = node.position;
-    if (x === node.data.x && y === node.data.y) return;
+    if (!current || saving) return;
     setSaving(true);
     setMessage("");
     try {
       await window.easyProto.moveArtboard({
-        projectId: current.projectId, commandId: crypto.randomUUID(), expectedRevision: gesture.revision,
-        operation: "update_artboard", arguments: { artboardId: node.id, patch: { x, y } },
+        projectId: current.projectId, commandId: crypto.randomUUID(), expectedRevision,
+        operation: "update_artboard", arguments: { artboardId, patch: { x, y } },
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message.split("Error: ").at(-1) : undefined;
@@ -85,6 +85,28 @@ function App() {
       setSaving(false);
       if (latest.current) reconcile(latest.current);
     }
+  }
+
+  function endDrag(node: BoardNode) {
+    const gesture = drag.current;
+    drag.current = null;
+    if (gesture?.id !== node.id) return;
+    const { x, y } = node.position;
+    if (x !== node.data.x || y !== node.data.y) void move(node.id, x, y, gesture.revision);
+  }
+
+  function moveWithKeyboard(event: KeyboardEvent) {
+    const direction = arrows.get(event.key);
+    if (!direction || !(event.target instanceof HTMLElement)) return;
+    const nodeId = event.target.closest<HTMLElement>(".react-flow__node")?.dataset.id;
+    const current = latest.current;
+    const board = current?.artboards.find((item) => item.id === nodeId);
+    if (!current || !board || !nodes.some((node) => node.id === nodeId && node.selected)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (drag.current || event.repeat) return;
+    const step = event.shiftKey ? 20 : 5;
+    void move(board.id, board.x + direction.x * step, board.y + direction.y * step, current.revision);
   }
 
   const selected = nodes.find((node) => node.selected);
@@ -98,7 +120,7 @@ function App() {
           {saving ? "Saving…" : scene ? `Saved · Revision ${scene.revision}` : ""}
         </div>
       </header>
-      <section className="canvas" aria-label="Artboard canvas">
+      <section className="canvas" aria-label="Artboard canvas" onKeyDownCapture={moveWithKeyboard}>
         {scene && (
           <ReactFlow
             nodes={nodes} edges={[]} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.4, maxZoom: 1 }}
@@ -111,10 +133,10 @@ function App() {
             onNodeDragStart={(_, node) => {
               if (latest.current) drag.current = { id: node.id, revision: latest.current.revision };
             }}
-            onNodeDragStop={(_, node) => { void move(node); }}
+            onNodeDragStop={(_, node) => endDrag(node)}
           >
             <Background gap={24} size={1.25} color="#c7ceca" />
-            <Controls position="bottom-right" showInteractive={false} />
+            <Controls position="bottom-right" showInteractive={false} fitViewOptions={{ padding: 0.4, maxZoom: 1 }} />
           </ReactFlow>
         )}
         {message && <div className="error" role="alert">{message} <button onClick={() => setMessage("")}>Dismiss</button></div>}

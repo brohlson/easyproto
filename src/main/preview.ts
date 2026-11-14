@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { BrowserWindow, protocol, type Session, type WebContents } from "electron";
+import { BrowserWindow, nativeImage, protocol, type Session, type WebContents } from "electron";
 import { defaultTreeAdapter, parse, serialize, type DefaultTreeAdapterTypes } from "parse5";
 import type { Artboard, Source } from "../shared/model";
 import { Project, ProjectError, type Snapshot } from "./project";
@@ -27,21 +27,22 @@ const removedTags = new Set([
 ]);
 const removedAttributes = new Set([
   "autofocus", "ping", "target", "srcdoc", "action", "formaction", "download",
-  "attributionsrc", "imagesrcset", "imagesizes",
+  "attributionsrc", "imagesrcset", "imagesizes", "loading",
 ]);
 
 function previewHtml(html: string) {
   const parsed = parse(html, { scriptingEnabled: false });
-  function clean(parent: DefaultTreeAdapterTypes.ParentNode) {
+  const pending: { parent: DefaultTreeAdapterTypes.ParentNode; depth: number }[] = [{ parent: parsed, depth: 0 }];
+  while (pending.length) {
+    const { parent, depth } = pending.pop()!;
     parent.childNodes = parent.childNodes.filter((child) => {
       if (!("tagName" in child)) return true;
-      if (removedTags.has(child.tagName)) return false;
+      if (depth >= 128 || removedTags.has(child.tagName)) return false;
       child.attrs = child.attrs.filter(({ name }) => !name.startsWith("on") && !removedAttributes.has(name));
-      clean(child);
+      pending.push({ parent: child, depth: depth + 1 });
       return true;
     });
   }
-  clean(parsed);
   const root = parsed.childNodes.find((child) => defaultTreeAdapter.isElementNode(child));
   const head = root?.childNodes.find((child) => defaultTreeAdapter.isElementNode(child) && child.tagName === "head");
   if (!head || !defaultTreeAdapter.isElementNode(head)) throw new Error("Preview HTML has no head.");
@@ -84,10 +85,23 @@ function timeout<T>(work: Promise<T>, ms: number, message: string, code = "RENDE
 const inspectFrame = `(async () => {
   const problems = new Set();
   const images = [...document.images];
-  for (const image of images) image.loading = "eager";
-  await Promise.all([document.fonts.ready, ...images.map(image => image.decode().catch(() => {
-    problems.add("Image failed to decode");
-  }))]);
+  const styleUrls = new Set();
+  const resource = /url\\("([^"]*)"\\)/g;
+  for (const element of document.querySelectorAll("*")) {
+    for (const pseudo of [null, "::before", "::after", "::marker"]) {
+      const style = getComputedStyle(element, pseudo);
+      for (const value of [style.backgroundImage, style.maskImage, style.borderImageSource, style.listStyleImage, style.content]) {
+        for (const match of value.matchAll(resource)) styleUrls.add(match[1]);
+      }
+    }
+  }
+  const cssImages = [...styleUrls].map(url => {
+    const image = new Image();
+    image.src = url;
+    return image.decode().catch(() => problems.add("CSS image failed to decode"));
+  });
+  const htmlImages = images.map(image => image.decode().catch(() => problems.add("Image failed to decode")));
+  await Promise.all([document.fonts.ready, ...htmlImages, ...cssImages]);
   for (const font of document.fonts) {
     if (font.status === "error") problems.add("Font could not load: " + font.family);
   }
@@ -99,31 +113,26 @@ type Readiness = { viewport: number[]; problems: string[] };
 
 async function inspect(contents: WebContents, url: string): Promise<Readiness> {
   const debuggerClient = contents.debugger;
-  debuggerClient.attach("1.3");
-  try {
-    const { targetInfos } = await debuggerClient.sendCommand("Target.getTargets");
-    const target = targetInfos.find((candidate: { type: string; url: string }) =>
-      candidate.type === "iframe" && candidate.url === url);
-    const sessionId = target
-      ? (await debuggerClient.sendCommand("Target.attachToTarget", { targetId: target.targetId, flatten: true })).sessionId
-      : undefined;
-    const { frameTree } = await debuggerClient.sendCommand("Page.getFrameTree", {}, sessionId);
-    const frameId = frameTree.frame.url === url ? frameTree.frame.id
-      : frameTree.childFrames?.find((child: { frame: { url: string } }) => child.frame.url === url)?.frame.id;
-    if (!frameId) throw new ProjectError("RENDER_FAILED", "Chromium could not inspect the loaded artboard frame.");
-    const { executionContextId } = await debuggerClient.sendCommand("Page.createIsolatedWorld", {
-      frameId, worldName: "Easy Proto capture readiness",
-    }, sessionId);
-    const evaluated = await debuggerClient.sendCommand("Runtime.evaluate", {
-      expression: inspectFrame, contextId: executionContextId, awaitPromise: true, returnByValue: true,
-    }, sessionId);
-    if (evaluated.exceptionDetails || !evaluated.result.value) {
-      throw new ProjectError("RENDER_FAILED", "Chromium could not verify font and image readiness.");
-    }
-    return evaluated.result.value as Readiness;
-  } finally {
-    if (debuggerClient.isAttached()) debuggerClient.detach();
+  const { targetInfos } = await debuggerClient.sendCommand("Target.getTargets");
+  const target = targetInfos.find((candidate: { type: string; url: string }) =>
+    candidate.type === "iframe" && candidate.url === url);
+  const sessionId = target
+    ? (await debuggerClient.sendCommand("Target.attachToTarget", { targetId: target.targetId, flatten: true })).sessionId
+    : undefined;
+  const { frameTree } = await debuggerClient.sendCommand("Page.getFrameTree", {}, sessionId);
+  const frameId = frameTree.frame.url === url ? frameTree.frame.id
+    : frameTree.childFrames?.find((child: { frame: { url: string } }) => child.frame.url === url)?.frame.id;
+  if (!frameId) throw new ProjectError("RENDER_FAILED", "Chromium could not inspect the loaded artboard frame.");
+  const { executionContextId } = await debuggerClient.sendCommand("Page.createIsolatedWorld", {
+    frameId, worldName: "Easy Proto capture readiness",
+  }, sessionId);
+  const evaluated = await debuggerClient.sendCommand("Runtime.evaluate", {
+    expression: inspectFrame, contextId: executionContextId, awaitPromise: true, returnByValue: true,
+  }, sessionId);
+  if (evaluated.exceptionDetails || !evaluated.result.value) {
+    throw new ProjectError("RENDER_FAILED", "Chromium could not verify font and image readiness.");
   }
+  return evaluated.result.value as Readiness;
 }
 
 export class Preview {
@@ -264,13 +273,16 @@ export class Preview {
       await timeout(window.loadURL(renderUrl), 5000, "The artboard did not load within 5 seconds.");
       const frame = webContents.mainFrame.frames.find((candidate) => candidate.url === boardUrl);
       if (!frame) throw new ProjectError("RENDER_FAILED", "The requested artboard frame did not load.");
+      webContents.debugger.attach("1.3");
       const report = await timeout(
         inspect(webContents, boardUrl), 5000, "Fonts, images or paint did not settle within 5 seconds.");
       if (frame.url !== boardUrl || report.viewport[0] !== width || report.viewport[1] !== height) {
         throw new ProjectError("RENDER_MISMATCH", "Chromium did not render the requested revision and CSS viewport.");
       }
-      const image = await timeout(webContents.capturePage({ x: 0, y: 0, width, height }, { stayHidden: true }),
-        5000, "Chromium did not finish capturing the rendered artboard.", "CAPTURE_TIMEOUT");
+      const shot = await timeout(webContents.debugger.sendCommand("Page.captureScreenshot", {
+        format: "png", fromSurface: true, captureBeyondViewport: false,
+      }), 5000, "Chromium did not finish capturing the rendered artboard.", "CAPTURE_TIMEOUT");
+      const image = nativeImage.createFromBuffer(Buffer.from(shot.data, "base64"));
       if (image.isEmpty()) throw new ProjectError("CAPTURE_FAILED", "Chromium returned an empty screenshot.");
       const nativePng = image.toPNG();
       const nativeWidth = nativePng.readUInt32BE(16);
@@ -294,7 +306,10 @@ export class Preview {
       };
     } finally {
       this.#captures.delete(key);
-      if (!window.isDestroyed()) window.destroy();
+      if (!window.isDestroyed()) {
+        if (webContents.debugger.isAttached()) webContents.debugger.detach();
+        window.destroy();
+      }
     }
   }
 }

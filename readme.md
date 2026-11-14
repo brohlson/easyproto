@@ -1,6 +1,6 @@
 # Easy Proto
 
-Easy Proto is a macOS desktop canvas for reviewing HTML/CSS mockups made by a coding agent. Each artboard has its own browser viewport. Pan and zoom to compare boards, select one by clicking it, and drag it to save its position.
+Easy Proto is a macOS desktop canvas for reviewing HTML/CSS mockups made by a coding agent. Each artboard has its own browser viewport. Pan and zoom to compare boards, select one by clicking it, and move it by dragging or pressing the arrow keys after selection.
 
 ## Install and run
 

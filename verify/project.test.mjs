@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -78,7 +78,7 @@ test("kill before and after atomic publication recovers whole revisions and dura
   assert.equal(after.snapshot.manifest.revision, 1);
 });
 
-test("portable asset paths are snapshotted per open and project assets cannot be symbolic links", async (t) => {
+test("portable assets are snapshotted per open and symbolic or hard links are refused", async (t) => {
   const { project, folder, root } = await fixture(t);
   const assets = join(folder, "assets");
   const outside = join(root, "outside.png");
@@ -87,10 +87,18 @@ test("portable asset paths are snapshotted per open and project assets cannot be
   await symlink(outside, join(assets, "outside.png"));
   await assert.rejects(Project.open(folder), /cannot contain symbolic links/);
   await rm(join(assets, "outside.png"));
+  await link(outside, join(assets, "outside.png"));
+  await assert.rejects(Project.open(folder), /single-link project file/);
+  await rm(join(assets, "outside.png"));
   await writeFile(join(assets, "local.png"), "synthetic inside data");
   const reopened = await Project.open(folder);
   assert.notEqual(reopened.assetDigest, project.assetDigest);
   assert.equal(reopened.assets.get("local.png").bytes.toString(), "synthetic inside data");
   await writeFile(join(assets, "local.png"), "changed on disk");
   assert.equal(reopened.assets.get("local.png").bytes.toString(), "synthetic inside data");
+  const pointer = JSON.parse(await readFile(join(folder, "project.json"), "utf8"));
+  const board = reopened.snapshot.manifest.artboards[0];
+  const managedSource = join(folder, ".easy-proto", pointer.snapshot, board.htmlRef);
+  await link(managedSource, join(root, "hard-linked-source.html"));
+  await assert.rejects(Project.open(folder), /single-link project file/);
 });

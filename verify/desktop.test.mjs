@@ -92,7 +92,10 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
 
   await mkdir(join(project, "assets"), { recursive: true });
   await writeFile(join(project, "assets", "local.png"), onePixel);
-  await writeFile(join(root, "outside.txt"), "unrelated synthetic fixture");
+  await writeFile(join(project, "assets", "invalid.png"), "synthetic undecodable image");
+  const outside = join(root, "outside.png");
+  await writeFile(outside, onePixel);
+  await writeFile(join(project, "assets", "invalid.woff2"), "synthetic undecodable font");
   const url = await launch();
   statuses.push("Electron window displayed starter HTML");
   const auth = { authorization: "Bearer " + token, "content-type": "application/json" };
@@ -116,7 +119,7 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
 
   const created = {
     projectId, expectedRevision: 0, commandId: randomUUID(),
-    arguments: { name: "Agent mockup", width: 320, height: 240, x: 70, y: 90, html: "<h1>Prototype one</h1>", css: "body{background:#ddb}" },
+    arguments: { name: "Agent mockup", width: 320, height: 240, x: 620, y: 40, html: "<h1>Prototype one</h1>", css: "body{background:#ddb}" },
   };
   const initial = await data("create_artboard", created);
   const artboardId = initial.artboard.id;
@@ -125,6 +128,7 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   await frame.getByRole("heading", { name: "Prototype one" }).waitFor();
   statuses.push("MCP create rendered its HTML in the live canvas");
   const board = desktop.locator(".react-flow__node").filter({ hasText: "Agent mockup" });
+  await desktop.getByRole("button", { name: /fit view/i }).click();
   const initialFrame = desktop.frames().find((candidate) => candidate.url().includes(artboardId));
   await board.click({ position: { x: 60, y: 60 } });
   assert.ok((await board.getAttribute("class")).includes("selected"));
@@ -139,30 +143,49 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   const beforeZoom = await canvasTransform();
   await desktop.getByRole("button", { name: /zoom in/i }).click();
   await desktop.waitForFunction((before) => document.querySelector(".react-flow__viewport").getAttribute("style") !== before, beforeZoom);
+  await desktop.evaluate(async () => {
+    const viewport = document.querySelector(".react-flow__viewport");
+    let last = "";
+    let stable = 0;
+    while (stable < 3) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const transform = viewport.style.transform;
+      stable = transform === last ? stable + 1 : 0;
+      last = transform;
+    }
+  });
   assert.equal(await initialFrame.evaluate(() => innerWidth), 320);
   const box = await board.boundingBox();
-  await desktop.mouse.move(box.x + 55, box.y + 55);
+  const dragX = box.x + box.width / 2;
+  const dragY = box.y + box.height / 2;
+  await desktop.mouse.move(dragX, dragY);
   await desktop.mouse.down();
-  await desktop.mouse.move(box.x + 99, box.y + 115, { steps: 8 });
+  await desktop.mouse.move(dragX - 44, dragY + 60, { steps: 8 });
   await desktop.mouse.up();
   await desktop.getByText("Saved · Revision 2", { exact: true }).waitFor({ timeout: 5000 });
-  const moved = await data("get_artboard", { projectId, artboardId });
-  assert.notEqual(moved.artboard.x, 70);
-  assert.notEqual(moved.artboard.y, 90);
-  assert.equal(moved.artboard.sourceRevision, 1);
+  const dragged = await data("get_artboard", { projectId, artboardId });
+  assert.notEqual(dragged.artboard.x, 620);
+  assert.notEqual(dragged.artboard.y, 40);
+  assert.equal(dragged.artboard.sourceRevision, 1);
   assert.equal(desktop.frames().find((candidate) => candidate.url().includes(artboardId)), initialFrame);
   assert.equal(await initialFrame.evaluate(() => innerWidth), 320);
-  statuses.push("Selection, pan, zoom and UI drag observed; drag saved and iframe identity/CSS width stayed fixed");
+  await board.press("ArrowRight");
+  await desktop.getByText("Saved · Revision 3", { exact: true }).waitFor({ timeout: 5000 });
+  const moved = await data("get_artboard", { projectId, artboardId });
+  assert.equal(moved.artboard.x, dragged.artboard.x + 5);
+  assert.equal(moved.artboard.y, dragged.artboard.y);
+  assert.equal(desktop.frames().find((candidate) => candidate.url().includes(artboardId)), initialFrame);
+  statuses.push("Selection, pan, zoom, drag and keyboard move observed; both moves saved without reloading or resizing the iframe");
 
   const updated = {
-    projectId, commandId: randomUUID(), expectedRevision: 2,
+    projectId, commandId: randomUUID(), expectedRevision: 3,
     arguments: { artboardId, patch: {
-      html: `<!-- <head> --><html><head data-test="yes"></head><body><h1>Prototype two</h1><img id="local" src="assets/local.png"><img src="${blocked}/network"><script>document.documentElement.dataset.executed='yes';</script><button onclick="document.documentElement.dataset.clicked='yes'">Test</button><link rel="preconnect" href="${blocked}"><link rel="dns-prefetch" href="${blocked}"><iframe src="${blocked}"></iframe><meta http-equiv="refresh" content="0;url=${blocked}"></body></html>`,
-      css: `body{background:rgb(21,62,46);color:white}h1{font:28px system-ui}body::after{content:'';display:block;width:20px;height:20px;background:url(assets/missing.png)}`,
+      html: `<!-- <head> --><html><head data-test="yes"></head><body><h1>Prototype two</h1><img id="local" loading="lazy" src="assets/local.png"><img id="outside" src="file://${outside}"><img id="traversal" src="assets/%2e%2e/%2e%2e/outside.png"><img src="${blocked}/network"><a href="${blocked}/navigate" target="_blank">Link</a><script>document.documentElement.dataset.executed='yes';</script><button onclick="document.documentElement.dataset.clicked='yes'">Test</button><link rel="preconnect" href="${blocked}"><link rel="dns-prefetch" href="${blocked}"><iframe src="${blocked}"></iframe><meta http-equiv="refresh" content="0;url=${blocked}"></body></html>`,
+      css: `@font-face{font-family:Fixture;src:url(assets/invalid.woff2)}body{background:rgb(21,62,46);color:white}body:has(img[loading=eager]){background:#f00}h1{font:28px Fixture,system-ui}body::after{content:'';display:block;width:20px;height:20px;background:url(assets/missing.png)}body::before{content:'';display:block;width:20px;height:20px;background:url(assets/invalid.png)}`,
     } },
   };
   const commit = await data("update_artboard", updated);
-  assert.equal(commit.revision, 3);
+  assert.equal(commit.revision, 4);
   const title = frame.getByRole("heading", { name: "Prototype two" });
   await title.waitFor();
   assert.equal(await title.evaluate((element) => getComputedStyle(element.ownerDocument.body).backgroundColor), "rgb(21, 62, 46)");
@@ -177,22 +200,30 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
       executed: document.documentElement.hasAttribute("data-executed"),
       clicked: document.documentElement.hasAttribute("data-clicked"),
       localWidth: document.querySelector("#local").naturalWidth,
+      outsideWidth: document.querySelector("#outside").naturalWidth,
+      traversalWidth: document.querySelector("#traversal").naturalWidth,
       viewport: [innerWidth, innerHeight],
     };
   });
   assert.deepEqual(security, { bridge: "undefined", require: "undefined", process: "undefined", parentAccess: false,
-    scripts: 0, hints: 0, executed: false, clicked: false, localWidth: 1, viewport: [320, 240] });
+    scripts: 0, hints: 0, executed: false, clicked: false, localWidth: 1, outsideWidth: 0, traversalWidth: 0, viewport: [320, 240] });
   assert.equal(connections, 0);
+  const originalUrl = live.url();
+  await live.evaluate(() => document.querySelector("a").click());
+  assert.equal(live.url(), originalUrl);
+  assert.equal(app.windows().length, 1);
   assert.equal(await desktop.evaluate(() => typeof window.easyProto.getScene), "function");
   statuses.push("Updated HTML/CSS and local asset rendered; preview privilege probes and loopback traps stayed blocked");
 
-  const captureArgs = { projectId, artboardId, revision: 3 };
+  const captureArgs = { projectId, artboardId, revision: 4 };
   const capture = await client.callTool({ name: "capture_artboard", arguments: captureArgs });
   assert.equal(capture.isError, undefined, JSON.stringify(capture.content));
   const { structuredContent: details } = capture;
-  assert.deepEqual([details.status, details.revision, details.sourceRevision, details.width, details.height], ["captured", 3, 3, 320, 240]);
+  assert.deepEqual([details.status, details.revision, details.sourceRevision, details.width, details.height], ["captured", 4, 4, 320, 240]);
   assert.equal(details.sourceDigest, commit.artboard.sourceDigest);
   assert.ok(details.unresolved.includes("Missing asset: missing.png"), JSON.stringify(details));
+  assert.ok(details.unresolved.includes("CSS image failed to decode"), JSON.stringify(details));
+  assert.ok(details.unresolved.some((item) => item.includes("Font could not load: Fixture")), JSON.stringify(details));
   assert.ok(details.unresolved.some((item) => item.includes("resource was blocked")), JSON.stringify(details));
   const png = Buffer.from(capture.content.find(({ type }) => type === "image").data, "base64");
   assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [320, 240]);
@@ -205,15 +236,32 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
     const pixels = image.toBitmap();
     return [...pixels.subarray(-4)];
   }, png.toString("base64"));
-  assert.deepEqual(sample, [46, 62, 21, 255]);
+  assert.ok(sample.every((value, index) => Math.abs(value - [46, 62, 21, 255][index]) <= 2), String(sample));
   assert.equal(connections, 0);
   await failure("capture_artboard", { ...captureArgs, revision: 2 }, "REVISION_CONFLICT");
   statuses.push({ capture: details, pngSampleBGRA: sample });
   if (evidence) {
     await mkdir(evidence, { recursive: true });
     await desktop.getByRole("button", { name: /fit view/i }).click();
-    await desktop.waitForTimeout(250);
+    await desktop.waitForFunction(() => {
+      const canvas = document.querySelector(".canvas").getBoundingClientRect();
+      return [...document.querySelectorAll(".artboard-label")].every((label) => {
+        const bounds = label.getBoundingClientRect();
+        return bounds.top >= canvas.top && bounds.right <= canvas.right;
+      });
+    });
     await desktop.screenshot({ path: join(evidence, "canvas.png"), animations: "disabled" });
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((window) => window.isVisible()).setSize(660, 480));
+    await desktop.waitForFunction(() => innerWidth === 660);
+    await desktop.getByRole("button", { name: /fit view/i }).click();
+    await desktop.waitForFunction(() => {
+      const canvas = document.querySelector(".canvas").getBoundingClientRect();
+      return [...document.querySelectorAll(".artboard-label")].every((label) => {
+        const bounds = label.getBoundingClientRect();
+        return bounds.top >= canvas.top && bounds.left >= canvas.left && bounds.right <= canvas.right;
+      });
+    });
+    await desktop.screenshot({ path: join(evidence, "canvas-minimum.png"), animations: "disabled" });
   }
 
   await failure("update_artboard", { ...updated, commandId: randomUUID(), expectedRevision: 1 }, "REVISION_CONFLICT");
@@ -222,7 +270,7 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   await close();
   await launch();
   const reopened = await data("get_artboard", { projectId, artboardId });
-  assert.equal(reopened.revision, 3);
+  assert.equal(reopened.revision, 4);
   assert.equal(reopened.html, updated.arguments.patch.html);
   assert.equal(reopened.css, updated.arguments.patch.css);
   assert.deepEqual([reopened.artboard.x, reopened.artboard.y, reopened.artboard.width, reopened.artboard.height],
@@ -231,9 +279,111 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   assert.deepEqual(await data("create_artboard", created), initial);
   assert.deepEqual(await data("update_artboard", updated), commit);
   const context = await data("get_context");
-  assert.equal(context.revision, 3);
+  assert.equal(context.revision, 4);
   assert.equal(context.artboards.length, 2);
   const pointer = JSON.parse(await readFile(join(project, "project.json"), "utf8"));
-  assert.equal(pointer.revision, 3);
+  assert.equal(pointer.revision, 4);
   statuses.push("Stale/collision rejected; quit and reopen preserved layout and sources; exact retries replayed without new revisions");
+
+  // Hold Chromium after frame readiness so a real MCP update can commit before the PNG is taken.
+  await app.evaluate(({ app }) => {
+    app.once("browser-window-created", (_event, window) => {
+      const debug = window.webContents.debugger;
+      const send = debug.sendCommand.bind(debug);
+      debug.sendCommand = async (command, ...args) => {
+        if (command === "Page.captureScreenshot") {
+          await new Promise((release) => { globalThis.releaseEasyProtoCapture = release; });
+        }
+        return send(command, ...args);
+      };
+    });
+  });
+  const capturing = client.callTool({ name: "capture_artboard", arguments: captureArgs });
+  let overlap = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (await app.evaluate(() => typeof globalThis.releaseEasyProtoCapture === "function")) {
+      overlap = true;
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 15));
+  }
+  try {
+    assert.ok(overlap, "Chromium capture did not reach the synchronization point.");
+    const newer = await data("update_artboard", {
+      projectId, commandId: randomUUID(), expectedRevision: 4,
+      arguments: { artboardId, patch: { css: "body{background:#fa0}" } },
+    });
+    assert.equal(newer.revision, 5);
+  } finally {
+    await app.evaluate(() => {
+      globalThis.releaseEasyProtoCapture?.();
+      delete globalThis.releaseEasyProtoCapture;
+    });
+  }
+  const pinned = await capturing;
+  assert.equal(pinned.isError, undefined);
+  assert.equal(pinned.structuredContent.revision, 4);
+  assert.equal(pinned.structuredContent.sourceDigest, commit.artboard.sourceDigest);
+  const pinnedPng = pinned.content.find(({ type }) => type === "image").data;
+  const pinnedPixel = await app.evaluate(({ nativeImage }, encoded) =>
+    [...nativeImage.createFromBuffer(Buffer.from(encoded, "base64")).toBitmap().subarray(-4)], pinnedPng);
+  assert.ok(pinnedPixel.every((value, index) => Math.abs(value - sample[index]) <= 2), String(pinnedPixel));
+  statuses.push("An actual capture paused before pixel read; concurrent MCP update committed revision 5 while the image retained revision 4 and its pixels.");
+
+  const nested = "<div>".repeat(160) + '<span id="deep-marker">Beyond preview depth</span>' + "</div>".repeat(160);
+  const deep = await data("update_artboard", {
+    projectId, commandId: randomUUID(), expectedRevision: 5,
+    arguments: { artboardId, patch: { html: '<h1>Deep preview</h1>' + nested } },
+  });
+  const deepFrame = desktop.frameLocator('iframe[title="Agent mockup"]');
+  await deepFrame.getByRole("heading", { name: "Deep preview" }).waitFor();
+  assert.equal(await deepFrame.locator("#deep-marker").count(), 0);
+  assert.equal(deep.revision, 6);
+  assert.equal((await data("get_artboard", { projectId, artboardId })).html, '<h1>Deep preview</h1>' + nested);
+  const deepCapture = await client.callTool({ name: "capture_artboard", arguments: { projectId, artboardId, revision: 6 } });
+  assert.equal(deepCapture.isError, undefined, JSON.stringify(deepCapture.content));
+  assert.equal(deepCapture.structuredContent.sourceDigest, deep.artboard.sourceDigest);
+  await app.evaluate(({ app }) => {
+    app.once("browser-window-created", (_event, window) => {
+      const debug = window.webContents.debugger;
+      const send = debug.sendCommand.bind(debug);
+      debug.sendCommand = (command, ...args) => command === "Runtime.evaluate"
+        ? new Promise(() => {}) : send(command, ...args);
+    });
+  });
+  await failure("capture_artboard", { projectId, artboardId, revision: 6 }, "RENDER_TIMEOUT");
+  assert.equal((await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)), 1);
+  await close();
+  await launch();
+  await desktop.frameLocator('iframe[title="Agent mockup"]').getByRole("heading", { name: "Deep preview" }).waitFor();
+  assert.equal((await data("get_context")).revision, 6);
+  statuses.push("Deep markup stayed bounded in preview, capture and reopen. Canonical source stayed intact and MCP responded.");
+  statuses.push("Injected readiness timeout was reported and disposed its capture window.");
+
+  const lost = {
+    projectId, commandId: randomUUID(), expectedRevision: 6,
+    arguments: { ...created.arguments, name: "Lost reply mockup", x: 620, y: 360 },
+  };
+  const aborted = new AbortController();
+  const cutoff = new Client({ name: "disposable-lost-reply-client", version: "1.0.0" });
+  await cutoff.connect(new StreamableHTTPClientTransport(new URL(endpoint), {
+    requestInit: { headers: { Authorization: "Bearer " + token } },
+    fetch: async (input, init) => {
+      const response = await fetch(input, init);
+      if (typeof init?.body !== "string" || !init.body.includes(lost.commandId)) return response;
+      await response.body?.cancel();
+      aborted.abort();
+      throw new Error("Synthetic lost MCP reply");
+    },
+  }));
+  await assert.rejects(cutoff.callTool({ name: "create_artboard", arguments: lost }, undefined, { signal: aborted.signal }));
+  await cutoff.close();
+  assert.equal((await data("get_context")).revision, 7);
+  await close();
+  await launch();
+  const commitFromDisk = await data("create_artboard", lost);
+  assert.equal(commitFromDisk.revision, 7);
+  assert.equal((await data("get_context")).artboards.filter((board) => board.name === "Lost reply mockup").length, 1);
+  await desktop.frameLocator('iframe[title="Lost reply mockup"]').getByRole("heading", { name: "Prototype one" }).waitFor();
+  statuses.push("A second MCP-created board's reply was discarded at the SDK transport. Restart and retry recovered the original board and revision.");
 });

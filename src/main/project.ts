@@ -45,7 +45,9 @@ async function readRegular(path: string, max: number) {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = await file.stat();
-    if (!stat.isFile() || stat.size > max) throw new Error("Invalid file type or size.");
+    if (!stat.isFile() || stat.nlink !== 1 || stat.size > max) {
+      throw new Error("Expected a regular, single-link project file within the size limit.");
+    }
     const bytes = Buffer.alloc(stat.size);
     let offset = 0;
     while (offset < bytes.length) {
