@@ -13,6 +13,7 @@ import {
 } from "electron";
 import { z } from "zod";
 import {
+  artboardIds,
   commandSchema,
   desktopArtboardPatch,
   id,
@@ -236,14 +237,11 @@ async function start() {
     allowSender(event, window);
     return scene();
   });
-  ipcMain.handle(
-    ipc.copy,
-    (event, generation: unknown, artboardId: unknown, clipboardId: unknown) => {
-      allowSender(event, window);
-      const project = activeGeneration(generation);
-      project.copyArtboard(id.parse(artboardId), id.parse(clipboardId));
-    },
-  );
+  ipcMain.handle(ipc.copy, (event, generation: unknown, ids: unknown, clipboardId: unknown) => {
+    allowSender(event, window);
+    const project = activeGeneration(generation);
+    project.copyArtboards(artboardIds.parse(ids), id.parse(clipboardId));
+  });
   ipcMain.handle(ipc.arrange, async (event, selectedGeneration: unknown, input: unknown) => {
     allowSender(event, window);
     const command = commandSchema.parse(input);
@@ -259,8 +257,11 @@ async function start() {
     try {
       const project = activeGeneration(selectedGeneration);
       const commit = await project.execute(command);
-      if (active?.project === project && !project.snapshot.sources.has(commit.artboard.id))
-        active.activity.clearLeases(commit.artboard.id);
+      if (active?.project === project) {
+        for (const { id } of commit.artboards ?? [commit.artboard]) {
+          if (!project.snapshot.sources.has(id)) active.activity.clearLeases(id);
+        }
+      }
       changed();
       return commit;
     } catch (error) {

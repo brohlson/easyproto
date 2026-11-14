@@ -8,10 +8,12 @@ Deduplication covers every committed ID in the lifetime of the intact project le
 
 The desktop's duplicate command copies the selected artboard's committed source and viewport into a new artboard with its own ID and source files. It saves the copy and its offset in one revision. It uses the same command ledger and keeps the project asset namespace shared.
 
-Copy snapshots an artboard's committed source and layout in memory for the open project. The system clipboard carries an opaque token. Paste uses that token to locate the snapshot and creates a new board through the same command service. Opening another project or reopening the same one clears the copy.
+Copy snapshots the selected artboards' committed source and layout in memory for the open project. The system clipboard carries an opaque token. Paste uses that token to locate the snapshot and creates new boards through the same command service. Opening another project or reopening the same one clears the copy.
 
 Undo and redo cover the last 50 committed artboard mutations in the open project, including MCP edits. Project naming and canvas navigation have separate lifecycles. Undo and redo publish new revisions, preserve IDs on restoration, and update their in-memory stacks after a successful save. A new mutation clears redo. The first delete, undo, or redo writes schema version 2, which allows historical command results to refer to a removed artboard. Easy Proto still reads version 1. Older builds refuse version 2 projects. Reopening preserves the resulting document and command ledger and starts a fresh undo history.
 
 Delete removes the artboard and its source from the active snapshot. Undo restores its ID, source, bounds, and place in the artboard order. The restored preview uses a new revision. Earlier saved snapshots retain their original files.
+
+A group move, duplicate, paste, or delete publishes a single revision and takes one undo step. A move or copy adds the same offset to every selected board. The first result that affects multiple artboards upgrades the active pointer and manifest to schema version 3. The command result retains `artboard` and adds `artboards` in document order. Retrying the original command returns that full result, including after reopen. This app reads versions 1 through 3. Older builds refuse version 3 projects. Selection and camera state stay in the renderer.
 
 Assets are read into memory at open through allowlisted project-relative paths. Copy the optional assets directory with the project. Capture identity separately includes the digest of those asset bytes, so the same document revision opened with different asset bytes has a different render identity.

@@ -1,6 +1,6 @@
 # Easy Proto
 
-Easy Proto is a macOS desktop canvas for reviewing HTML/CSS mockups made by a coding agent. Each artboard has its own browser viewport. Pan and zoom to compare boards, select one by clicking it, and move it by dragging or pressing the arrow keys after selection. Click an artboard’s dimensions to choose a phone, tablet, or desktop viewport preset. Scroll or pinch to zoom, and press Shift+0 to fit the canvas. Use **Appearance** to choose System, Light, or Dark for the desktop.
+Easy Proto is a macOS desktop canvas for reviewing HTML/CSS mockups made by a coding agent. Each artboard has its own browser viewport. Click an artboard to select it, Shift-click to toggle it in the selection, or drag a box from an empty canvas area to select every artboard it overlaps. Drag or press the arrow keys to move the selection. Use ⌘D to duplicate, ⌘C and ⌘V to copy and paste, and Delete to remove the selected boards. Each edit takes one undo step. Swipe with two fingers, scroll, or hold Space while dragging to pan. Pinch to zoom, and press Shift+0 to fit the canvas. Click an artboard’s dimensions to choose a viewport preset. Use **Appearance** to choose System, Light, or Dark.
 
 ## Install and run
 

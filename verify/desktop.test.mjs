@@ -26,13 +26,29 @@ function raw(url, options, body = "{}") {
   });
 }
 
-async function zoomCanvas(page, deltaY) {
+async function pinchCanvas(page, deltaY) {
   const { x, y, width, height } = await page.locator(".canvas").boundingBox();
   await page.mouse.move(x + width / 2, y + height / 2);
-  await page.mouse.wheel(0, deltaY);
+  // Chromium delivers a trackpad pinch as a wheel event with Ctrl set.
+  await page.keyboard.down("Control");
+  try {
+    await page.mouse.wheel(0, deltaY);
+  } finally {
+    await page.keyboard.up("Control");
+  }
 }
 
 const fitCanvas = (page) => page.keyboard.press("Shift+Digit0");
+
+async function waitForRevision(page, revision) {
+  const deadline = Date.now() + 5000;
+  do {
+    const scene = await page.evaluate(() => window.easyProto.getScene());
+    if (scene.revision === revision) return scene;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  } while (Date.now() < deadline);
+  assert.fail(`Project did not reach revision ${revision}`);
+}
 
 test(
   "macOS Electron and real MCP client exercise the complete desktop slice",
@@ -104,15 +120,7 @@ test(
       return endpoint;
     }
 
-    const waitForRevision = async (revision) => {
-      const deadline = Date.now() + 5000;
-      do {
-        const scene = await desktop.evaluate(() => window.easyProto.getScene());
-        if (scene.revision === revision) return;
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      } while (Date.now() < deadline);
-      assert.fail(`Project did not reach revision ${revision}`);
-    };
+    const waitForDesktopRevision = (revision) => waitForRevision(desktop, revision);
     const settings = () => desktop.getByRole("button", { name: "Settings", exact: true });
     const openSettings = async () => {
       if (!(await desktop.locator("#settings").isVisible())) await settings().click();
@@ -228,13 +236,45 @@ test(
     const beforePan = await canvasTransform();
     const canvas = await desktop.locator(".react-flow__pane").boundingBox();
     await desktop.mouse.move(canvas.x + 40, canvas.y + 45);
+    await desktop.keyboard.down("Space");
     await desktop.mouse.down();
     await desktop.mouse.move(canvas.x + 90, canvas.y + 73, { steps: 5 });
     await desktop.mouse.up();
+    await desktop.keyboard.up("Space");
     if (beforePan === (await canvasTransform()))
       throw new Error("Canvas pan did not change the viewport.");
+
+    const viewport = desktop.locator(".react-flow__viewport");
+    const view = () =>
+      viewport.evaluate((element) => {
+        const { m41: x, m42: y, a: scale } = new DOMMatrix(element.style.transform);
+        return { x, y, scale };
+      });
+    async function scrollPan(dx, dy) {
+      const before = await canvasTransform();
+      await desktop.mouse.wheel(dx, dy);
+      await desktop.waitForFunction(
+        (before) =>
+          document.querySelector(".react-flow__viewport").getAttribute("style") !== before,
+        before,
+      );
+      return view();
+    }
+    const boardBox = await board.boundingBox();
+    await desktop.mouse.move(boardBox.x + boardBox.width / 2, boardBox.y + boardBox.height / 2);
+    const beforeSwipe = await view();
+    const horizontal = await scrollPan(64, 0);
+    assert.ok(horizontal.x < beforeSwipe.x);
+    assert.equal(horizontal.y, beforeSwipe.y);
+    assert.equal(horizontal.scale, beforeSwipe.scale);
+    const vertical = await scrollPan(0, 48);
+    assert.equal(vertical.x, horizontal.x);
+    assert.ok(vertical.y < horizontal.y);
+    assert.equal(vertical.scale, beforeSwipe.scale);
+    await scrollPan(-64, -48);
+
     const beforeZoom = await canvasTransform();
-    await zoomCanvas(desktop, -100);
+    await pinchCanvas(desktop, -10);
     await desktop.waitForFunction(
       (before) => document.querySelector(".react-flow__viewport").getAttribute("style") !== before,
       beforeZoom,
@@ -250,6 +290,9 @@ test(
         last = transform;
       }
     });
+    const afterPinch = await view();
+    assert.ok(afterPinch.scale > beforeSwipe.scale);
+    statuses.push({ beforeSwipe, horizontal, vertical, afterPinch });
     assert.equal(await initialFrame.evaluate(() => innerWidth), 320);
     const box = await board.boundingBox();
     const dragX = box.x + box.width / 2;
@@ -258,7 +301,7 @@ test(
     await desktop.mouse.down();
     await desktop.mouse.move(dragX - 44, dragY + 60, { steps: 8 });
     await desktop.mouse.up();
-    await waitForRevision(2);
+    await waitForDesktopRevision(2);
     const dragged = await data("get_artboard", { projectId, artboardId });
     assert.notEqual(dragged.artboard.x, 620);
     assert.notEqual(dragged.artboard.y, 40);
@@ -269,7 +312,7 @@ test(
     );
     assert.equal(await initialFrame.evaluate(() => innerWidth), 320);
     await board.press("ArrowRight");
-    await waitForRevision(3);
+    await waitForDesktopRevision(3);
     const moved = await data("get_artboard", { projectId, artboardId });
     assert.equal(moved.artboard.x, dragged.artboard.x + 5);
     assert.equal(moved.artboard.y, dragged.artboard.y);
@@ -278,7 +321,7 @@ test(
       initialFrame,
     );
     statuses.push(
-      "Selection, pan, zoom, drag and keyboard move observed; both moves saved without reloading or resizing the iframe",
+      "Swipe-equivalent wheel input panned on both axes without scaling. Pinch-equivalent input zoomed. Drag and keyboard movement saved without reloading or resizing the iframe.",
     );
 
     const updated = {
@@ -836,7 +879,7 @@ test(
     assert.notEqual(fresh.activationId, original.activationId);
     assert.equal(fresh.revision, 0);
     await desktop.getByText("Fresh project", { exact: true }).waitFor();
-    await waitForRevision(0);
+    await waitForDesktopRevision(0);
     await desktop
       .frameLocator('iframe[title="Field notes"]')
       .getByRole("heading", { name: "Make room for ideas." })
@@ -1104,7 +1147,7 @@ test(
       /only change artboard name, position or size/,
     );
     const unauthorized = await app.evaluate(
-      async ({ BrowserWindow }, { generation, command }) => {
+      async ({ BrowserWindow }, { generation, command, clipboardId }) => {
         const trusted = BrowserWindow.getAllWindows().find((window) => window.isVisible());
         const { join } = process.getBuiltinModule("node:path");
         const testWindow = new BrowserWindow({
@@ -1124,7 +1167,10 @@ test(
         try {
           await testWindow.loadURL("easy-proto://ui/index.html");
           return await testWindow.webContents.executeJavaScript(
-            `Promise.resolve().then(() => window.easyProto.arrangeArtboard(${generation}, ${JSON.stringify(command)})).then(() => "", error => error.message)`,
+            `Promise.all([
+              () => window.easyProto.arrangeArtboard(${generation}, ${JSON.stringify(command)}),
+              () => window.easyProto.copyArtboards(${generation}, ${JSON.stringify([command.arguments.artboardId])}, ${JSON.stringify(clipboardId)})
+            ].map(action => Promise.resolve().then(action).then(() => "", error => error.message)))`,
           );
         } catch (error) {
           throw new Error(error.message + " " + diagnostics.join(" | "));
@@ -1132,9 +1178,11 @@ test(
           testWindow.destroy();
         }
       },
-      { generation: currentScene.generation, command: layoutAttempt },
+      { generation: currentScene.generation, command: layoutAttempt, clipboardId: randomUUID() },
     );
-    assert.match(unauthorized, /only the application window/i);
+    assert.equal(unauthorized.length, 2);
+    for (const message of unauthorized) assert.match(message, /only the application window/i);
+    statuses.push("Secondary preload window was denied both arrange and copy.");
     assert.equal((await data("get_context")).revision, 9);
     const chromeFont = await desktop.evaluate(() => {
       for (const sheet of document.styleSheets) {
@@ -1180,7 +1228,7 @@ test(
     );
     const beforeZoomBox = await iframe.boundingBox();
     const beforeResizeZoom = await canvasTransform();
-    await zoomCanvas(desktop, -100);
+    await pinchCanvas(desktop, -10);
     await desktop.waitForFunction(
       (before) => document.querySelector(".react-flow__viewport").getAttribute("style") !== before,
       beforeResizeZoom,
@@ -1218,7 +1266,7 @@ test(
     assert.equal(await iphone.evaluate((element) => element === document.activeElement), true);
     await desktop.keyboard.press("Enter");
     await deviceMenu.waitFor({ state: "hidden" });
-    await waitForRevision(11);
+    await waitForDesktopRevision(11);
     await responsiveFrame.getByText("Wide layout").waitFor();
     const resized = await data("get_artboard", {
       projectId,
@@ -1245,11 +1293,11 @@ test(
     assert.equal(await iphone.getAttribute("aria-pressed"), "true");
     await desktop.keyboard.press("Escape");
     await deviceMenu.waitFor({ state: "hidden" });
-    await waitForRevision(11);
+    await waitForDesktopRevision(11);
     await dimensions.click();
     await iphone.click();
     await deviceMenu.waitFor({ state: "hidden" });
-    await waitForRevision(11);
+    await waitForDesktopRevision(11);
 
     await dimensions.click();
     await deviceMenu.waitFor();
@@ -1267,11 +1315,11 @@ test(
     await resizeError.getByRole("button", { name: "Dismiss" }).click();
     await responsiveFrame.getByText("Compact layout").waitFor();
     assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [380, 874]);
-    await waitForRevision(12);
+    await waitForDesktopRevision(12);
 
     await dimensions.click();
     await device(/iPad mini 768/).click();
-    await waitForRevision(13);
+    await waitForDesktopRevision(13);
     await responsiveFrame.getByText("Wide layout").waitFor();
     assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [768, 1024]);
     statuses.push({
@@ -1571,7 +1619,7 @@ test(
       for (let i = 0; i < 22; i++) {
         const previous = await zoom();
         if (reached(previous)) return;
-        await zoomCanvas(desktop, deltaY);
+        await pinchCanvas(desktop, deltaY);
         await desktop.waitForFunction(
           (previous) =>
             1 /
@@ -1585,7 +1633,7 @@ test(
       }
       assert.fail("Did not reach target zoom");
     }
-    await zoomTo(125, (value) => value <= 0.1);
+    await zoomTo(12.5, (value) => value <= 0.1);
     assert.ok((await node.boundingBox()).width < startingWidth / 4);
     assert.ok(
       (await heights()).every(
@@ -1593,7 +1641,7 @@ test(
       ),
     );
     assert.deepEqual(await frameSize(), [540, 360]);
-    await zoomTo(-125, (value) => value >= 2.95);
+    await zoomTo(-12.5, (value) => value >= 2.95);
     assert.ok(
       (await heights()).every((height, index) => Math.abs(height - startingHeights[index]) < 0.5),
     );
@@ -1901,5 +1949,320 @@ test(
       [duplicate.id],
     );
     assert.equal((await snapshot()).canUndo, false);
+
+    const groupScope = { projectId, activationId: (await call("get_context")).activationId };
+    const positions = (await snapshot()).artboards[0];
+    const groupBoards = [];
+    for (const [index, name] of ["Group one", "Group two"].entries()) {
+      const current = await snapshot();
+      const commit = await call("create_artboard", {
+        ...groupScope,
+        commandId: randomUUID(),
+        expectedRevision: current.revision,
+        arguments: {
+          name,
+          width: 160,
+          height: 150,
+          x: positions.x + positions.width + 120 + index * 250,
+          y: positions.y + 100,
+          html: `<main>${name}</main>`,
+          css: "body{background:#efefef;font:20px system-ui}",
+        },
+      });
+      groupBoards.push(commit.artboard);
+    }
+    const boardNode = (id) => desktop.locator(`.react-flow__node[data-id="${id}"]`);
+    const [left, right] = groupBoards.map(({ id }) => boardNode(id));
+    await right.waitFor();
+    await fitCanvas(desktop);
+    const selectedNodes = desktop.locator(".react-flow__node.selected");
+    const selectedIds = () =>
+      selectedNodes.evaluateAll((nodes) => nodes.map((item) => item.dataset.id));
+    const groupIds = groupBoards.map(({ id }) => id);
+    const selectionCount = desktop.getByText("2 artboards selected", { exact: true });
+    const visualOutline = desktop.locator(".artboard-group-outline");
+    const spot = { x: 35, y: 35 };
+    const beforeKeyboard = await snapshot();
+    await left.focus();
+    await desktop.keyboard.press("Enter");
+    assert.deepEqual(await selectedIds(), [groupIds[0]]);
+    for (let i = 0; i < 3; i++) await desktop.keyboard.press("Tab");
+    assert.equal(await right.evaluate((node) => node === document.activeElement), true);
+    await desktop.keyboard.press("Shift+Enter");
+    await visualOutline.waitFor();
+    assert.deepEqual(await selectedIds(), groupIds);
+    assert.equal(
+      await right
+        .locator(".editable-name")
+        .evaluate((element) => getComputedStyle(element).textDecorationLine),
+      "underline",
+    );
+    await desktop.keyboard.press("ArrowRight");
+    const keyboardMove = await waitForRevision(desktop, beforeKeyboard.revision + 1);
+    assert.deepEqual(
+      keyboardMove.artboards.slice(1).map(({ x }) => x),
+      groupBoards.map(({ x }) => x + 5),
+    );
+    await desktop.keyboard.press("Meta+z");
+    await waitForRevision(desktop, keyboardMove.revision + 1);
+    await desktop.keyboard.press("Escape");
+    await visualOutline.waitFor({ state: "detached" });
+    assert.deepEqual(await selectedIds(), []);
+
+    await left.click({ position: spot });
+    await right.click({ position: spot, modifiers: ["Shift"] });
+    await visualOutline.waitFor();
+    assert.deepEqual(await selectedIds(), groupIds);
+    await right.click({ position: spot, modifiers: ["Shift"] });
+    assert.deepEqual(await selectedIds(), [groupIds[0]]);
+    await right.click({ position: spot, modifiers: ["Shift"] });
+    await visualOutline.waitFor();
+    await left.click({ position: spot });
+    await visualOutline.waitFor({ state: "detached" });
+    assert.deepEqual(await selectedIds(), [groupIds[0]]);
+
+    const leftBox = await left.boundingBox();
+    const rightBox = await right.boundingBox();
+    // The marquee crosses both artboards without enclosing either of them.
+    await desktop.mouse.move(leftBox.x - 24, leftBox.y + leftBox.height + 18);
+    await desktop.mouse.down();
+    await desktop.mouse.move(rightBox.x + rightBox.width / 2, rightBox.y + rightBox.height / 2, {
+      steps: 12,
+    });
+    await desktop.locator(".react-flow__selection").waitFor();
+    if (evidence) await desktop.screenshot({ path: join(evidence, "artboard-marquee.png") });
+    await desktop.mouse.up();
+    await selectionCount.waitFor();
+    assert.deepEqual(await selectedIds(), groupIds);
+
+    const beforeNudge = await snapshot();
+    const selectionOutline = desktop.locator(".react-flow__nodesselection-rect");
+    const verifyOutline = () =>
+      visualOutline.evaluate((group) => {
+        const artboards = [...document.querySelectorAll(".react-flow__node.selected .artboard")];
+        const bounds = artboards.map((artboard) => artboard.getBoundingClientRect());
+        const rect = group.getBoundingClientRect();
+        const groupStyle = getComputedStyle(group);
+        return {
+          inset: [
+            rect.left - Math.min(...bounds.map(({ left }) => left)),
+            rect.top - Math.min(...bounds.map(({ top }) => top)),
+            rect.right - Math.max(...bounds.map(({ right }) => right)),
+            rect.bottom - Math.max(...bounds.map(({ bottom }) => bottom)),
+          ],
+          groupOutline: [
+            groupStyle.borderWidth,
+            groupStyle.outlineStyle,
+            groupStyle.outlineWidth,
+            groupStyle.outlineOffset,
+          ],
+          individualOutlines: artboards.map((artboard) => {
+            const { outlineWidth, outlineOffset } = getComputedStyle(artboard);
+            return [outlineWidth, outlineOffset];
+          }),
+        };
+      });
+    const assertFlush = async () => {
+      const { inset, groupOutline, individualOutlines } = await verifyOutline();
+      assert.ok(
+        inset.every((edge) => Math.abs(edge) < 0.25),
+        `Selection edge offsets: ${inset}`,
+      );
+      assert.deepEqual(groupOutline, ["0px", "dashed", "2px", "0px"]);
+      assert.deepEqual(individualOutlines, [
+        ["2px", "0px"],
+        ["2px", "0px"],
+      ]);
+    };
+    await assertFlush();
+    if (evidence)
+      await desktop.screenshot({ path: join(evidence, "artboard-selection-outline.png") });
+    await selectionOutline.press("ArrowRight");
+    const nudged = await waitForRevision(desktop, beforeNudge.revision + 1);
+    assert.deepEqual(
+      nudged.artboards.slice(1).map(({ x }) => x),
+      groupBoards.map(({ x }) => x + 5),
+    );
+    await desktop.keyboard.press("Meta+z");
+    await waitForRevision(desktop, nudged.revision + 1);
+
+    const beforeGroupMove = await snapshot();
+    const viewport = desktop.locator(".react-flow__viewport");
+    const beforeZoom = await viewport.getAttribute("style");
+    await pinchCanvas(desktop, -10);
+    await desktop.waitForFunction(
+      (oldStyle) =>
+        document.querySelector(".react-flow__viewport").getAttribute("style") !== oldStyle,
+      beforeZoom,
+    );
+    await assertFlush();
+    const zoomedLeft = await left.boundingBox();
+    await desktop.mouse.move(zoomedLeft.x + 40, zoomedLeft.y + 50);
+    await desktop.mouse.down();
+    await desktop.mouse.move(zoomedLeft.x + 65, zoomedLeft.y + 90, { steps: 8 });
+    await desktop.mouse.up();
+    const movedGroup = await waitForRevision(desktop, beforeGroupMove.revision + 1);
+    const [first, second] = movedGroup.artboards.filter(({ id }) => groupIds.includes(id));
+    const [dx, dy] = [first.x - groupBoards[0].x, first.y - groupBoards[0].y];
+    assert.ok(dx > 0 && dy > 0, `Group drag moved by ${dx}, ${dy}`);
+    assert.ok(Math.abs(second.x - first.x - 250) < 0.00001);
+    assert.equal(second.y, first.y);
+    assert.deepEqual(movedGroup.artboards[0], beforeGroupMove.artboards[0]);
+    assert.deepEqual(
+      [first.previewUrl, second.previewUrl],
+      beforeGroupMove.artboards.slice(1).map(({ previewUrl }) => previewUrl),
+    );
+
+    await desktop.keyboard.press("Meta+d");
+    await desktop.waitForFunction(
+      () => document.querySelectorAll(".react-flow__node").length === 5,
+    );
+    await selectionCount.waitFor();
+    const duplicated = await snapshot();
+    assert.equal(duplicated.revision, movedGroup.revision + 1);
+    const groupCopies = duplicated.artboards.slice(3);
+    const copyIds = groupCopies.map(({ id }) => id);
+    assert.deepEqual(await selectedIds(), copyIds);
+    await assertFlush();
+    assert.deepEqual(
+      groupCopies.map(({ x, y }) => [x, y]),
+      [
+        [first.x + 40, first.y + 40],
+        [second.x + 40, second.y + 40],
+      ],
+    );
+    const copiedGroup = await desktop.evaluate(() => {
+      const data = new DataTransfer();
+      document.body.dispatchEvent(
+        new ClipboardEvent("copy", { clipboardData: data, bubbles: true, cancelable: true }),
+      );
+      return data.getData("application/x-easy-proto-artboard");
+    });
+    assert.match(copiedGroup, /^[0-9a-f-]{36}$/);
+    const copyTargets = [
+      [],
+      [copyIds[0], copyIds[0]],
+      Array.from({ length: 51 }, () => randomUUID()),
+      [copyIds[0], randomUUID()],
+    ];
+    await assert.rejects(
+      desktop.evaluate(
+        ({ generation, ids, token }) => window.easyProto.copyArtboards(generation, ids, token),
+        {
+          generation: duplicated.generation - 1,
+          ids: copyIds,
+          token: randomUUID(),
+        },
+      ),
+      /project selection changed/i,
+    );
+    for (const ids of copyTargets) {
+      await assert.rejects(
+        desktop.evaluate(
+          ({ generation, ids, token }) => window.easyProto.copyArtboards(generation, ids, token),
+          {
+            generation: duplicated.generation,
+            ids,
+            token: randomUUID(),
+          },
+        ),
+        /validation|artboard IDs must be unique|Too small|Too big|no longer exists/i,
+      );
+    }
+    await desktop.evaluate((id) => {
+      const data = new DataTransfer();
+      data.setData("application/x-easy-proto-artboard", id);
+      document.body.dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }),
+      );
+    }, copiedGroup);
+    await desktop.waitForFunction(
+      () => document.querySelectorAll(".react-flow__node").length === 7,
+    );
+    await assertFlush();
+    await desktop.keyboard.press("Meta+z");
+    await desktop.waitForFunction(
+      () => document.querySelectorAll(".react-flow__node").length === 5,
+    );
+    // Undo removes the pasted boards. Pick the first set of copies again.
+    await boardNode(copyIds[0]).click({ position: { x: 55, y: 55 } });
+    await boardNode(copyIds[1]).click({ position: { x: 55, y: 55 }, modifiers: ["Shift"] });
+    await selectionCount.waitFor();
+    assert.deepEqual(await selectedIds(), copyIds);
+    await assertFlush();
+    const beforeDelete = await snapshot();
+    await desktop.keyboard.press("Delete");
+    await desktop.waitForFunction(
+      () => document.querySelectorAll(".react-flow__node").length === 3,
+    );
+    assert.equal((await snapshot()).revision, beforeDelete.revision + 1);
+    await desktop.keyboard.press("Meta+z");
+    await desktop.waitForFunction(
+      () => document.querySelectorAll(".react-flow__node").length === 5,
+    );
+    await selectionCount.waitFor();
+    assert.deepEqual(await selectedIds(), copyIds);
+    await assertFlush();
+    if (evidence) {
+      await desktop.screenshot({ path: join(evidence, "artboard-multi-select.png") });
+      await desktop.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+      await desktop.locator('html[data-theme="dark"]').waitFor();
+      await desktop.screenshot({ path: join(evidence, "artboard-multi-select-dark.png") });
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()
+          .find((window) => window.isVisible())
+          .setSize(660, 480);
+      });
+      await desktop.waitForFunction(() => innerWidth <= 660);
+      await fitCanvas(desktop);
+      await assertFlush();
+      await desktop.screenshot({ path: join(evidence, "artboard-multi-select-dark-minimum.png") });
+    }
+    await desktop.keyboard.press("Meta+Shift+z");
+    await desktop.waitForFunction(
+      () => document.querySelectorAll(".react-flow__node").length === 3,
+    );
+    await returnHome();
+    await row("Studio project").click();
+    await right.waitFor();
+    const reopenedGroup = await snapshot();
+    await assert.rejects(
+      desktop.evaluate(
+        ({ generation, command }) => window.easyProto.arrangeArtboard(generation, command),
+        {
+          generation: reopenedGroup.generation,
+          command: {
+            projectId,
+            commandId: randomUUID(),
+            expectedRevision: reopenedGroup.revision,
+            operation: "paste_artboard",
+            arguments: { clipboardId: copiedGroup },
+          },
+        },
+      ),
+      /copy an artboard in this project first/i,
+    );
+    await assert.rejects(
+      desktop.evaluate(
+        ({ generation, command }) => window.easyProto.arrangeArtboard(generation, command),
+        {
+          generation: duplicated.generation,
+          command: {
+            projectId,
+            commandId: randomUUID(),
+            expectedRevision: reopenedGroup.revision,
+            operation: "delete_artboards",
+            arguments: { artboardIds: groupIds },
+          },
+        },
+      ),
+      /project selection changed/i,
+    );
+    assert.equal((await snapshot()).revision, reopenedGroup.revision);
+    assert.deepEqual(
+      (await snapshot()).artboards.map(({ id, x, y }) => [id, x, y]),
+      movedGroup.artboards.map(({ id, x, y }) => [id, x, y]),
+    );
+    assert.equal(await selectedNodes.count(), 0);
   },
 );

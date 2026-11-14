@@ -126,10 +126,27 @@ button:disabled { opacity: .55; }
   content: ""; flex: none; width: 6px; height: 6px; margin-right: 3px;
   border: solid var(--muted-foreground); border-width: 1px 1px 0 0; transform: rotate(45deg);
 }
-.canvas { position: relative; min-width: 0; min-height: 0; background: var(--canvas); }
-.canvas .react-flow { --xy-background-color: var(--canvas); }
+.canvas {
+  --selection-outline-width: 2px;
+  position: relative; min-width: 0; min-height: 0; background: var(--canvas);
+}
+.canvas .react-flow {
+  --xy-background-color: var(--canvas);
+  --xy-selection-background-color: color-mix(in srgb, var(--ring) 9%, transparent);
+  --xy-selection-border: 1px solid color-mix(in srgb, var(--ring) 50%, transparent);
+}
+.canvas .react-flow__nodesselection-rect {
+  background: transparent;
+  border: 0;
+}
+.artboard-group-outline {
+  position: absolute;
+  pointer-events: none;
+  outline: var(--selection-outline-width) dashed color-mix(in srgb, var(--ring) 50%, transparent);
+}
 .artboard { position: relative; outline: 1px solid var(--artboard-border); box-shadow: var(--shadow); }
-.react-flow__node.selected .artboard, .react-flow__node:focus-visible .artboard { outline: 2px solid var(--ring); }
+.react-flow__node.selected .artboard, .react-flow__node:focus-visible .artboard { outline: var(--selection-outline-width) solid var(--ring); }
+.react-flow__node:focus-visible .artboard-label .editable-name { text-decoration: underline; text-underline-offset: 3px; }
 .artboard-meta {
   position: absolute; bottom: 100%; left: 0; width: var(--label-width); padding-bottom: 6px;
   transform: scale(var(--inverse-zoom)); transform-origin: bottom left; pointer-events: none;

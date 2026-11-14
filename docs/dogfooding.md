@@ -24,3 +24,11 @@ The same artboard depicts Copy, Paste, Undo, and Redo at project revision 129. [
 The Delete and Restore shortcuts were checked on the same artboard at project revision 174. [Mockup capture](../evidence/dogfooding/Workspace-delete.png)
 
 Revision 183 uses the same artboard to preview a 180 ms fade on the copied board. [Mockup capture](../evidence/dogfooding/Workspace-preview-entry.png)
+
+`Workspace · Multi-select` depicts dragging a selection box around two of three artboards. The local MCP capture of revision 224 rendered at 670 × 265 with no unresolved dependencies. The mockup depicts the gesture as a static frame. Electron automation exercises the live canvas separately. [Mockup capture](../evidence/dogfooding/Workspace-multi-select.png)
+
+Revision 232 depicts a selection box crossing two artboards and a group outline aligned with their edges. The local MCP capture rendered at 670 × 265 with no unresolved dependencies. [Overlap mockup](../evidence/dogfooding/Workspace-multi-select-overlap.png)
+
+Revision 252 previews the hint for scroll panning and pinch zoom. The local MCP capture rendered at 670 × 265 with no unresolved dependencies. The mockup shows the hint as text. Electron verifies the input behavior. [Trackpad mockup](../evidence/dogfooding/Workspace-trackpad-pan.png)
+
+The repository copy saves the final artboard at revision 219, replayed through MCP on the previous checked-in mock project. [Portable mock capture](../evidence/multi-select-commit/portable-mock.png)

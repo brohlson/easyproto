@@ -15,12 +15,14 @@ import { basename, join } from "node:path";
 import { z } from "zod";
 import {
   boardInput,
+  artboardLimit,
   commandSchema,
   coordinateLimit,
   id,
   manifestSchema,
   projectName,
   revision,
+  schemaVersion,
   source,
   type Artboard,
   type Commit,
@@ -57,9 +59,10 @@ function canonical(value: unknown): string {
 export type Snapshot = { manifest: Manifest; sources: ReadonlyMap<string, Source> };
 type BoardInput = z.infer<typeof boardInput>;
 type ArtboardState = { board: Artboard; source: Source };
-type HistoryEntry =
-  | { before?: ArtboardState; after: ArtboardState; index?: never }
-  | { before: ArtboardState; after?: never; index: number };
+type HistoryChange = { index: number } & (
+  | { before?: ArtboardState; after: ArtboardState }
+  | { before: ArtboardState; after?: never }
+);
 const historyLimit = 50;
 export type Asset = { bytes: Buffer; mime: string };
 const assetTypes = new Map([
@@ -73,7 +76,7 @@ const assetTypes = new Map([
   [".woff", "font/woff"],
 ]);
 const pointerSchema = z.strictObject({
-  schemaVersion: z.union([z.literal(1), z.literal(2)]),
+  schemaVersion,
   projectId: id,
   revision,
   snapshot: id,
@@ -159,26 +162,115 @@ function metadata(artboardId: string, atRevision: number, input: BoardInput) {
   return { artboard, source: { html, css } };
 }
 
-function offsetCoordinate(value: number, offset: number) {
-  return value + offset <= coordinateLimit ? value + offset : value - offset;
+function translation(bounds: Artboard[], dx: number, dy: number) {
+  const clamp = (delta: number, axis: "x" | "y") => {
+    const values = bounds.map((board) => board[axis]);
+    return Math.max(
+      -coordinateLimit - Math.min(...values),
+      Math.min(delta, coordinateLimit - Math.max(...values)),
+    );
+  };
+  return { x: clamp(dx, "x"), y: clamp(dy, "y") };
 }
 
-function copyInput(original: ArtboardState, boards: Artboard[]): BoardInput {
-  const { name, width, height, x: originalX, y: originalY } = original.board;
-  let offset = 40;
-  let x = offsetCoordinate(originalX, offset);
-  let y = offsetCoordinate(originalY, offset);
-  while (boards.some((board) => board.x === x && board.y === y)) {
-    offset += 40;
-    x = offsetCoordinate(originalX, offset);
-    y = offsetCoordinate(originalY, offset);
+function translatedPosition(board: Artboard, offset: { x: number; y: number }) {
+  // Adding a clamped delta can still round past the coordinate limit.
+  const clamp = (value: number) => Math.max(-coordinateLimit, Math.min(value, coordinateLimit));
+  return { x: clamp(board.x + offset.x), y: clamp(board.y + offset.y) };
+}
+
+function copyOffset(originals: Artboard[], boards: Artboard[]) {
+  const occupied = new Set(boards.map(({ x, y }) => `${x},${y}`));
+  const attempts = occupied.size * originals.length + 1;
+  const free = ({ x, y }: { x: number; y: number }) =>
+    (x || y) &&
+    originals.every((board) => {
+      const position = translatedPosition(board, { x, y });
+      return !occupied.has(`${position.x},${position.y}`);
+    });
+  for (let step = 40; step <= 40 * attempts; step += 40) {
+    const forward = translation(originals, step, step);
+    const backward = translation(originals, -step, -step);
+    const offset = {
+      x: forward.x === step ? forward.x : backward.x,
+      y: forward.y === step ? forward.y : backward.y,
+    };
+    if (free(offset)) return offset;
   }
+  // A group at the canvas limits may only have room for a smaller shift.
+  for (const [dx, dy] of [
+    [40, 40],
+    [-40, -40],
+    [40, 0],
+    [-40, 0],
+    [0, 40],
+    [0, -40],
+  ]) {
+    const room = translation(originals, dx, dy);
+    if (!room.x && !room.y) continue;
+    for (let step = attempts; step > 0; step--) {
+      const offset = { x: room.x * (step / attempts), y: room.y * (step / attempts) };
+      if (free(offset)) return offset;
+    }
+  }
+  throw new ProjectError(
+    "PROJECT_CAPACITY",
+    "Make room on the canvas before duplicating this selection.",
+  );
+}
+
+function copyInput(original: ArtboardState, offset: { x: number; y: number }): BoardInput {
+  const { name, width, height } = original.board;
   const suffix = " copy";
   const prefix = name
     .slice(0, 100 - suffix.length)
     .replace(/[\uD800-\uDBFF]$/, "")
     .trimEnd();
-  return { name: prefix + suffix, width, height, x, y, ...original.source };
+  return {
+    name: prefix + suffix,
+    width,
+    height,
+    ...translatedPosition(original.board, offset),
+    ...original.source,
+  };
+}
+
+function readBoards({ manifest, sources }: Snapshot, artboardIds: string[]) {
+  const ids = new Set(artboardIds);
+  const matches = manifest.artboards.flatMap((board, index) =>
+    ids.has(board.id) ? [{ index, before: { board, source: sources.get(board.id)! } }] : [],
+  );
+  if (matches.length !== ids.size)
+    throw new ProjectError("ARTBOARD_NOT_FOUND", "An artboard in the selection no longer exists.");
+  return matches;
+}
+
+function applyHistory(
+  entry: HistoryChange[],
+  undo: boolean,
+  boards: Artboard[],
+  sources: Map<string, Source>,
+  atRevision: number,
+) {
+  return entry.map((change) => {
+    const id = (change.after ?? change.before).board.id;
+    const index = boards.findIndex((board) => board.id === id);
+    const current = boards[index];
+    const target = undo ? change.before : change.after;
+    if (!target) {
+      if (!current) throw new Error("The artboard to remove is missing.");
+      boards.splice(index, 1);
+      sources.delete(id);
+      return current;
+    }
+    const sourceRevision =
+      current?.sourceDigest === target.board.sourceDigest ? current.sourceRevision : atRevision;
+    const board = { ...target.board, sourceRevision };
+    if (current) boards[index] = board;
+    else boards.splice(change.index, 0, board);
+    sources.set(id, target.source);
+    return board;
+  });
 }
 
 function starter(): Snapshot {
@@ -239,15 +331,23 @@ async function load(root: string): Promise<Snapshot> {
   }
   const commands = new Set<string>();
   for (const { result } of manifest.commands) {
+    const affected = result.artboards ?? [result.artboard];
     if (
       commands.has(result.commandId) ||
       result.projectId !== manifest.projectId ||
       result.revision < 1 ||
       result.revision > manifest.revision ||
       (manifest.schemaVersion === 1 && !sources.has(result.artboard.id)) ||
-      result.artboard.htmlRef !== `${result.artboard.id}.html` ||
-      result.artboard.cssRef !== `${result.artboard.id}.css` ||
-      result.artboard.sourceRevision > result.revision
+      (result.artboards &&
+        (manifest.schemaVersion !== 3 ||
+          canonical(result.artboard) !== canonical(affected[0]) ||
+          new Set(affected.map(({ id }) => id)).size !== affected.length)) ||
+      affected.some(
+        (board) =>
+          board.htmlRef !== `${board.id}.html` ||
+          board.cssRef !== `${board.id}.css` ||
+          board.sourceRevision > result.revision,
+      )
     ) {
       throw new Error("Invalid command history.");
     }
@@ -304,9 +404,9 @@ async function publish(root: string, snapshot: Snapshot, onPhase?: (phase: Commi
 export class Project {
   #tail = Promise.resolve();
   #snapshot: Snapshot;
-  #undo: HistoryEntry[] = [];
-  #redo: HistoryEntry[] = [];
-  #clipboard?: { id: string; original: ArtboardState };
+  #undo: HistoryChange[][] = [];
+  #redo: HistoryChange[][] = [];
+  #clipboard?: { id: string; originals: ArtboardState[] };
   readonly assetDigest: string;
 
   private constructor(
@@ -389,12 +489,10 @@ export class Project {
     return this.#redo.length > 0;
   }
 
-  copyArtboard(artboardId: string, clipboardId: string) {
-    const board = this.#snapshot.manifest.artboards.find((item) => item.id === artboardId);
-    if (!board) throw new ProjectError("ARTBOARD_NOT_FOUND", "The artboard does not exist.");
+  copyArtboards(artboardIds: string[], clipboardId: string) {
     this.#clipboard = {
       id: clipboardId,
-      original: { board, source: this.#snapshot.sources.get(artboardId)! },
+      originals: readBoards(this.#snapshot, artboardIds).map(({ before }) => before),
     };
   }
 
@@ -439,102 +537,104 @@ export class Project {
       const boards = [...manifest.artboards];
       const nextSources = new Map(sources);
       const operation = command.operation;
-      let entry: HistoryEntry;
-      let board: Artboard;
+      let entry: HistoryChange[];
       if (operation === "undo" || operation === "redo") {
         const history = operation === "undo" ? this.#undo : this.#redo;
         const saved = history.at(-1);
         if (!saved) throw new ProjectError("HISTORY_EMPTY", `Nothing to ${operation}.`);
         entry = saved;
-        const target = operation === "undo" ? entry.before : entry.after;
-        const artboardId = (entry.after ?? entry.before).board.id;
-        const index = boards.findIndex((item) => item.id === artboardId);
-        const current = boards[index];
-        if (target) {
-          const sourceRevision =
-            current?.sourceDigest === target.board.sourceDigest
-              ? current.sourceRevision
-              : atRevision;
-          board = { ...target.board, sourceRevision };
-          if (current) boards[index] = board;
-          else if (entry.index !== undefined) boards.splice(entry.index, 0, board);
-          else boards.push(board);
-          nextSources.set(artboardId, target.source);
-        } else {
-          if (!current) throw new Error("The artboard to remove is missing.");
-          board = current;
-          boards.splice(index, 1);
-          nextSources.delete(artboardId);
-        }
-      } else if (command.operation === "delete_artboard") {
-        const { artboardId } = command.arguments;
-        const index = boards.findIndex((item) => item.id === artboardId);
-        if (index < 0) throw new ProjectError("ARTBOARD_NOT_FOUND", "The artboard does not exist.");
-        [board] = boards.splice(index, 1);
-        entry = { before: { board, source: sources.get(artboardId)! }, index };
-        nextSources.delete(artboardId);
-      } else if (command.operation !== "update_artboard") {
-        if (boards.length >= 50)
-          throw new ProjectError("PROJECT_CAPACITY", "This slice supports up to 50 artboards.");
-        let input: BoardInput;
-        if (command.operation === "paste_artboard") {
-          if (this.#clipboard?.id !== command.arguments.clipboardId)
-            throw new ProjectError("CLIPBOARD_EMPTY", "Copy an artboard in this project first.");
-          input = copyInput(this.#clipboard.original, boards);
-        } else if (command.operation === "duplicate_artboard") {
-          const { artboardId } = command.arguments;
-          const original = boards.find((item) => item.id === artboardId);
-          if (!original)
-            throw new ProjectError("ARTBOARD_NOT_FOUND", "The artboard does not exist.");
-          input = copyInput({ board: original, source: sources.get(artboardId)! }, boards);
-        } else {
-          input = command.arguments;
-        }
-        const created = metadata(randomUUID(), atRevision, input);
-        board = created.artboard;
-        boards.push(board);
-        nextSources.set(board.id, created.source);
-        entry = { after: { board, source: created.source } };
-      } else {
+      } else if (operation === "delete_artboard" || operation === "delete_artboards") {
+        entry = readBoards(
+          this.#snapshot,
+          operation === "delete_artboard"
+            ? [command.arguments.artboardId]
+            : command.arguments.artboardIds,
+        );
+      } else if (operation === "move_artboards") {
+        const { artboardIds, dx, dy } = command.arguments;
+        const selected = readBoards(this.#snapshot, artboardIds);
+        const offset = translation(
+          selected.map(({ before }) => before.board),
+          dx,
+          dy,
+        );
+        entry = selected.map(({ index, before }) => ({
+          index,
+          before,
+          after: {
+            ...before,
+            board: { ...before.board, ...translatedPosition(before.board, offset) },
+          },
+        }));
+      } else if (operation === "update_artboard") {
         const { artboardId, patch } = command.arguments;
-        const index = boards.findIndex((item) => item.id === artboardId);
-        if (index < 0) throw new ProjectError("ARTBOARD_NOT_FOUND", "The artboard does not exist.");
-        const previousBoard = boards[index];
-        const previousSource = sources.get(artboardId)!;
+        const [previous] = readBoards(this.#snapshot, [artboardId]);
+        const { name, x, y, width, height } = previous.before.board;
         const input = boardInput.parse({
-          name: previousBoard.name,
-          x: previousBoard.x,
-          y: previousBoard.y,
-          width: previousBoard.width,
-          height: previousBoard.height,
-          ...previousSource,
+          name,
+          x,
+          y,
+          width,
+          height,
+          ...previous.before.source,
           ...patch,
         });
-        const updated = metadata(artboardId, atRevision, input);
-        board = updated.artboard;
-        if (board.sourceDigest === previousBoard.sourceDigest)
-          board.sourceRevision = previousBoard.sourceRevision;
-        boards[index] = board;
-        nextSources.set(board.id, updated.source);
-        entry = {
-          before: { board: previousBoard, source: previousSource },
-          after: { board, source: updated.source },
-        };
+        const { artboard, source } = metadata(artboardId, atRevision, input);
+        entry = [{ ...previous, after: { board: artboard, source } }];
+      } else {
+        let inputs: BoardInput[];
+        if (operation === "create_artboard") {
+          inputs = [command.arguments];
+        } else {
+          let originals: ArtboardState[];
+          if (operation === "paste_artboard") {
+            if (this.#clipboard?.id !== command.arguments.clipboardId)
+              throw new ProjectError("CLIPBOARD_EMPTY", "Copy an artboard in this project first.");
+            originals = this.#clipboard.originals;
+          } else {
+            const ids =
+              operation === "duplicate_artboard"
+                ? [command.arguments.artboardId]
+                : command.arguments.artboardIds;
+            originals = readBoards(this.#snapshot, ids).map(({ before }) => before);
+          }
+          const offset = copyOffset(
+            originals.map(({ board }) => board),
+            boards,
+          );
+          inputs = originals.map((original) => copyInput(original, offset));
+        }
+        if (boards.length + inputs.length > artboardLimit)
+          throw new ProjectError(
+            "PROJECT_CAPACITY",
+            `This slice supports up to ${artboardLimit} artboards.`,
+          );
+        entry = inputs.map((input, index) => {
+          const { artboard, source } = metadata(randomUUID(), atRevision, input);
+          return { index: boards.length + index, after: { board: artboard, source } };
+        });
       }
+      const affected = applyHistory(entry, operation === "undo", boards, nextSources, atRevision);
       const result: Commit = {
         status: "committed",
         projectId: command.projectId,
         commandId: command.commandId,
         revision: atRevision,
-        artboard: board,
+        artboard: affected[0],
+        ...(affected.length > 1 ? { artboards: affected } : {}),
       };
       const next = {
         manifest: {
           ...manifest,
           schemaVersion:
-            operation === "delete_artboard" || operation === "undo" || operation === "redo"
-              ? (2 as const)
-              : manifest.schemaVersion,
+            affected.length > 1 || manifest.schemaVersion === 3
+              ? (3 as const)
+              : operation === "delete_artboard" ||
+                  operation === "delete_artboards" ||
+                  operation === "undo" ||
+                  operation === "redo"
+                ? (2 as const)
+                : manifest.schemaVersion,
           revision: atRevision,
           artboards: boards,
           commands: [...manifest.commands, { digest: fingerprint, result }],

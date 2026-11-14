@@ -58,7 +58,7 @@ test("simultaneous edits, failed save and unsupported schema preserve the author
   assert.deepEqual(await reopened.execute(first), saved.value);
   const pointerPath = join(folder, "project.json");
   const pointer = JSON.parse(await readFile(pointerPath, "utf8"));
-  const unsupported = JSON.stringify({ ...pointer, schemaVersion: 3 });
+  const unsupported = JSON.stringify({ ...pointer, schemaVersion: 4 });
   await writeFile(pointerPath, unsupported);
   await assert.rejects(Project.open(folder));
   assert.equal(await readFile(pointerPath, "utf8"), unsupported);
@@ -200,7 +200,7 @@ test("copy freezes its source and undo preserves saved revisions and command ret
   } = project.snapshot.manifest;
   const clipboardId = randomUUID();
   const before = project.snapshot.sources.get(original.id);
-  project.copyArtboard(original.id, clipboardId);
+  project.copyArtboards([original.id], clipboardId);
   const run = (operation, args = {}) => ({
     projectId,
     commandId: randomUUID(),
@@ -279,4 +279,178 @@ test("artboard deletion survives reopening and undo restores the original artboa
     arguments: {},
   });
   assert.deepEqual((await Project.open(folder)).snapshot.manifest.artboards, [neighbor]);
+});
+
+test("group edits are atomic, undo in one step, and replay complete results after reopening", async (t) => {
+  const { project, folder } = await fixture(t);
+  const projectId = project.snapshot.manifest.projectId;
+  const edit = (operation, args) => ({
+    projectId,
+    commandId: randomUUID(),
+    expectedRevision: project.snapshot.manifest.revision,
+    operation,
+    arguments: args,
+  });
+  await project.execute(edit("create_artboard", { ...args, x: 100 }));
+  await project.execute(edit("create_artboard", { ...args, x: 200 }));
+  const original = project.snapshot.manifest.artboards;
+  const selected = [original[0], original[2]];
+  const ids = selected.map(({ id }) => id).reverse();
+  const missing = edit("delete_artboards", { artboardIds: [...ids, randomUUID()] });
+  await assert.rejects(project.execute(missing), { code: "ARTBOARD_NOT_FOUND" });
+  assert.deepEqual(project.snapshot.manifest.artboards, original);
+  const move = await project.execute(
+    edit("move_artboards", { artboardIds: ids, dx: 100_000, dy: 20 }),
+  );
+  assert.equal(move.revision, 3);
+  assert.deepEqual(
+    move.artboards.map(({ x, y, sourceRevision }) => [x, y, sourceRevision]),
+    selected.map(({ x, y, sourceRevision }) => [x + 99_800, y + 20, sourceRevision]),
+  );
+  assert.deepEqual(project.snapshot.manifest.artboards[1], original[1]);
+  await project.execute(edit("undo", {}));
+  assert.deepEqual(project.snapshot.manifest.artboards, original);
+
+  const duplicate = edit("duplicate_artboards", { artboardIds: ids });
+  const copies = await project.execute(duplicate);
+  assert.equal(copies.artboards.length, 2);
+  assert.deepEqual(
+    copies.artboards.map(({ x, y }) => [x, y]),
+    selected.map(({ x, y }) => [x + 40, y + 40]),
+  );
+  for (const [index, copy] of copies.artboards.entries()) {
+    assert.notEqual(copy.id, selected[index].id);
+    assert.deepEqual(
+      project.snapshot.sources.get(copy.id),
+      project.snapshot.sources.get(selected[index].id),
+    );
+  }
+  await project.execute(edit("undo", {}));
+  assert.deepEqual(project.snapshot.manifest.artboards, original);
+  const redo = await project.execute(edit("redo", {}));
+  assert.deepEqual(
+    redo.artboards.map(({ id }) => id),
+    copies.artboards.map(({ id }) => id),
+  );
+
+  const clipboardId = randomUUID();
+  project.copyArtboards(ids, clipboardId);
+  const deleted = await project.execute(edit("delete_artboards", { artboardIds: ids }));
+  assert.ok(ids.every((id) => !project.snapshot.sources.has(id)));
+  await assert.rejects(project.execute({ ...missing, arguments: { artboardIds: ids } }), {
+    code: "REVISION_CONFLICT",
+  });
+  const pasted = await project.execute(edit("paste_artboard", { clipboardId }));
+  assert.equal(pasted.artboards.length, 2);
+  assert.deepEqual(
+    pasted.artboards.map(({ sourceDigest }) => sourceDigest),
+    selected.map(({ sourceDigest }) => sourceDigest),
+  );
+  await project.execute(edit("undo", {}));
+  await project.execute(edit("undo", {}));
+  assert.deepEqual(
+    project.snapshot.manifest.artboards.slice(0, 3).map(({ id }) => id),
+    original.map(({ id }) => id),
+  );
+
+  await project.execute(edit("delete_artboard", { artboardId: original[1].id }));
+  const reopened = await Project.open(folder);
+  assert.equal(reopened.snapshot.manifest.schemaVersion, 3);
+  assert.deepEqual(reopened.snapshot.manifest.artboards, project.snapshot.manifest.artboards);
+  assert.deepEqual(await reopened.execute(duplicate), copies);
+  await assert.rejects(
+    reopened.execute({ ...duplicate, arguments: { artboardIds: [original[0].id] } }),
+    { code: "COMMAND_ID_REUSED" },
+  );
+  assert.equal(deleted.artboards.length, 2);
+});
+
+test("fractional group positions at the canvas limit stay valid across save and retry", async (t) => {
+  const { project, folder } = await fixture(t);
+  const {
+    projectId,
+    artboards: [first],
+  } = project.snapshot.manifest;
+  await project.execute({
+    projectId,
+    commandId: randomUUID(),
+    expectedRevision: 0,
+    operation: "update_artboard",
+    arguments: { artboardId: first.id, patch: { x: -100_000 } },
+  });
+  const { artboard: second } = await project.execute({
+    ...command(projectId),
+    expectedRevision: 1,
+    arguments: { ...args, x: -99_999.7 },
+  });
+  const move = {
+    projectId,
+    commandId: randomUUID(),
+    expectedRevision: 2,
+    operation: "move_artboards",
+    arguments: { artboardIds: [first.id, second.id], dx: 200_000, dy: 0 },
+  };
+  await killAt(folder, move, "snapshotWritten");
+  const beforePublication = await Project.open(folder);
+  assert.equal(beforePublication.snapshot.manifest.schemaVersion, 1);
+  assert.equal(beforePublication.snapshot.manifest.revision, 2);
+  assert.equal(beforePublication.snapshot.manifest.artboards[1].x, -99_999.7);
+  await killAt(folder, move, "pointerPublished");
+  const reopened = await Project.open(folder);
+  assert.equal(reopened.snapshot.manifest.schemaVersion, 3);
+  const committed = await reopened.execute(move);
+  assert.equal(committed.revision, 3);
+  assert.equal(committed.artboards[1].x, 100_000);
+  assert.ok(Math.abs(committed.artboards[1].x - committed.artboards[0].x - 0.3) < 1e-9);
+  assert.deepEqual(reopened.snapshot.manifest.artboards, committed.artboards);
+  assert.deepEqual(await reopened.execute(move), committed);
+});
+
+test("group duplication finds a smaller offset when a canvas edge blocks the preferred one", async (t) => {
+  const { project } = await fixture(t);
+  const {
+    projectId,
+    artboards: [first],
+  } = project.snapshot.manifest;
+  await project.execute({
+    projectId,
+    commandId: randomUUID(),
+    expectedRevision: 0,
+    operation: "update_artboard",
+    arguments: { artboardId: first.id, patch: { x: -100_000, y: -100_000 } },
+  });
+  const { artboard: second } = await project.execute({
+    ...command(projectId),
+    expectedRevision: 1,
+    arguments: { ...args, x: 100_000, y: 99_950 },
+  });
+  await project.execute({
+    ...command(projectId),
+    expectedRevision: 2,
+    arguments: { ...args, x: 100_000, y: 99_990 },
+  });
+  const copied = await project.execute({
+    projectId,
+    commandId: randomUUID(),
+    expectedRevision: 3,
+    operation: "duplicate_artboards",
+    arguments: { artboardIds: [first.id, second.id] },
+  });
+  const clipboardId = randomUUID();
+  project.copyArtboards([first.id, second.id], clipboardId);
+  const pasted = await project.execute({
+    projectId,
+    commandId: randomUUID(),
+    expectedRevision: 4,
+    operation: "paste_artboard",
+    arguments: { clipboardId },
+  });
+  assert.notEqual(copied.artboards[1].y, pasted.artboards[1].y);
+  for (const result of [copied, pasted]) {
+    const [a, b] = result.artboards;
+    assert.deepEqual([a.x, b.x], [-100_000, 100_000]);
+    const offset = b.y - second.y;
+    assert.ok(offset > 0 && offset < 40);
+    assert.equal(a.y - -100_000, offset);
+  }
 });

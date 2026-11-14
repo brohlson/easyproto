@@ -31,3 +31,13 @@ Route Home, previews, and MCP authority to Security. Route project persistence, 
 - Keep the artboard outline visible while the iframe loads. Fade in the preview after load, respect Reduced Motion, and preserve preview identity on canvas moves and zoom.
 
 Route persistence to Architecture/Reliability, clipboard and IPC scope to Security, and canvas shortcuts and preview entry to Frontend and Design.
+
+## Multi-select and trackpad panning
+
+- Shift-click toggles artboards, and a selection box includes every board it partially overlaps. The dashed group outline aligns with artboard edges at different zoom levels.
+- Swiping with two fingers or scrolling moves the canvas horizontally or vertically at the same zoom. Pinch still zooms while retaining the artboard’s CSS viewport. Space-drag still pans.
+- Move, duplicate, paste, or delete multiple selected artboards together. One saved revision and one undo step cover the group. Copies retain the group geometry and use independent IDs and sources.
+- Verify stale and invalid group edits leave the document intact, grouped moves retain source revisions, and committed group results replay after reopening version 3. Read existing version 1 and version 2 projects.
+- Verify the narrow clipboard and document bridge still rejects unauthorized contexts and the HTML/CSS previews remain isolated. Reopen the portable mockup in the exported candidate.
+
+Route gestures and outline behavior to Frontend and Design. Route versioning, command replay, and grouped undo to Architecture and Reliability. Route the changed preload and clipboard IPC to Security. Related requirements are INV-01 through INV-07 and INV-13.

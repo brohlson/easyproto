@@ -14,6 +14,9 @@ import { createRoot } from "react-dom/client";
 import {
   Background,
   ReactFlow,
+  SelectionMode,
+  ViewportPortal,
+  getNodesBounds,
   applyNodeChanges,
   useNodesState,
   useReactFlow,
@@ -128,6 +131,22 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
 });
 
 const nodeTypes = { artboard: ArtboardNode };
+
+function GroupOutline({ selection }: { selection: BoardNode[] }) {
+  const selecting = useStore((state) => state.userSelectionActive);
+  if (selecting || selection.length < 2) return null;
+  const { x, y, width, height } = getNodesBounds(selection);
+  return (
+    <ViewportPortal>
+      <div
+        className="artboard-group-outline"
+        aria-hidden="true"
+        style={{ left: x, top: y, width, height }}
+      />
+    </ViewportPortal>
+  );
+}
+
 const arrows = new Map([
   ["ArrowUp", { x: 0, y: -1 }],
   ["ArrowDown", { x: 0, y: 1 }],
@@ -174,19 +193,19 @@ function App() {
   const savingGeneration = useRef<number>(null);
   const latest = useRef<Scene>(null);
   const receivedVersion = useRef(-1);
-  const drag = useRef<{ id: string; scene: Scene }>(null);
-  const pendingCopy = useRef<string>(null);
+  const drag = useRef<{ ids: Set<string>; scene: Scene }>(null);
+  const pendingSelection = useRef<{ ids: Set<string>; focusId: string }>(null);
   const clipboard = useRef<{ id: string; ready: Promise<boolean> }>(null);
 
   function reconcile(currentScene: Scene, reset = false) {
-    const draggingId = drag.current?.id;
-    const copy = pendingCopy.current;
-    const selectCopy = copy && currentScene.artboards.some((board) => board.id === copy);
+    const dragging = drag.current?.ids;
+    const selection = pendingSelection.current;
+    const select = selection && currentScene.artboards.some(({ id }) => id === selection.focusId);
     setNodes((currentNodes) =>
       currentScene.artboards.map((board) => {
         const existing = reset ? undefined : currentNodes.find((node) => node.id === board.id);
         const position =
-          draggingId === board.id && existing ? existing.position : { x: board.x, y: board.y };
+          dragging?.has(board.id) && existing ? existing.position : { x: board.x, y: board.y };
         return {
           ...existing,
           id: board.id,
@@ -196,7 +215,7 @@ function App() {
           height: board.height,
           ariaLabel: board.name,
           position,
-          selected: selectCopy ? board.id === copy : existing?.selected,
+          selected: select ? selection.ids.has(board.id) : existing?.selected,
         };
       }),
     );
@@ -210,7 +229,7 @@ function App() {
       const reset = current?.generation !== latest.current?.generation;
       if (reset) {
         drag.current = null;
-        pendingCopy.current = null;
+        pendingSelection.current = null;
         clipboard.current = null;
         savingGeneration.current = null;
         setSaving(false);
@@ -257,14 +276,16 @@ function App() {
         expectedRevision: from.revision,
         ...change,
       });
-      if (
-        (change.operation === "duplicate_artboard" ||
-          change.operation === "paste_artboard" ||
-          ((change.operation === "undo" || change.operation === "redo") &&
-            !from.artboards.some(({ id }) => id === commit.artboard.id))) &&
-        latest.current?.generation === from.generation
-      )
-        pendingCopy.current = commit.artboard.id;
+      const previousIds = new Set(from.artboards.map(({ id }) => id));
+      const added = (commit.artboards ?? [commit.artboard]).filter(
+        ({ id }) => !previousIds.has(id),
+      );
+      if (added.length && latest.current?.generation === from.generation) {
+        pendingSelection.current = {
+          ids: new Set(added.map(({ id }) => id)),
+          focusId: added[0].id,
+        };
+      }
     } catch (error) {
       const detail = error instanceof Error ? error.message.split("Error: ").at(-1) : undefined;
       if (latest.current?.generation === from.generation) {
@@ -287,7 +308,7 @@ function App() {
     return saveArtboard({ operation: "update_artboard", arguments: { artboardId, patch } }, from);
   }
 
-  const selected = nodes.find((node) => node.selected);
+  const selection = nodes.filter((node) => node.selected);
   function canEditCanvas(target: EventTarget | null) {
     return (
       !choosing &&
@@ -306,7 +327,7 @@ function App() {
     if (
       !event.clipboardData ||
       !current ||
-      !selected ||
+      !selection.length ||
       !canEditCanvas(event.target) ||
       window.getSelection()?.toString()
     )
@@ -315,14 +336,20 @@ function App() {
     event.clipboardData.clearData();
     event.clipboardData.setData(artboardClipboardType, id);
     event.preventDefault();
-    const ready = window.easyProto.copyArtboard(current.generation, selected.id, id).then(
-      () => true,
-      () => {
-        if (latest.current?.generation === current.generation)
-          setMessage("The artboard could not be copied.");
-        return false;
-      },
-    );
+    const ready = window.easyProto
+      .copyArtboards(
+        current.generation,
+        selection.map(({ id }) => id),
+        id,
+      )
+      .then(
+        () => true,
+        () => {
+          if (latest.current?.generation === current.generation)
+            setMessage("The selection could not be copied.");
+          return false;
+        },
+      );
     clipboard.current = { id, ready };
   });
 
@@ -351,9 +378,10 @@ function App() {
     const key = event.key.toLowerCase();
     // The macOS Delete key reports Backspace. Forward Delete reports Delete.
     const remove = key === "backspace" || key === "delete";
+    const clearSelection = key === "escape" && !event.metaKey;
     const canvasCommand = event.metaKey && (key === "d" || key === "z");
     if (
-      !(canvasCommand || (remove && !event.metaKey)) ||
+      !(canvasCommand || clearSelection || (remove && !event.metaKey)) ||
       event.ctrlKey ||
       event.altKey ||
       (key !== "z" && event.shiftKey) ||
@@ -366,6 +394,14 @@ function App() {
 
     const current = latest.current;
     if (!current) return;
+    if (clearSelection && selection.length) {
+      event.preventDefault();
+      event.stopPropagation();
+      setNodes((current) =>
+        current.map((node) => (node.selected ? { ...node, selected: false } : node)),
+      );
+      return;
+    }
     if (key === "z") {
       const redo = event.shiftKey;
       if (redo ? !current.canRedo : !current.canUndo) return;
@@ -373,12 +409,13 @@ function App() {
       void saveArtboard({ operation: redo ? "redo" : "undo", arguments: {} }, current);
       return;
     }
-    if (!selected) return;
+    if (!selection.length) return;
     event.preventDefault();
+    const artboardIds = selection.map(({ id }) => id);
     void saveArtboard(
       {
-        operation: remove ? "delete_artboard" : "duplicate_artboard",
-        arguments: { artboardId: selected.id },
+        operation: remove ? "delete_artboards" : "duplicate_artboards",
+        arguments: { artboardIds },
       },
       current,
     );
@@ -396,12 +433,23 @@ function App() {
     };
   }, []);
 
-  function endDrag(node: BoardNode) {
+  function endDrag(dragged: BoardNode[]) {
     const gesture = drag.current;
     drag.current = null;
-    if (gesture?.id !== node.id) return;
-    const { x, y } = node.position;
-    if (x !== node.data.x || y !== node.data.y) void arrange(node.id, { x, y }, gesture.scene);
+    if (!gesture) return;
+    const first = dragged.find(({ id }) => gesture.ids.has(id));
+    const origin = gesture.scene.artboards.find(({ id }) => id === first?.id);
+    if (!first || !origin) return;
+    const dx = first.position.x - origin.x;
+    const dy = first.position.y - origin.y;
+    if (dx || dy) {
+      void saveArtboard(
+        { operation: "move_artboards", arguments: { artboardIds: [...gesture.ids], dx, dy } },
+        gesture.scene,
+      );
+    } else if (latest.current) {
+      reconcile(latest.current);
+    }
   }
 
   function moveWithKeyboard(event: KeyboardEvent) {
@@ -409,16 +457,27 @@ function App() {
     if (!direction || !(event.target instanceof HTMLElement)) return;
     if (event.target.closest("button, input")) return;
     const nodeId = event.target.closest<HTMLElement>(".react-flow__node")?.dataset.id;
+    const selectionFocused = event.target.classList.contains("react-flow__nodesselection-rect");
     const current = latest.current;
-    const board = current?.artboards.find((item) => item.id === nodeId);
-    if (!current || !board || !nodes.some((node) => node.id === nodeId && node.selected)) return;
+    if (
+      !current ||
+      !selection.length ||
+      (!selectionFocused && !selection.some(({ id }) => id === nodeId))
+    )
+      return;
     event.preventDefault();
     event.stopPropagation();
     if (drag.current || event.repeat) return;
     const step = event.shiftKey ? 20 : 5;
-    void arrange(
-      board.id,
-      { x: board.x + direction.x * step, y: board.y + direction.y * step },
+    void saveArtboard(
+      {
+        operation: "move_artboards",
+        arguments: {
+          artboardIds: selection.map(({ id }) => id),
+          dx: direction.x * step,
+          dy: direction.y * step,
+        },
+      },
       current,
     );
   }
@@ -426,8 +485,8 @@ function App() {
   const editing = {
     disabled: saving || choosing,
     focusCopy(id: string) {
-      if (pendingCopy.current !== id) return false;
-      pendingCopy.current = null;
+      if (pendingSelection.current?.focusId !== id) return false;
+      pendingSelection.current = null;
       return true;
     },
     begin(id: string) {
@@ -560,12 +619,33 @@ function App() {
                   maxZoom={3}
                   nodesDraggable={!saving && !choosing}
                   nodesConnectable={false}
-                  elementsSelectable
+                  elementsSelectable={!saving && !choosing}
                   proOptions={{ hideAttribution: true }}
                   disableKeyboardA11y={false}
                   deleteKeyCode={null}
                   selectionKeyCode={null}
-                  multiSelectionKeyCode={null}
+                  multiSelectionKeyCode="Shift"
+                  selectionOnDrag
+                  selectionMode={SelectionMode.Partial}
+                  panOnScroll
+                  zoomOnScroll={false}
+                  zoomOnPinch
+                  panOnDrag={[1, 2]}
+                  panActivationKeyCode="Space"
+                  onNodeClick={(event, node) => {
+                    if (
+                      event.shiftKey ||
+                      !node.selected ||
+                      savingGeneration.current !== null ||
+                      (event.target instanceof Element && event.target.closest(".nodrag"))
+                    )
+                      return;
+                    setNodes((current) =>
+                      current.map((item) =>
+                        item.selected && item.id !== node.id ? { ...item, selected: false } : item,
+                      ),
+                    );
+                  }}
                   onNodesChange={(changes) => {
                     const accepted = changes.filter((change) => {
                       if (change.type === "select" && savingGeneration.current !== null)
@@ -574,12 +654,17 @@ function App() {
                     });
                     setNodes((current) => applyNodeChanges(accepted, current));
                   }}
-                  onNodeDragStart={(_, node) => {
-                    if (latest.current) drag.current = { id: node.id, scene: latest.current };
+                  onNodeDragStart={(_, _node, dragged) => {
+                    if (latest.current && savingGeneration.current === null)
+                      drag.current = {
+                        ids: new Set(dragged.map(({ id }) => id)),
+                        scene: latest.current,
+                      };
                   }}
-                  onNodeDragStop={(_, node) => endDrag(node)}
+                  onNodeDragStop={(_, _node, dragged) => endDrag(dragged)}
                 >
                   <Background gap={24} size={1.25} color="var(--grid)" />
+                  <GroupOutline selection={selection} />
                   <FitShortcut />
                 </ReactFlow>
               </ArtboardEditing.Provider>
@@ -591,9 +676,11 @@ function App() {
               {scene?.artboards.length === 1 ? "artboard" : "artboards"}
             </span>
             <span title="Shift+0 fits all artboards">
-              {selected
-                ? `${selected.data.name} · ${selected.data.width} × ${selected.data.height} · Delete to remove`
-                : "Drag to arrange · Shift+0 to fit"}
+              {selection.length > 1
+                ? `${selection.length} artboards selected`
+                : selection.length === 1
+                  ? `${selection[0].data.name} · ${selection[0].data.width} × ${selection[0].data.height} · Delete to remove`
+                  : "Scroll to pan · Pinch to zoom · Shift+0 to fit"}
             </span>
           </footer>
         </>

@@ -99,3 +99,19 @@ All nine Apple Silicon macOS checks passed. The Electron check verified both Del
 ## Preview fade
 
 A newly mounted or replaced preview stays transparent until its iframe loads, then fades in over 180 ms. Reduced Motion reveals the loaded preview immediately. Geometry and selection stay visible during loading, and canvas moves and zoom retain the loaded frame. [Verification log](../evidence/artboard-preview-fade/verify.log)
+
+## Artboard multi-select
+
+The working tree based on `df2f2eb` adds Shift-click and selection by dragging a box from the empty canvas. Space-drag pans. Drag, arrow keys, duplicate, copy and paste, and delete work on the selection. A group edit saves one revision and takes one undo step. Group copies share an offset and have independent IDs and source. The first group commit writes [project schema version 3](decisions/0002-project-commits.md).
+
+All ten `pnpm verify` checks passed on Apple Silicon macOS 27.0.1. Electron exercised selection by click and box, group drag and keyboard movement, duplicate, paste, delete, undo, redo, and reopen. Storage verification covered source identity after movement, matching group outcomes on retry after reopening, and rejection of invalid or stale commands without a partial edit. The Architecture and Reliability specialist consulted on the schema and command contract during implementation. The commit checks record the fixed candidate and independent reviews. [Commit checks](../evidence/multi-select-commit/) · [Selection box](../evidence/artboard-multiselect/artboard-marquee.png) · [Light](../evidence/artboard-multiselect/artboard-multi-select.png) · [Dark](../evidence/artboard-multiselect/artboard-multi-select-dark.png)
+
+At revision 224, EasyProtoMocks occupied about 24 MB across 2,462 files. Manifests accounted for about 21 MB. A ZIP of the whole project measured 4.7 MB. A ZIP with the current snapshot, pointer, and project metadata measured 35 KB. A bounded storage follow-up is to prototype a compressed `.easyproto` export of the current snapshot and verify that importing it reproduces the document.
+
+The selection box now includes partially overlapped artboards. The group outline and individual selection outlines use the same outside stroke width. Electron verified a drag crossing only parts of two boards, excluded a third board, and checked all four outline edges at two zoom levels. All ten checks passed on Apple Silicon macOS on rerun after an initial timeout in the single-board drag check. [Verification log](../evidence/artboard-selection-edges/verify.log) · [Partial overlap](../evidence/artboard-selection-edges/artboard-marquee.png) · [Aligned outline](../evidence/artboard-selection-edges/artboard-selection-outline.png)
+
+## Trackpad panning
+
+Two-finger swipes and mouse scrolling pan the canvas on both axes. Pinch zoom and Space-drag remain available. Electron automation sent horizontal and vertical wheel events over an artboard and measured the camera translating on each axis at a fixed scale. Pinch-equivalent input changed the scale. All ten checks passed on Apple Silicon macOS. Physical trackpad input is available to try in the running app. [Verification log](../evidence/canvas-trackpad-pan/verify.log) · [Measured camera positions](../evidence/canvas-trackpad-pan/desktop-stages.json)
+
+The commit review covers the same group outline after Shift-click, marquee, duplicate, paste and undo. A plain click on a selected member narrows the selection to that board. Escape clears the selection, and the focused artboard name gets an underline during keyboard navigation. The storage regressions exercise fractional positions at the canvas limits, recovery on each side of the first v3 publication, and group copies in a narrow range of possible offsets. [Commit verification and review](../evidence/multi-select-commit/)

@@ -40,6 +40,12 @@ export const envelope = z.strictObject({
   commandId: id,
   expectedRevision: revision,
 });
+export const artboardLimit = 50;
+export const artboardIds = z
+  .array(id)
+  .min(1)
+  .max(artboardLimit)
+  .refine((ids) => new Set(ids).size === ids.length, "Artboard IDs must be unique.");
 export const commandSchema = z.discriminatedUnion("operation", [
   envelope.extend({ operation: z.literal("create_artboard"), arguments: boardInput }),
   envelope.extend({
@@ -53,6 +59,18 @@ export const commandSchema = z.discriminatedUnion("operation", [
   envelope.extend({
     operation: z.literal("delete_artboard"),
     arguments: z.strictObject({ artboardId: id }),
+  }),
+  envelope.extend({
+    operation: z.literal("move_artboards"),
+    arguments: z.strictObject({ artboardIds, dx: z.number(), dy: z.number() }),
+  }),
+  envelope.extend({
+    operation: z.literal("duplicate_artboards"),
+    arguments: z.strictObject({ artboardIds }),
+  }),
+  envelope.extend({
+    operation: z.literal("delete_artboards"),
+    arguments: z.strictObject({ artboardIds }),
   }),
   envelope.extend({
     operation: z.literal("undo"),
@@ -82,9 +100,11 @@ export const commitSchema = z.strictObject({
   commandId: id,
   revision,
   artboard: boardSchema,
+  artboards: z.array(boardSchema).min(2).max(artboardLimit).optional(),
 });
+export const schemaVersion = z.union([z.literal(1), z.literal(2), z.literal(3)]);
 export const manifestSchema = z.strictObject({
-  schemaVersion: z.union([z.literal(1), z.literal(2)]),
+  schemaVersion,
   projectId: id,
   revision,
   artboards: z.array(boardSchema),
@@ -100,6 +120,9 @@ export type DesktopArtboardCommand = Extract<
       | "duplicate_artboard"
       | "paste_artboard"
       | "delete_artboard"
+      | "move_artboards"
+      | "duplicate_artboards"
+      | "delete_artboards"
       | "undo"
       | "redo";
   }
@@ -128,7 +151,7 @@ export type DesktopBridge = {
   getScene(): Promise<DesktopState>;
   onScene(listener: (scene: DesktopState) => void): () => void;
   arrangeArtboard(generation: number, command: DesktopArtboardCommand): Promise<Commit>;
-  copyArtboard(generation: number, artboardId: string, clipboardId: string): Promise<void>;
+  copyArtboards(generation: number, artboardIds: string[], clipboardId: string): Promise<void>;
   chooseProject(mode: "create" | "open"): Promise<void>;
   openRecentProject(id: string): Promise<void>;
   goHome(): Promise<void>;
