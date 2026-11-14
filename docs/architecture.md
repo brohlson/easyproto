@@ -47,3 +47,7 @@ The first product supports arranging, resizing, duplicating, and previewing artb
 - Asset URL/origin design and export rewriting.
 - Supported macOS/architecture matrix and measured performance workload.
 
+
+## Easy Proto desktop slice
+
+The project now uses the design recorded in [project commits](decisions/0002-project-commits.md) and [preview and MCP isolation](decisions/0003-preview-and-mcp.md). The desktop launches from the Vite build with Electron. Electron Forge packaging stays in Milestone 4. See the [current handoff](handoff.md) for verification and remaining gates.

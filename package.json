@@ -1,0 +1,35 @@
+{
+  "name": "easy-proto",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "engines": { "node": ">=24.16.0 <25" },
+  "packageManager": "pnpm@10.33.4",
+  "scripts": {
+    "build": "vite build && node scripts/build.mjs",
+    "dev": "pnpm build && electron .",
+    "start": "electron .",
+    "typecheck": "tsc --noEmit",
+    "verify": "pnpm typecheck && pnpm build && node --test --test-concurrency=1 verify/*.test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@xyflow/react": "12.12.1",
+    "parse5": "8.0.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "electron": "45.3.2",
+    "esbuild": "0.28.2",
+    "playwright": "1.59.1",
+    "typescript": "5.9.3",
+    "vite": "8.3.8"
+  },
+  "pnpm": { "onlyBuiltDependencies": ["electron", "esbuild"] }
+}

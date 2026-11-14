@@ -1,0 +1,26 @@
+:root { font-family: "Instrument Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif; color: #1e2d28; background: #f6f5f0; font-size: 13px; color-scheme: light; }
+* { box-sizing: border-box; }
+html, body, #root { width: 100%; height: 100%; margin: 0; }
+.workspace { height: 100%; display: grid; grid-template-rows: 58px 1fr 36px; }
+header, footer { display: flex; align-items: center; gap: 15px; padding: 0 22px; background: #fbfaf5; z-index: 1; }
+header { border-bottom: 1px solid #e0e3db; }
+footer { border-top: 1px solid #e0e3db; justify-content: space-between; color: #506359; font-size: 12px; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 740; color: #163d31; letter-spacing: -.02em; font-size: 16px; white-space: nowrap; }
+.brand-icon { width: 22px; height: 22px; border-radius: 6px; background: #205747; position: relative; }
+.brand-icon::before, .brand-icon::after { content: ""; position: absolute; width: 8px; height: 7px; border: 1px solid #d7edde; border-radius: 2px; }
+.brand-icon::before { left: 5px; top: 5px; }
+.brand-icon::after { left: 8px; top: 8px; background: #205747; }
+.divider { width: 1px; height: 20px; background: #dee2d9; }
+.folder { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.save-status { margin-left: auto; color: #496253; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.canvas { position: relative; min-height: 0; background: #edf0eb; }
+.artboard { position: relative; background: white; outline: 1px solid #9aa59e; box-shadow: 0 6px 20px #172c2318; }
+.react-flow__node.selected .artboard, .react-flow__node:focus-visible .artboard { outline: 2px solid #276b55; }
+.artboard-label { position: absolute; bottom: calc(100% + 9px); left: 0; right: 0; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; color: #365044; font-size: 12px; font-weight: 650; }
+.artboard-label span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.artboard-label span:last-child { flex: none; font-weight: 500; font-variant-numeric: tabular-nums; }
+.artboard iframe { display: block; border: 0; pointer-events: none; }
+.react-flow__controls { border: 1px solid #d1d9d1; border-radius: 7px; overflow: hidden; }
+.react-flow__controls button { width: 34px; height: 34px; }
+.error { position: absolute; left: 20px; bottom: 16px; max-width: calc(100% - 110px); padding: 10px 14px; background: #fff8ed; border: 1px solid #bc8165; border-radius: 6px; color: #6d3926; z-index: 3; }
+.error button { margin-left: 8px; font: inherit; }
