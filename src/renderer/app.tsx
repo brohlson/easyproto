@@ -4,7 +4,7 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  Background, Controls, ReactFlow, applyNodeChanges, useNodesState, useReactFlow, useStore,
+  Background, ControlButton, Controls, ReactFlow, applyNodeChanges, useNodesState, useReactFlow, useStore,
   type Node, type NodeProps,
 } from "@xyflow/react";
 import { artboardSize } from "../shared/artboard-size";
@@ -21,7 +21,7 @@ type Size = Pick<Board, "width" | "height">;
 type BoardNode = Node<Board, "artboard">;
 const ResizeControl = createContext<{
   disabled: boolean;
-  begin(id: string): boolean;
+  begin(id: string): Size | undefined;
   update(id: string, size: Size): void;
   finish(id: string, size?: Size): void;
 } | null>(null);
@@ -33,7 +33,7 @@ function resizeFrom(start: Size, dx: number, dy: number): Size {
 
 const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProps<BoardNode>) {
   const resize = useContext(ResizeControl)!;
-  const { getZoom } = useReactFlow();
+  const { getZoom, screenToFlowPosition, setCenter } = useReactFlow();
   const zoom = useStore((state) => selected ? state.transform[2] : 1);
   const pointer = useRef<{ pointerId: number; x: number; y: number; zoom: number; size: Size }>(null);
 
@@ -65,11 +65,23 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
           type="button" className="resize-handle nodrag nopan" aria-label={`Resize ${data.name}`}
           title="Drag or use arrow keys to resize" aria-disabled={resize.disabled}
           style={{ "--resize-inverse-zoom": 1 / zoom } as CSSProperties}
+          onFocus={(event) => {
+            const button = event.currentTarget;
+            const bounds = button.getBoundingClientRect();
+            const canvas = button.closest(".canvas")?.getBoundingClientRect();
+            if (!canvas || pointer.current || !button.matches(":focus-visible")) return;
+            if (bounds.left < canvas.left || bounds.top < canvas.top || bounds.right > canvas.right || bounds.bottom > canvas.bottom) {
+              const center = screenToFlowPosition({ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 });
+              void setCenter(center.x, center.y, { zoom: getZoom() });
+            }
+          }}
           onPointerDown={(event) => {
-            if (!event.isPrimary || event.button !== 0 || !resize.begin(id)) return;
+            if (!event.isPrimary || event.button !== 0) return;
+            const size = resize.begin(id);
+            if (!size) return;
+            pointer.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, zoom: getZoom(), size };
             event.currentTarget.focus({ preventScroll: true });
             event.currentTarget.setPointerCapture(event.pointerId);
-            pointer.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, zoom: getZoom(), size: data };
           }}
           onPointerMove={(event) => {
             const size = pointerSize(event);
@@ -83,9 +95,11 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
             if (!direction) return;
             event.preventDefault();
             event.stopPropagation();
-            if (event.repeat || !resize.begin(id)) return;
+            if (event.repeat) return;
+            const size = resize.begin(id);
+            if (!size) return;
             const step = event.shiftKey ? 20 : 5;
-            resize.finish(id, resizeFrom(data, direction.x * step, direction.y * step));
+            resize.finish(id, resizeFrom(size, direction.x * step, direction.y * step));
           }}
         />
       )}
@@ -98,6 +112,18 @@ const arrows = new Map([
   ["ArrowUp", { x: 0, y: -1 }], ["ArrowDown", { x: 0, y: 1 }],
   ["ArrowLeft", { x: -1, y: 0 }], ["ArrowRight", { x: 1, y: 0 }],
 ]);
+
+function CameraControls({ resizing }: { resizing: boolean }) {
+  const { zoomIn, zoomOut, fitView } = useReactFlow();
+  const fit = { padding: 0.4, maxZoom: 1 };
+  return (
+    <Controls position="bottom-right" showInteractive={false} showZoom={false} showFitView={false}>
+      <ControlButton aria-label="Zoom In" title="Zoom In" disabled={resizing} onClick={() => void zoomIn()}><span aria-hidden="true">+</span></ControlButton>
+      <ControlButton aria-label="Zoom Out" title="Zoom Out" disabled={resizing} onClick={() => void zoomOut()}><span aria-hidden="true">−</span></ControlButton>
+      <ControlButton aria-label="Fit View" title="Fit View" disabled={resizing} onClick={() => void fitView(fit)}><span className="fit-icon" aria-hidden="true" /></ControlButton>
+    </Controls>
+  );
+}
 
 function App() {
   const [scene, setScene] = useState<Scene>();
@@ -227,10 +253,11 @@ function App() {
     begin(id: string) {
       const current = latest.current;
       const board = current?.artboards.find((item) => item.id === id);
-      if (!current || !board || choosing || savingGeneration.current !== null || drag.current || activeResize.current) return false;
-      activeResize.current = { id, scene: current, size: { width: board.width, height: board.height } };
+      if (!current || !board || choosing || savingGeneration.current !== null || drag.current || activeResize.current) return;
+      const size = { width: board.width, height: board.height };
+      activeResize.current = { id, scene: current, size };
       setResizing(true);
-      return true;
+      return size;
     },
     update(id: string, size: Size) {
       if (activeResize.current?.id !== id || !latest.current) return;
@@ -296,9 +323,10 @@ function App() {
               key={scene.generation}
               colorMode={colorMode}
               nodes={nodes} edges={[]} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.4, maxZoom: 1 }}
-              minZoom={0.08} maxZoom={3} panOnDrag
+              minZoom={0.08} maxZoom={3}
               nodesDraggable={!saving && !choosing && !resizing} nodesConnectable={false} elementsSelectable
               zoomOnScroll={!resizing} zoomOnPinch={!resizing} zoomOnDoubleClick={!resizing}
+              zoomActivationKeyCode={resizing ? null : "Meta"} panOnDrag={!resizing} autoPanOnNodeFocus={!resizing}
               disableKeyboardA11y={false} deleteKeyCode={null} selectionKeyCode={null} multiSelectionKeyCode={null}
               onNodesChange={(changes) => setNodes((current) => applyNodeChanges(
                 changes.filter((change) => change.type !== "position" || Boolean(drag.current)), current,
@@ -309,7 +337,7 @@ function App() {
               onNodeDragStop={(_, node) => endDrag(node)}
             >
               <Background gap={24} size={1.25} color="var(--grid)" />
-              <Controls position="bottom-right" showInteractive={false} fitViewOptions={{ padding: 0.4, maxZoom: 1 }} />
+              <CameraControls resizing={resizing} />
             </ReactFlow>
           </ResizeControl.Provider>
         )}

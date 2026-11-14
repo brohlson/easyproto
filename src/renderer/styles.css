@@ -89,8 +89,10 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--ring); out
 .resize-handle:hover::after, .resize-handle:active::after { background: var(--accent); }
 .resize-handle[aria-disabled="true"] { cursor: default; }
 .react-flow__controls { border: 1px solid var(--control-border); border-radius: var(--radius); box-shadow: var(--shadow); }
-.react-flow__controls button { width: 34px; height: 34px; color: var(--foreground); background: var(--background); border-color: var(--border); }
-.react-flow__controls button:hover { background: var(--accent); }
+.react-flow__controls button { width: 34px; height: 34px; color: var(--foreground); background: var(--background); border-color: var(--border); font: 500 17px/1 Inter, system-ui, sans-serif; }
+.fit-icon { width: 12px; height: 12px; border: 1.5px dashed currentColor; border-radius: 2px; }
+.react-flow__controls button:hover:enabled { background: var(--accent); }
+.react-flow__controls button:disabled { color: var(--muted-foreground); opacity: .65; }
 .react-flow__controls button:first-child { border-radius: 5px 5px 0 0; }
 .react-flow__controls button:last-child { border-radius: 0 0 5px 5px; }
 .error { display: flex; align-items: center; gap: 10px; position: absolute; left: 20px; bottom: 16px; max-width: calc(100% - 110px); padding: 10px 14px; background: var(--background); border: 1px solid var(--control-border); border-radius: var(--radius); color: var(--foreground); box-shadow: var(--shadow); z-index: 3; }

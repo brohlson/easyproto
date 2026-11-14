@@ -653,6 +653,9 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   await desktop.mouse.down();
   await desktop.mouse.move(hx + 128 * turnZoom, hy + 45 * turnZoom, { steps: 7 });
   await responsiveFrame.getByText("Wide layout").waitFor({ timeout: 5000 });
+  assert.ok(await desktop.getByRole("button", { name: /zoom in/i }).isDisabled());
+  assert.ok(await desktop.getByRole("button", { name: /zoom out/i }).isDisabled());
+  assert.ok(await desktop.getByRole("button", { name: /fit view/i }).isDisabled());
   const draft = await inside.evaluate(() => [innerWidth, innerHeight]);
   assert.ok(Math.abs(draft[0] - 448) <= 1 && Math.abs(draft[1] - 285) <= 1, String(draft));
   assert.equal((await data("get_context")).revision, 10);
@@ -742,6 +745,16 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   await desktop.waitForFunction(() => innerWidth === 660);
   await desktop.waitForFunction(() => document.querySelector('select[aria-label="Appearance"]').getBoundingClientRect().right <= innerWidth,
     undefined, { timeout: 5000 });
+  await handle.press("Tab");
+  await desktop.keyboard.press("Shift+Tab");
+  await desktop.waitForFunction(() => {
+    const button = document.activeElement;
+    if (!button?.classList.contains("resize-handle")) return false;
+    const bounds = button.getBoundingClientRect();
+    const canvas = button.closest(".canvas").getBoundingClientRect();
+    return bounds.left >= canvas.left && bounds.top >= canvas.top && bounds.right <= canvas.right && bounds.bottom <= canvas.bottom;
+  }, undefined, { timeout: 5000 });
+  await desktop.getByRole("button", { name: /fit view/i }).click();
   if (evidence) await desktop.screenshot({ path: join(evidence, "artboard-resize-dark-minimum.png"), animations: "disabled" });
   await appearance.selectOption("light");
   await desktop.waitForFunction(() => document.documentElement.dataset.theme === "light");
