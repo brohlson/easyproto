@@ -31,7 +31,7 @@ pnpm start "--project=$PWD/My prototype" &
 codex
 ```
 
-The app must be running before Codex connects. Restart the client if it was already open. Set `EASY_PROTO_PORT` and update the configured URL together to change the port. With no token, the desktop opens without an MCP endpoint. [Codex MCP setup](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+The app must be running before Codex connects. Restart the client if it was already open. Approve Easy Proto tool calls when Codex prompts. Set `EASY_PROTO_PORT` and update the configured URL together to change the port. With no token, the desktop opens without an MCP endpoint. [Codex MCP setup](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
 
 Ask Codex to get the Easy Proto context, create a 480 × 320 artboard next to the starter at canvas coordinates (620, 0), then capture it. Ask it to change the title and background and capture the new revision. Use **Fit View** to bring both boards into view. Drag a board and confirm the header shows the new saved revision. Quit and reopen using the same folder.
 
