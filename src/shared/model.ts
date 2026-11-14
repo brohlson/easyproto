@@ -12,7 +12,10 @@ export const layout = z.strictObject({
   width: dimension,
   height: dimension,
 });
-export const geometryPatch = layout.omit({ name: true }).partial().refine((patch) => Object.keys(patch).length > 0);
+export const geometryPatch = layout
+  .omit({ name: true })
+  .partial()
+  .refine((patch) => Object.keys(patch).length > 0);
 export type GeometryPatch = z.infer<typeof geometryPatch>;
 const utf8 = (value: string) => !/[\uD800-\uDFFF]/u.test(value);
 export const source = z.strictObject({
@@ -20,11 +23,14 @@ export const source = z.strictObject({
   css: z.string().max(128_000).refine(utf8, "CSS must be valid Unicode."),
 });
 export const boardInput = layout.extend(source.shape);
-export const boardPatch = boardInput.partial().refine(
-  (value) => Object.keys(value).length > 0,
-  "Supply at least one artboard change.",
-);
-export const envelope = z.strictObject({ projectId: id, commandId: id, expectedRevision: revision });
+export const boardPatch = boardInput
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, "Supply at least one artboard change.");
+export const envelope = z.strictObject({
+  projectId: id,
+  commandId: id,
+  expectedRevision: revision,
+});
 export const commandSchema = z.discriminatedUnion("operation", [
   envelope.extend({ operation: z.literal("create_artboard"), arguments: boardInput }),
   envelope.extend({
@@ -42,11 +48,16 @@ export const boardSchema = layout.extend({
   cssRef: z.string(),
 });
 export const commitSchema = z.strictObject({
-  status: z.literal("committed"), projectId: id, commandId: id,
-  revision, artboard: boardSchema,
+  status: z.literal("committed"),
+  projectId: id,
+  commandId: id,
+  revision,
+  artboard: boardSchema,
 });
 export const manifestSchema = z.strictObject({
-  schemaVersion: z.literal(1), projectId: id, revision,
+  schemaVersion: z.literal(1),
+  projectId: id,
+  revision,
   artboards: z.array(boardSchema),
   commands: z.array(z.strictObject({ digest: sha256, result: commitSchema })),
 });
@@ -71,5 +82,8 @@ export type DesktopBridge = {
 };
 
 export const ipc = {
-  scene: "project:scene", changed: "project:changed", arrange: "project:arrange", choose: "project:choose",
+  scene: "project:scene",
+  changed: "project:changed",
+  arrange: "project:arrange",
+  choose: "project:choose",
 } as const;

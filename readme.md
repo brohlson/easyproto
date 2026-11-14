@@ -47,6 +47,8 @@ Place PNG, JPEG, GIF, WebP, AVIF, WOFF or WOFF2 files under the project's `asset
 
 ## Verify
 
+Run `pnpm fmt` to format TypeScript and JavaScript with Oxfmt. Use `pnpm fmt:check` to check formatting and `pnpm lint` to run Oxlint. The full verification command includes both checks.
+
 ```sh
 EASY_PROTO_EVIDENCE="$PWD/evidence" pnpm verify
 ```

@@ -7,8 +7,22 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { Project } from "../dist/project.js";
 
-const args = { name: "New", width: 320, height: 180, x: 23, y: 45, html: "<main>Saved</main>", css: "body{color:red}" };
-const command = (projectId) => ({ projectId, commandId: randomUUID(), expectedRevision: 0, operation: "create_artboard", arguments: args });
+const args = {
+  name: "New",
+  width: 320,
+  height: 180,
+  x: 23,
+  y: 45,
+  html: "<main>Saved</main>",
+  css: "body{color:red}",
+};
+const command = (projectId) => ({
+  projectId,
+  commandId: randomUUID(),
+  expectedRevision: 0,
+  operation: "create_artboard",
+  arguments: args,
+});
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "easy-proto-storage-"));
@@ -20,15 +34,23 @@ async function fixture(t) {
 test("simultaneous edits, failed save and unsupported schema preserve the authoritative revision", async (t) => {
   const { project, folder, root } = await fixture(t);
   const first = command(project.snapshot.manifest.projectId);
-  assert.throws(() => project.execute({ ...first, arguments: { ...args, html: "\uD800" } }), /valid Unicode/);
-  const [saved, rejected] = await Promise.allSettled([project.execute(first), project.execute(command(first.projectId))]);
+  assert.throws(
+    () => project.execute({ ...first, arguments: { ...args, html: "\uD800" } }),
+    /valid Unicode/,
+  );
+  const [saved, rejected] = await Promise.allSettled([
+    project.execute(first),
+    project.execute(command(first.projectId)),
+  ]);
   assert.equal(saved.value.revision, 1);
   assert.equal(rejected.reason.code, "REVISION_CONFLICT");
   const managed = join(folder, ".easy-proto");
   const backup = managed + "-backup";
   await rename(managed, backup);
   await writeFile(managed, "");
-  await assert.rejects(project.execute({ ...command(first.projectId), expectedRevision: 1 }), { code: "SAVE_FAILED" });
+  await assert.rejects(project.execute({ ...command(first.projectId), expectedRevision: 1 }), {
+    code: "SAVE_FAILED",
+  });
   assert.equal(project.snapshot.manifest.revision, 1);
   await rm(managed);
   await rename(backup, managed);
@@ -46,13 +68,24 @@ test("simultaneous edits, failed save and unsupported schema preserve the author
 
 async function killAt(folder, input, phase) {
   const imported = new URL("../dist/project.js", import.meta.url).href;
-  const child = spawn(process.execPath, ["--input-type=module", "-e", `
+  const child = spawn(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
     import {Project} from ${JSON.stringify(imported)};
     const project = await Project.open(process.argv[1], (phase) => {
       if (phase === process.argv[3]) process.kill(process.pid, "SIGKILL");
     });
     await project.execute(JSON.parse(process.argv[2]));
-  `, folder, JSON.stringify(input), phase], { stdio: ["ignore", "ignore", "inherit"] });
+  `,
+      folder,
+      JSON.stringify(input),
+      phase,
+    ],
+    { stdio: ["ignore", "ignore", "inherit"] },
+  );
   const signal = await new Promise((resolve, reject) => {
     child.once("error", reject);
     child.once("exit", (_code, signal) => resolve(signal));
@@ -73,7 +106,10 @@ test("kill before and after atomic publication recovers whole revisions and dura
   const after = await Project.open(moved);
   assert.equal(after.snapshot.manifest.revision, 1);
   assert.equal(after.snapshot.manifest.artboards.length, 2);
-  assert.deepEqual(after.snapshot.sources.get(after.snapshot.manifest.artboards[1].id), { html: args.html, css: args.css });
+  assert.deepEqual(after.snapshot.sources.get(after.snapshot.manifest.artboards[1].id), {
+    html: args.html,
+    css: args.css,
+  });
   assert.deepEqual(await after.execute(input), after.snapshot.manifest.commands[0].result);
   assert.equal(after.snapshot.manifest.revision, 1);
 });

@@ -6,7 +6,9 @@ const bridge: DesktopBridge = {
   onScene(listener) {
     const accept = (_event: Electron.IpcRendererEvent, scene: Scene) => listener(scene);
     ipcRenderer.on(ipc.changed, accept);
-    return () => { ipcRenderer.removeListener(ipc.changed, accept); };
+    return () => {
+      ipcRenderer.removeListener(ipc.changed, accept);
+    };
   },
   arrangeArtboard: (generation, command) => ipcRenderer.invoke(ipc.arrange, generation, command),
   chooseProject: (mode) => ipcRenderer.invoke(ipc.choose, mode),

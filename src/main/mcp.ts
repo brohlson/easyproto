@@ -19,16 +19,30 @@ export type ActiveProject = {
 };
 
 function result(data: Record<string, unknown>) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(data) }], structuredContent: data };
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(data) }],
+    structuredContent: data,
+  };
 }
 
-function tools(current: () => ActiveProject, preview: Preview, changed: () => void, checkWritable: () => void) {
+function tools(
+  current: () => ActiveProject,
+  preview: Preview,
+  changed: () => void,
+  checkWritable: () => void,
+) {
   const server = new McpServer({ name: "easy-proto", version: "0.1.0" });
   const scoped = { ...projectScope, artboardId: id };
   function active(projectId: string, activationId: string) {
     const scope = current();
-    if (scope.activationId !== activationId || scope.project.snapshot.manifest.projectId !== projectId) {
-      throw new ProjectError("PROJECT_SCOPE", "The project selection changed. Call get_context for the open project.");
+    if (
+      scope.activationId !== activationId ||
+      scope.project.snapshot.manifest.projectId !== projectId
+    ) {
+      throw new ProjectError(
+        "PROJECT_SCOPE",
+        "The project selection changed. Call get_context for the open project.",
+      );
     }
     return scope;
   }
@@ -43,7 +57,10 @@ function tools(current: () => ActiveProject, preview: Preview, changed: () => vo
 
   async function commit(
     operation: "create_artboard" | "update_artboard",
-    { activationId, ...request }: { activationId: string } & z.infer<typeof envelope> & { arguments: unknown },
+    {
+      activationId,
+      ...request
+    }: { activationId: string } & z.infer<typeof envelope> & { arguments: unknown },
   ) {
     const { project } = active(request.projectId, activationId);
     checkWritable();
@@ -52,64 +69,121 @@ function tools(current: () => ActiveProject, preview: Preview, changed: () => vo
     return result(saved);
   }
 
-  async function call<T extends CallToolResult>(
-    handler: () => T | Promise<T>,
-  ) {
+  async function call<T extends CallToolResult>(handler: () => T | Promise<T>) {
     try {
       return await handler();
     } catch (error) {
-      const failure = error instanceof ProjectError
-        ? { code: error.code, message: error.message,
-            ...(error.currentRevision === undefined ? {} : { currentRevision: error.currentRevision }) }
-        : { code: "OPERATION_FAILED", message: "Easy Proto could not complete the operation." };
+      const failure =
+        error instanceof ProjectError
+          ? {
+              code: error.code,
+              message: error.message,
+              ...(error.currentRevision === undefined
+                ? {}
+                : { currentRevision: error.currentRevision }),
+            }
+          : { code: "OPERATION_FAILED", message: "Easy Proto could not complete the operation." };
       return { ...result(failure), isError: true };
     }
   }
 
-  server.registerTool("get_context", {
-    description: "Discover the only authorized open project, its current committed revision and artboards.", inputSchema: {},
-  }, () => call(() => {
-    const { project, activationId } = current();
-    const { schemaVersion, projectId, revision, artboards } = project.snapshot.manifest;
-    return result({ schemaVersion, projectId, activationId, revision, assetDigest: project.assetDigest, artboards });
-  }));
+  server.registerTool(
+    "get_context",
+    {
+      description:
+        "Discover the only authorized open project, its current committed revision and artboards.",
+      inputSchema: {},
+    },
+    () =>
+      call(() => {
+        const { project, activationId } = current();
+        const { schemaVersion, projectId, revision, artboards } = project.snapshot.manifest;
+        return result({
+          schemaVersion,
+          projectId,
+          activationId,
+          revision,
+          assetDigest: project.assetDigest,
+          artboards,
+        });
+      }),
+  );
 
-  server.registerTool("get_artboard", {
-    description: "Read the current committed HTML, CSS and layout for an artboard.", inputSchema: scoped,
-  }, ({ projectId, activationId, artboardId }) => call(() => {
-    const { snapshot, board } = getArtboard(projectId, activationId, artboardId);
-    return result({ projectId, revision: snapshot.manifest.revision, artboard: board, ...snapshot.sources.get(board.id) });
-  }));
+  server.registerTool(
+    "get_artboard",
+    {
+      description: "Read the current committed HTML, CSS and layout for an artboard.",
+      inputSchema: scoped,
+    },
+    ({ projectId, activationId, artboardId }) =>
+      call(() => {
+        const { snapshot, board } = getArtboard(projectId, activationId, artboardId);
+        return result({
+          projectId,
+          revision: snapshot.manifest.revision,
+          artboard: board,
+          ...snapshot.sources.get(board.id),
+        });
+      }),
+  );
 
-  server.registerTool("create_artboard", {
-    description: "Commit a new HTML/CSS artboard. Reuse the same command ID and arguments only when retrying.",
-    inputSchema: envelope.extend({ activationId: id, arguments: boardInput }),
-  }, (request) => call(() => commit("create_artboard", request)));
+  server.registerTool(
+    "create_artboard",
+    {
+      description:
+        "Commit a new HTML/CSS artboard. Reuse the same command ID and arguments only when retrying.",
+      inputSchema: envelope.extend({ activationId: id, arguments: boardInput }),
+    },
+    (request) => call(() => commit("create_artboard", request)),
+  );
 
-  server.registerTool("update_artboard", {
-    description: "Commit a patch to HTML, CSS or layout at the expected project revision.",
-    inputSchema: envelope.extend({ activationId: id, arguments: z.strictObject({ artboardId: id, patch: boardPatch }) }),
-  }, (request) => call(() => commit("update_artboard", request)));
+  server.registerTool(
+    "update_artboard",
+    {
+      description: "Commit a patch to HTML, CSS or layout at the expected project revision.",
+      inputSchema: envelope.extend({
+        activationId: id,
+        arguments: z.strictObject({ artboardId: id, patch: boardPatch }),
+      }),
+    },
+    (request) => call(() => commit("update_artboard", request)),
+  );
 
-  server.registerTool("capture_artboard", {
-    description: "Capture a PNG of the requested current project revision at the artboard CSS viewport. Reports unresolved render dependencies.",
-    inputSchema: { ...scoped, revision },
-  }, (request) => call(async () => {
-    const { scope, snapshot, board } = getArtboard(request.projectId, request.activationId, request.artboardId);
-    if (snapshot.manifest.revision !== request.revision) {
-      throw new ProjectError("REVISION_CONFLICT", "Capture requires the current committed revision.", snapshot.manifest.revision);
-    }
-    const { details, png } = await preview.capture(scope.project, snapshot, board, scope.signal).finally(() => {
-      active(request.projectId, request.activationId);
-    });
-    return {
-      structuredContent: details,
-      content: [
-        { type: "text" as const, text: JSON.stringify(details) },
-        { type: "image" as const, mimeType: "image/png", data: png.toString("base64") },
-      ],
-    };
-  }));
+  server.registerTool(
+    "capture_artboard",
+    {
+      description:
+        "Capture a PNG of the requested current project revision at the artboard CSS viewport. Reports unresolved render dependencies.",
+      inputSchema: { ...scoped, revision },
+    },
+    (request) =>
+      call(async () => {
+        const { scope, snapshot, board } = getArtboard(
+          request.projectId,
+          request.activationId,
+          request.artboardId,
+        );
+        if (snapshot.manifest.revision !== request.revision) {
+          throw new ProjectError(
+            "REVISION_CONFLICT",
+            "Capture requires the current committed revision.",
+            snapshot.manifest.revision,
+          );
+        }
+        const { details, png } = await preview
+          .capture(scope.project, snapshot, board, scope.signal)
+          .finally(() => {
+            active(request.projectId, request.activationId);
+          });
+        return {
+          structuredContent: details,
+          content: [
+            { type: "text" as const, text: JSON.stringify(details) },
+            { type: "image" as const, mimeType: "image/png", data: png.toString("base64") },
+          ],
+        };
+      }),
+  );
   return server;
 }
 
@@ -123,24 +197,32 @@ async function readBody(request: IncomingMessage) {
   let length = 0;
   for await (const chunk of request.iterator({ destroyOnReturn: false })) {
     length += chunk.length;
-    if (length > maxBody) throw new ProjectError("BODY_LIMIT", "Request body exceeds the size limit.");
+    if (length > maxBody)
+      throw new ProjectError("BODY_LIMIT", "Request body exceeds the size limit.");
     chunks.push(chunk);
   }
   return JSON.parse(Buffer.concat(chunks).toString()) as unknown;
 }
 
 export async function listen(
-  current: () => ActiveProject, preview: Preview, changed: () => void,
-  checkWritable: () => void, port: number, token: string,
+  current: () => ActiveProject,
+  preview: Preview,
+  changed: () => void,
+  checkWritable: () => void,
+  port: number,
+  token: string,
 ) {
   const expectedAuth = Buffer.from("Bearer " + token);
   let authority = "";
-  const http = createServer({ maxHeaderSize: 16 * 1024, requestTimeout: 10_000, headersTimeout: 5000 }, (request, response) => {
-    void serve(request, response).catch(() => {
-      if (!response.headersSent) jsonError(response, 500, "MCP request failed.");
-      else if (!response.writableEnded) response.end();
-    });
-  });
+  const http = createServer(
+    { maxHeaderSize: 16 * 1024, requestTimeout: 10_000, headersTimeout: 5000 },
+    (request, response) => {
+      void serve(request, response).catch(() => {
+        if (!response.headersSent) jsonError(response, 500, "MCP request failed.");
+        else if (!response.writableEnded) response.end();
+      });
+    },
+  );
   http.maxConnections = 48;
 
   async function serve(request: IncomingMessage, response: ServerResponse) {
@@ -150,7 +232,11 @@ export async function listen(
       return;
     }
     const auth = Buffer.from(headers.authorization?.[0] ?? "");
-    if (headers.authorization?.length !== 1 || auth.length !== expectedAuth.length || !timingSafeEqual(auth, expectedAuth)) {
+    if (
+      headers.authorization?.length !== 1 ||
+      auth.length !== expectedAuth.length ||
+      !timingSafeEqual(auth, expectedAuth)
+    ) {
       jsonError(response, 401, "A valid local bearer token is required.");
       return;
     }
@@ -163,7 +249,9 @@ export async function listen(
       jsonError(response, 405, "This endpoint supports stateless MCP POST requests.");
       return;
     }
-    if (request.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/json") {
+    if (
+      request.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/json"
+    ) {
       jsonError(response, 415, "Use application/json.");
       return;
     }
@@ -176,9 +264,14 @@ export async function listen(
       jsonError(response, over ? 413 : 400, "Invalid or oversized JSON body.");
       return;
     }
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
     const server = tools(current, preview, changed, checkWritable);
-    response.on("close", () => { void server.close().catch(() => undefined); });
+    response.on("close", () => {
+      void server.close().catch(() => undefined);
+    });
     await server.connect(transport);
     await transport.handleRequest(request, response, body);
   }
@@ -195,5 +288,11 @@ export async function listen(
       resolve();
     });
   });
-  return { url: `http://${authority}/mcp`, stop: () => { http.close(); http.closeAllConnections(); } };
+  return {
+    url: `http://${authority}/mcp`,
+    stop: () => {
+      http.close();
+      http.closeAllConnections();
+    },
+  };
 }

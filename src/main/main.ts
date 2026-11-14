@@ -1,19 +1,33 @@
 import { randomUUID } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
-import { Menu, app, BrowserWindow, dialog, ipcMain, session, type IpcMainInvokeEvent } from "electron";
+import {
+  Menu,
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  session,
+  type IpcMainInvokeEvent,
+} from "electron";
 import { z } from "zod";
 import { commandSchema, geometryPatch, ipc, type Scene } from "../shared/model";
 import { listen, type ActiveProject } from "./mcp";
 import { chromeUrl, Preview, securePreferences } from "./preview";
 import { Project, ProjectError } from "./project";
 
-const projectOption = process.argv.find((arg) => arg.startsWith("--project="))?.slice("--project=".length);
+const projectOption = process.argv
+  .find((arg) => arg.startsWith("--project="))
+  ?.slice("--project=".length);
 const testProfile = process.env.EASY_PROTO_PROFILE;
 if (testProfile) app.setPath("userData", resolve(testProfile));
 
 function allowSender(event: IpcMainInvokeEvent, window: BrowserWindow) {
-  if (event.sender !== window.webContents || event.senderFrame !== event.sender.mainFrame ||
-      event.senderFrame.url !== chromeUrl) throw new Error("Only the application window can use this command.");
+  if (
+    event.sender !== window.webContents ||
+    event.senderFrame !== event.sender.mainFrame ||
+    event.senderFrame.url !== chromeUrl
+  )
+    throw new Error("Only the application window can use this command.");
 }
 
 async function start() {
@@ -22,7 +36,9 @@ async function start() {
   try {
     project = await Project.open(folder);
   } catch {
-    throw new Error("Easy Proto could not open this folder. Choose a valid project or an empty folder with --project=PATH.");
+    throw new Error(
+      "Easy Proto could not open this folder. Choose a valid project or an empty folder with --project=PATH.",
+    );
   }
   let lifetime = new AbortController();
   let active: ActiveProject = { project, activationId: randomUUID(), signal: lifetime.signal };
@@ -33,15 +49,25 @@ async function start() {
   const preview = new Preview(isolatedSession);
   await preview.install(join(app.getAppPath(), "dist", "ui"));
   const window = new BrowserWindow({
-    title: "Easy Proto", width: 1180, height: 770, minWidth: 660, minHeight: 480,
-    show: false, backgroundColor: "#fafafa",
+    title: "Easy Proto",
+    width: 1180,
+    height: 770,
+    minWidth: 660,
+    minHeight: 480,
+    show: false,
+    backgroundColor: "#fafafa",
     webPreferences: {
-      ...securePreferences, session: isolatedSession, preload: join(app.getAppPath(), "dist", "preload.cjs"),
+      ...securePreferences,
+      session: isolatedSession,
+      preload: join(app.getAppPath(), "dist", "preload.cjs"),
     },
   });
   preview.protect(window.webContents);
   function scene(): Scene {
-    return { ...preview.scene(active.project, generation), folderName: basename(active.project.root) };
+    return {
+      ...preview.scene(active.project, generation),
+      folderName: basename(active.project.root),
+    };
   }
   function changed() {
     if (window.isDestroyed()) return;
@@ -54,13 +80,18 @@ async function start() {
   }
 
   function checkWritable() {
-    if (switching) throw new ProjectError("PROJECT_SWITCHING", "The project is switching. Call get_context and try again.");
+    if (switching)
+      throw new ProjectError(
+        "PROJECT_SWITCHING",
+        "The project is switching. Call get_context and try again.",
+      );
   }
 
   ipcMain.handle(ipc.choose, async (event, ...args: unknown[]) => {
     allowSender(event, window);
     const [mode] = args;
-    if (args.length !== 1 || (mode !== "create" && mode !== "open")) throw new Error("Choose New Project or Open Project.");
+    if (args.length !== 1 || (mode !== "create" && mode !== "open"))
+      throw new Error("Choose New Project or Open Project.");
     if (choosing) return;
     choosing = true;
     try {
@@ -69,7 +100,9 @@ async function start() {
         title: creating ? "New Project" : "Open Project",
         buttonLabel: creating ? "Create Project" : "Open Project",
         defaultPath: dirname(active.project.root),
-        message: creating ? "Choose an empty folder or create a new folder." : "Choose the folder that contains your Easy Proto project.",
+        message: creating
+          ? "Choose an empty folder or create a new folder."
+          : "Choose the folder that contains your Easy Proto project.",
         properties: creating ? ["openDirectory", "createDirectory"] : ["openDirectory"],
       });
       const [folder] = selection.filePaths;
@@ -88,9 +121,11 @@ async function start() {
       previousLifetime.abort();
       changed();
     } catch {
-      throw new Error(mode === "create"
-        ? "Could not create the project. Choose a new or empty folder."
-        : "Could not open the project. Choose a folder containing a valid Easy Proto project.");
+      throw new Error(
+        mode === "create"
+          ? "Could not create the project. Choose a new or empty folder."
+          : "Could not open the project. Choose a folder containing a valid Easy Proto project.",
+      );
     } finally {
       switching = false;
       choosing = false;
@@ -104,11 +139,15 @@ async function start() {
   ipcMain.handle(ipc.arrange, async (event, selectedGeneration: unknown, input: unknown) => {
     allowSender(event, window);
     const command = commandSchema.parse(input);
-    if (command.operation !== "update_artboard" || !geometryPatch.safeParse(command.arguments.patch).success) {
+    if (
+      command.operation !== "update_artboard" ||
+      !geometryPatch.safeParse(command.arguments.patch).success
+    ) {
       throw new Error("This control can only change artboard position and size.");
     }
     try {
-      if (selectedGeneration !== generation) throw new ProjectError("PROJECT_SCOPE", "The project selection changed.");
+      if (selectedGeneration !== generation)
+        throw new ProjectError("PROJECT_SCOPE", "The project selection changed.");
       checkWritable();
       const commit = await active.project.execute(command);
       changed();
@@ -121,18 +160,26 @@ async function start() {
 
   const token = process.env.EASY_PROTO_TOKEN;
   if (token) {
-    if (!/^[A-Za-z0-9_-]{43,128}$/.test(token)) throw new Error("Set EASY_PROTO_TOKEN to a random URL-safe token of at least 43 characters.");
-    const port = z.coerce.number().int().min(0).max(65535).parse(process.env.EASY_PROTO_PORT ?? "38645");
+    if (!/^[A-Za-z0-9_-]{43,128}$/.test(token))
+      throw new Error("Set EASY_PROTO_TOKEN to a random URL-safe token of at least 43 characters.");
+    const port = z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(65535)
+      .parse(process.env.EASY_PROTO_PORT ?? "38645");
     const endpoint = await listen(() => active, preview, changed, checkWritable, port, token);
     console.log("Easy Proto MCP listening at", endpoint.url);
     app.once("will-quit", endpoint.stop);
   }
 
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { role: "appMenu" },
-    { label: "Edit", submenu: [{ role: "copy" }, { role: "selectAll" }] },
-    { role: "windowMenu" },
-  ]));
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      { role: "appMenu" },
+      { label: "Edit", submenu: [{ role: "copy" }, { role: "selectAll" }] },
+      { role: "windowMenu" },
+    ]),
+  );
   window.on("closed", () => lifetime.abort());
   window.once("ready-to-show", () => window.show());
   await window.loadURL(chromeUrl);
@@ -141,12 +188,19 @@ async function start() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => BrowserWindow.getAllWindows().find((window) => window.isVisible())?.focus());
+  app.on("second-instance", () =>
+    BrowserWindow.getAllWindows()
+      .find((window) => window.isVisible())
+      ?.focus(),
+  );
   app.on("window-all-closed", () => app.quit());
-  app.whenReady().then(start).catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : "Unknown startup error.";
-    console.error("Easy Proto startup failed:", message);
-    if (!testProfile) dialog.showErrorBox("Easy Proto could not start", message);
-    app.exit(1);
-  });
+  app
+    .whenReady()
+    .then(start)
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : "Unknown startup error.";
+      console.error("Easy Proto startup failed:", message);
+      if (!testProfile) dialog.showErrorBox("Easy Proto could not start", message);
+      app.exit(1);
+    });
 }

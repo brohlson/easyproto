@@ -1,11 +1,27 @@
 import {
-  createContext, memo, useContext, useEffect, useLayoutEffect, useRef, useState,
-  type CSSProperties, type KeyboardEvent, type PointerEvent,
+  createContext,
+  memo,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
 } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  Background, ControlButton, Controls, ReactFlow, applyNodeChanges, useNodesState, useReactFlow, useStore,
-  type Node, type NodeProps,
+  Background,
+  ControlButton,
+  Controls,
+  ReactFlow,
+  applyNodeChanges,
+  useNodesState,
+  useReactFlow,
+  useStore,
+  type Node,
+  type NodeProps,
 } from "@xyflow/react";
 import { artboardSize } from "../shared/artboard-size";
 import type { DesktopBridge, GeometryPatch, Scene } from "../shared/model";
@@ -13,7 +29,9 @@ import "@xyflow/react/dist/style.css";
 import "./styles.css";
 
 declare global {
-  interface Window { easyProto: DesktopBridge }
+  interface Window {
+    easyProto: DesktopBridge;
+  }
 }
 
 type Board = Scene["artboards"][number];
@@ -29,15 +47,18 @@ const ResizeControl = createContext<{
 } | null>(null);
 
 function resizeFrom(start: Size, dx: number, dy: number): Size {
-  const clamp = (size: number) => Math.min(artboardSize.max, Math.max(artboardSize.min, Math.round(size)));
+  const clamp = (size: number) =>
+    Math.min(artboardSize.max, Math.max(artboardSize.min, Math.round(size)));
   return { width: clamp(start.width + dx), height: clamp(start.height + dy) };
 }
 
 const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProps<BoardNode>) {
   const resize = useContext(ResizeControl)!;
   const { getZoom, screenToFlowPosition, setCenter } = useReactFlow();
-  const zoom = useStore((state) => selected ? state.transform[2] : 1);
-  const pointer = useRef<{ pointerId: number; x: number; y: number; zoom: number; size: Size }>(null);
+  const zoom = useStore((state) => (selected ? state.transform[2] : 1));
+  const pointer = useRef<{ pointerId: number; x: number; y: number; zoom: number; size: Size }>(
+    null,
+  );
   const handle = useRef<HTMLButtonElement>(null);
   const keyboardFocus = useRef(false);
 
@@ -46,16 +67,24 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
     const canvas = button.closest(".canvas")?.getBoundingClientRect();
     if (!canvas) return;
     const inset = 5;
-    if (bounds.left < canvas.left + inset || bounds.top < canvas.top + inset ||
-      bounds.right > canvas.right - inset || bounds.bottom > canvas.bottom - inset) {
-      const center = screenToFlowPosition({ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 });
+    if (
+      bounds.left < canvas.left + inset ||
+      bounds.top < canvas.top + inset ||
+      bounds.right > canvas.right - inset ||
+      bounds.bottom > canvas.bottom - inset
+    ) {
+      const center = screenToFlowPosition({
+        x: bounds.x + bounds.width / 2,
+        y: bounds.y + bounds.height / 2,
+      });
       void setCenter(center.x, center.y, { zoom: getZoom() });
     }
   }
 
   useLayoutEffect(() => {
     const button = handle.current;
-    if (button && keyboardFocus.current && document.activeElement === button && !pointer.current) revealHandle(button);
+    if (button && keyboardFocus.current && document.activeElement === button && !pointer.current)
+      revealHandle(button);
   }, [data.width, data.height]);
 
   useEffect(() => {
@@ -69,7 +98,11 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
   function pointerSize(event: PointerEvent<HTMLButtonElement>) {
     const start = pointer.current;
     if (!start || start.pointerId !== event.pointerId) return;
-    return resizeFrom(start.size, (event.clientX - start.x) / start.zoom, (event.clientY - start.y) / start.zoom);
+    return resizeFrom(
+      start.size,
+      (event.clientX - start.x) / start.zoom,
+      (event.clientY - start.y) / start.zoom,
+    );
   }
 
   function endPointer(event: PointerEvent<HTMLButtonElement>, commit: boolean) {
@@ -83,17 +116,26 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
     <div className="artboard">
       <div className="artboard-label">
         <span>{data.name}</span>
-        <span>{data.width} × {data.height}</span>
+        <span>
+          {data.width} × {data.height}
+        </span>
       </div>
       <iframe
-        title={data.name} src={data.previewUrl} sandbox="" tabIndex={-1}
-        width={data.width} height={data.height}
+        title={data.name}
+        src={data.previewUrl}
+        sandbox=""
+        tabIndex={-1}
+        width={data.width}
+        height={data.height}
       />
       {(selected || resize.activeId === id) && (
         <button
           ref={handle}
-          type="button" className="resize-handle nodrag nopan" aria-label={`Resize ${data.name}`}
-          title="Drag or use arrow keys to resize" aria-disabled={resize.disabled}
+          type="button"
+          className="resize-handle nodrag nopan"
+          aria-label={`Resize ${data.name}`}
+          title="Drag or use arrow keys to resize"
+          aria-disabled={resize.disabled}
           aria-describedby="canvas-instructions"
           style={{ "--resize-inverse-zoom": 1 / zoom } as CSSProperties}
           onBlur={() => {
@@ -111,7 +153,13 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
             if (!event.isPrimary || event.button !== 0) return;
             const size = resize.begin(id);
             if (!size) return;
-            pointer.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, zoom: getZoom(), size };
+            pointer.current = {
+              pointerId: event.pointerId,
+              x: event.clientX,
+              y: event.clientY,
+              zoom: getZoom(),
+              size,
+            };
             event.currentTarget.focus({ preventScroll: true });
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
@@ -143,8 +191,10 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
 
 const nodeTypes = { artboard: ArtboardNode };
 const arrows = new Map([
-  ["ArrowUp", { x: 0, y: -1 }], ["ArrowDown", { x: 0, y: 1 }],
-  ["ArrowLeft", { x: -1, y: 0 }], ["ArrowRight", { x: 1, y: 0 }],
+  ["ArrowUp", { x: 0, y: -1 }],
+  ["ArrowDown", { x: 0, y: 1 }],
+  ["ArrowLeft", { x: -1, y: 0 }],
+  ["ArrowRight", { x: 1, y: 0 }],
 ]);
 
 function CameraControls({ resizing }: { resizing: boolean }) {
@@ -152,9 +202,30 @@ function CameraControls({ resizing }: { resizing: boolean }) {
   const fit = { padding: 0.4, maxZoom: 1 };
   return (
     <Controls position="bottom-right" showInteractive={false} showZoom={false} showFitView={false}>
-      <ControlButton aria-label="Zoom In" title="Zoom In" disabled={resizing} onClick={() => void zoomIn()}><span aria-hidden="true">+</span></ControlButton>
-      <ControlButton aria-label="Zoom Out" title="Zoom Out" disabled={resizing} onClick={() => void zoomOut()}><span aria-hidden="true">−</span></ControlButton>
-      <ControlButton aria-label="Fit View" title="Fit View" disabled={resizing} onClick={() => void fitView(fit)}><span className="fit-icon" aria-hidden="true" /></ControlButton>
+      <ControlButton
+        aria-label="Zoom In"
+        title="Zoom In"
+        disabled={resizing}
+        onClick={() => void zoomIn()}
+      >
+        <span aria-hidden="true">+</span>
+      </ControlButton>
+      <ControlButton
+        aria-label="Zoom Out"
+        title="Zoom Out"
+        disabled={resizing}
+        onClick={() => void zoomOut()}
+      >
+        <span aria-hidden="true">−</span>
+      </ControlButton>
+      <ControlButton
+        aria-label="Fit View"
+        title="Fit View"
+        disabled={resizing}
+        onClick={() => void fitView(fit)}
+      >
+        <span className="fit-icon" aria-hidden="true" />
+      </ControlButton>
     </Controls>
   );
 }
@@ -166,7 +237,9 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const [theme, setTheme] = useState<"system" | "light" | "dark">("system");
-  const [systemDark, setSystemDark] = useState(() => matchMedia("(prefers-color-scheme: dark)").matches);
+  const [systemDark, setSystemDark] = useState(
+    () => matchMedia("(prefers-color-scheme: dark)").matches,
+  );
   const colorMode = theme === "system" ? (systemDark ? "dark" : "light") : theme;
   const [resizeId, setResizeId] = useState<string | null>(null);
   const resizing = resizeId !== null;
@@ -187,24 +260,36 @@ function App() {
   function reconcile(currentScene: Scene, reset = false) {
     const draft = activeResize.current;
     const draggingId = drag.current?.id;
-    setNodes((currentNodes) => currentScene.artboards.map((board) => {
-      const existing = reset ? undefined : currentNodes.find((node) => node.id === board.id);
-      const position = draggingId === board.id && existing
-        ? existing.position : { x: board.x, y: board.y };
-      const size = draft?.id === board.id ? draft.size : board;
-      return {
-        ...existing, id: board.id, type: "artboard", data: { ...board, width: size.width, height: size.height },
-        width: size.width, height: size.height,
-        ariaLabel: board.name, position, selected: existing?.selected,
-      };
-    }));
+    setNodes((currentNodes) =>
+      currentScene.artboards.map((board) => {
+        const existing = reset ? undefined : currentNodes.find((node) => node.id === board.id);
+        const position =
+          draggingId === board.id && existing ? existing.position : { x: board.x, y: board.y };
+        const size = draft?.id === board.id ? draft.size : board;
+        return {
+          ...existing,
+          id: board.id,
+          type: "artboard",
+          data: { ...board, width: size.width, height: size.height },
+          width: size.width,
+          height: size.height,
+          ariaLabel: board.name,
+          position,
+          selected: existing?.selected,
+        };
+      }),
+    );
   }
 
   useEffect(() => {
     function receive(next: Scene) {
       const previous = latest.current;
-      if (previous && (next.generation < previous.generation ||
-        (next.generation === previous.generation && next.revision < previous.revision))) return;
+      if (
+        previous &&
+        (next.generation < previous.generation ||
+          (next.generation === previous.generation && next.revision < previous.revision))
+      )
+        return;
       const reset = next.generation !== previous?.generation;
       if (reset) {
         drag.current = null;
@@ -220,7 +305,10 @@ function App() {
       reconcile(next, reset);
     }
     const unsubscribe = window.easyProto.onScene(receive);
-    window.easyProto.getScene().then(receive).catch(() => setMessage("The project could not be loaded."));
+    window.easyProto
+      .getScene()
+      .then(receive)
+      .catch(() => setMessage("The project could not be loaded."));
     return unsubscribe;
   }, []);
 
@@ -257,21 +345,31 @@ function App() {
   }, []);
 
   async function arrange(artboardId: string, patch: GeometryPatch, from: Scene) {
-    if (latest.current?.generation !== from.generation || savingGeneration.current !== null || choosing) return;
+    if (
+      latest.current?.generation !== from.generation ||
+      savingGeneration.current !== null ||
+      choosing
+    )
+      return;
     savingGeneration.current = from.generation;
     setSaving(true);
     setMessage("");
     try {
       await window.easyProto.arrangeArtboard(from.generation, {
-        projectId: from.projectId, commandId: crypto.randomUUID(), expectedRevision: from.revision,
-        operation: "update_artboard", arguments: { artboardId, patch },
+        projectId: from.projectId,
+        commandId: crypto.randomUUID(),
+        expectedRevision: from.revision,
+        operation: "update_artboard",
+        arguments: { artboardId, patch },
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message.split("Error: ").at(-1) : undefined;
       if (latest.current?.generation === from.generation) {
-        setMessage(detail?.includes("Refresh the project revision")
-          ? "The project was updated while you were editing. Try the change again."
-          : detail || "The artboard layout could not be saved.");
+        setMessage(
+          detail?.includes("Refresh the project revision")
+            ? "The project was updated while you were editing. Try the change again."
+            : detail || "The artboard layout could not be saved.",
+        );
       }
     } finally {
       if (latest.current?.generation === from.generation) {
@@ -302,7 +400,11 @@ function App() {
     event.stopPropagation();
     if (drag.current || activeResize.current || event.repeat) return;
     const step = event.shiftKey ? 20 : 5;
-    void arrange(board.id, { x: board.x + direction.x * step, y: board.y + direction.y * step }, current);
+    void arrange(
+      board.id,
+      { x: board.x + direction.x * step, y: board.y + direction.y * step },
+      current,
+    );
   }
 
   const resize = {
@@ -312,7 +414,15 @@ function App() {
     begin(id: string) {
       const current = latest.current;
       const board = current?.artboards.find((item) => item.id === id);
-      if (!current || !board || choosing || savingGeneration.current !== null || drag.current || activeResize.current) return;
+      if (
+        !current ||
+        !board ||
+        choosing ||
+        savingGeneration.current !== null ||
+        drag.current ||
+        activeResize.current
+      )
+        return;
       const size = { width: board.width, height: board.height };
       activeResize.current = { id, scene: current, size };
       setResizeId(id);
@@ -328,8 +438,11 @@ function App() {
       const gesture = releaseResize()!;
       const board = gesture.scene.artboards.find((item) => item.id === id)!;
       if (size && (size.width !== board.width || size.height !== board.height)) {
-        setNodes((current) => current.map((node) =>
-          node.id === id ? { ...node, ...size, data: { ...node.data, ...size } } : node));
+        setNodes((current) =>
+          current.map((node) =>
+            node.id === id ? { ...node, ...size, data: { ...node.data, ...size } } : node,
+          ),
+        );
         void arrange(id, size, gesture.scene);
       } else {
         reconcile(latest.current);
@@ -354,19 +467,42 @@ function App() {
   return (
     <main className="workspace">
       <header>
-        <div className="brand"><span className="brand-icon" aria-hidden="true" />Easy Proto</div>
+        <div className="brand">
+          <span className="brand-icon" aria-hidden="true" />
+          Easy Proto
+        </div>
         <span className="divider" />
         <strong className="folder">{scene?.folderName ?? "Opening project…"}</strong>
         <div className="save-status" role="status">
-          {choosing ? "Selecting project…" : saving ? "Saving…" : scene ? `Saved · Revision ${scene.revision}` : ""}
+          {choosing
+            ? "Selecting project…"
+            : saving
+              ? "Saving…"
+              : scene
+                ? `Saved · Revision ${scene.revision}`
+                : ""}
         </div>
         <div className="project-actions">
-          <button disabled={!scene || choosing || saving || resizing} onClick={() => void choose("create")}>New Project</button>
-          <button disabled={!scene || choosing || saving || resizing} onClick={() => void choose("open")}>Open Project</button>
-          <select aria-label="Appearance" value={theme} onChange={(event) => {
-            const value = event.currentTarget.value;
-            if (value === "system" || value === "light" || value === "dark") setTheme(value);
-          }}>
+          <button
+            disabled={!scene || choosing || saving || resizing}
+            onClick={() => void choose("create")}
+          >
+            New Project
+          </button>
+          <button
+            disabled={!scene || choosing || saving || resizing}
+            onClick={() => void choose("open")}
+          >
+            Open Project
+          </button>
+          <select
+            aria-label="Appearance"
+            value={theme}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              if (value === "system" || value === "light" || value === "dark") setTheme(value);
+            }}
+          >
             <option value="system">System</option>
             <option value="light">Light</option>
             <option value="dark">Dark</option>
@@ -379,15 +515,32 @@ function App() {
             <ReactFlow
               key={scene.generation}
               colorMode={colorMode}
-              nodes={nodes} edges={[]} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.4, maxZoom: 1 }}
-              minZoom={0.08} maxZoom={3}
-              nodesDraggable={!saving && !choosing && !resizing} nodesConnectable={false} elementsSelectable
-              zoomOnScroll={!resizing} zoomOnPinch={!resizing} zoomOnDoubleClick={!resizing}
-              panOnDrag={!resizing} autoPanOnNodeFocus={!resizing}
-              disableKeyboardA11y={false} deleteKeyCode={null} selectionKeyCode={null} multiSelectionKeyCode={null}
+              nodes={nodes}
+              edges={[]}
+              nodeTypes={nodeTypes}
+              fitView
+              fitViewOptions={{ padding: 0.4, maxZoom: 1 }}
+              minZoom={0.08}
+              maxZoom={3}
+              nodesDraggable={!saving && !choosing && !resizing}
+              nodesConnectable={false}
+              elementsSelectable
+              zoomOnScroll={!resizing}
+              zoomOnPinch={!resizing}
+              zoomOnDoubleClick={!resizing}
+              panOnDrag={!resizing}
+              autoPanOnNodeFocus={!resizing}
+              disableKeyboardA11y={false}
+              deleteKeyCode={null}
+              selectionKeyCode={null}
+              multiSelectionKeyCode={null}
               onNodesChange={(changes) => {
                 const accepted = changes.filter((change) => {
-                  if (change.type === "select" && (activeResize.current || savingGeneration.current !== null)) return false;
+                  if (
+                    change.type === "select" &&
+                    (activeResize.current || savingGeneration.current !== null)
+                  )
+                    return false;
                   return change.type !== "position" || Boolean(drag.current);
                 });
                 setNodes((current) => applyNodeChanges(accepted, current));
@@ -402,13 +555,21 @@ function App() {
             </ReactFlow>
           </ResizeControl.Provider>
         )}
-        {message && <div className="error" role="alert">{message} <button onClick={() => setMessage("")}>Dismiss</button></div>}
+        {message && (
+          <div className="error" role="alert">
+            {message} <button onClick={() => setMessage("")}>Dismiss</button>
+          </div>
+        )}
       </section>
       <footer>
-        <span>{scene?.artboards.length ?? 0} {scene?.artboards.length === 1 ? "artboard" : "artboards"}</span>
-        <span id="canvas-instructions">{selected
-          ? `${selected.data.name} · ${selected.data.width} × ${selected.data.height} · ${resizeFocused ? "Arrow keys resize · Shift for larger steps" : "Drag the corner to resize"}`
-          : "Drag an artboard to arrange it"}</span>
+        <span>
+          {scene?.artboards.length ?? 0} {scene?.artboards.length === 1 ? "artboard" : "artboards"}
+        </span>
+        <span id="canvas-instructions">
+          {selected
+            ? `${selected.data.name} · ${selected.data.width} × ${selected.data.height} · ${resizeFocused ? "Arrow keys resize · Shift for larger steps" : "Drag the corner to resize"}`
+            : "Drag an artboard to arrange it"}
+        </span>
       </footer>
     </main>
   );
