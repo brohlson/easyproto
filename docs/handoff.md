@@ -36,6 +36,14 @@ The coordinator ran the application checks against disposable Git exports. Revie
 | AR-001 to AR-003 | Architecture and Reliability verified the read-only readiness probe, named CSS image diagnostics and observed media settings on the runtime revision. [Architecture and Reliability report](../evidence/3ff6fc8b7262f7069b7c9c70508b03851dc91cfa/architecture-reliability-report.md) |
 | AR-004 | The coordinator updated this handoff with the fixed runtime revision, finding dispositions and owners. |
 
+## Project picker
+
+Runtime revision `e0736bf501dda60cd56e6b715ec46b447e4044e1` adds **New Project** and **Open Project** to the toolbar. The [project selection decision](decisions/0004-project-selection.md) defines picker behavior and the required MCP activation ID.
+
+The Mac verification used the same SDK client through multiple switches. It demonstrated that stale read, create, update, and capture calls fail, including when two folders share a project ID and revision. An in-progress capture returned no image, and the old preview URL returned 404. A same-folder reopen waited for an already-admitted write, loaded the new revision, and replayed the command under fresh authority. Cancellation and invalid choices kept the current project and activation. The native sheet was also walked manually for creation and reopening an existing saved revision. [Verification log](../evidence/e0736bf501dda60cd56e6b715ec46b447e4044e1/verify.log) · [Observed stages](../evidence/e0736bf501dda60cd56e6b715ec46b447e4044e1/desktop-stages.json) · [Native picker check](../evidence/e0736bf501dda60cd56e6b715ec46b447e4044e1/native-picker.md)
+
+The fixed revision passed independent Security and Architecture and Reliability reviews with no findings in the focused scope. Both reviews used read-only exports. [Security report](../evidence/e0736bf501dda60cd56e6b715ec46b447e4044e1/security-report.md) · [Architecture and Reliability report](../evidence/e0736bf501dda60cd56e6b715ec46b447e4044e1/architecture-reliability-report.md)
+
 ## Next bounded task
 
-Add an in-app project picker for opening existing projects and creating new ones. Preserve the one-writer and project-scoped MCP boundaries during a project switch. Verify switching, reopening from the picker, and rejection of a request from the prior project.
+Add artboard resize controls using the shared revision-checked command service. Verify that resizing changes the CSS viewport and that camera zoom keeps it fixed.
