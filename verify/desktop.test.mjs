@@ -750,12 +750,30 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   assert.equal((await data("get_context")).revision, 12);
 
   await responsiveNode.click({ position: { x: 28, y: 30 } });
+  const spaceHeldBox = await handle.boundingBox({ timeout: 5000 });
+  await desktop.mouse.move(spaceHeldBox.x + spaceHeldBox.width / 2, spaceHeldBox.y + spaceHeldBox.height / 2);
+  await desktop.keyboard.down("Space");
+  await desktop.mouse.down();
+  await desktop.keyboard.up("Space");
+  await desktop.mouse.up();
+  const priorWheelScale = await desktop.locator(".react-flow__viewport").evaluate((element) =>
+    new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
+  await desktop.mouse.wheel(0, -30);
+  await desktop.waitForFunction((prior) =>
+    new DOMMatrixReadOnly(getComputedStyle(document.querySelector(".react-flow__viewport")).transform).a > prior,
+    priorWheelScale, { timeout: 5000 });
+  await desktop.getByRole("button", { name: /fit view/i }).click();
+  statuses.push("Space held before resize and released during it did not change the next plain wheel from zoom to pan.");
+
+  await responsiveNode.click({ position: { x: 28, y: 30 } });
   const conflictBox = await handle.boundingBox({ timeout: 5000 });
+  const conflictZoom = await desktop.locator(".react-flow__viewport").evaluate((element) =>
+    new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
   const conflictX = conflictBox.x + conflictBox.width / 2;
   const conflictY = conflictBox.y + conflictBox.height / 2;
   await desktop.mouse.move(conflictX, conflictY);
   await desktop.mouse.down();
-  await desktop.mouse.move(conflictX + 35 * turnZoom, conflictY, { steps: 4 });
+  await desktop.mouse.move(conflictX + 35 * conflictZoom, conflictY, { steps: 4 });
   await data("update_artboard", {
     projectId, activationId: reopenedCopy.activationId, commandId: randomUUID(), expectedRevision: 12,
     arguments: { artboardId, patch: { width: 380 } },

@@ -383,7 +383,6 @@ function App() {
               minZoom={0.08} maxZoom={3}
               nodesDraggable={!saving && !choosing && !resizing} nodesConnectable={false} elementsSelectable
               zoomOnScroll={!resizing} zoomOnPinch={!resizing} zoomOnDoubleClick={!resizing}
-              zoomActivationKeyCode={resizing ? null : "Meta"} panActivationKeyCode={resizing ? null : "Space"}
               panOnDrag={!resizing} autoPanOnNodeFocus={!resizing}
               disableKeyboardA11y={false} deleteKeyCode={null} selectionKeyCode={null} multiSelectionKeyCode={null}
               onNodesChange={(changes) => {
