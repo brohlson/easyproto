@@ -58,7 +58,7 @@ test("simultaneous edits, failed save and unsupported schema preserve the author
   assert.deepEqual(await reopened.execute(first), saved.value);
   const pointerPath = join(folder, "project.json");
   const pointer = JSON.parse(await readFile(pointerPath, "utf8"));
-  const unsupported = JSON.stringify({ ...pointer, schemaVersion: 2 });
+  const unsupported = JSON.stringify({ ...pointer, schemaVersion: 3 });
   await writeFile(pointerPath, unsupported);
   await assert.rejects(Project.open(folder));
   assert.equal(await readFile(pointerPath, "utf8"), unsupported);
@@ -158,4 +158,125 @@ test("project rename preserves the last published name when replacement fails", 
     await rename(backup, name);
   }
   assert.equal((await Project.open(folder)).name, "Current name");
+});
+
+test("artboard duplication replays one copy and offsets repeated copies at the canvas limit", async (t) => {
+  const { project, folder } = await fixture(t);
+  const create = command(project.snapshot.manifest.projectId);
+  const { artboard } = await project.execute({
+    ...create,
+    arguments: { ...args, name: "x".repeat(94) + "😀tail", x: 100_000, y: 100_000 },
+  });
+  const duplicate = {
+    projectId: create.projectId,
+    commandId: randomUUID(),
+    expectedRevision: 1,
+    operation: "duplicate_artboard",
+    arguments: { artboardId: artboard.id },
+  };
+  const saved = await project.execute(duplicate);
+  assert.equal(saved.artboard.name, "x".repeat(94) + " copy");
+  assert.deepEqual([saved.artboard.x, saved.artboard.y], [99_960, 99_960]);
+  assert.notEqual(saved.artboard.id, artboard.id);
+  const reopened = await Project.open(folder);
+  assert.deepEqual(await reopened.execute(duplicate), saved);
+  assert.equal(reopened.snapshot.manifest.artboards.length, 3);
+  await assert.rejects(reopened.execute({ ...duplicate, commandId: randomUUID() }), {
+    code: "REVISION_CONFLICT",
+  });
+  const repeated = await reopened.execute({
+    ...duplicate,
+    commandId: randomUUID(),
+    expectedRevision: saved.revision,
+  });
+  assert.deepEqual([repeated.artboard.x, repeated.artboard.y], [99_920, 99_920]);
+});
+
+test("copy freezes its source and undo preserves saved revisions and command retries", async (t) => {
+  const { project, folder } = await fixture(t);
+  const {
+    projectId,
+    artboards: [original],
+  } = project.snapshot.manifest;
+  const clipboardId = randomUUID();
+  const before = project.snapshot.sources.get(original.id);
+  project.copyArtboard(original.id, clipboardId);
+  const run = (operation, args = {}) => ({
+    projectId,
+    commandId: randomUUID(),
+    expectedRevision: project.snapshot.manifest.revision,
+    operation,
+    arguments: args,
+  });
+  await project.execute(
+    run("update_artboard", { artboardId: original.id, patch: { html: "<h1>Later</h1>" } }),
+  );
+  const paste = run("paste_artboard", { clipboardId });
+  const copied = await project.execute(paste);
+  assert.deepEqual(project.snapshot.sources.get(copied.artboard.id), before);
+  assert.equal(project.snapshot.manifest.schemaVersion, 1);
+  const undo = run("undo");
+  await project.execute(undo);
+  assert.equal(project.snapshot.manifest.schemaVersion, 2);
+  assert.equal(project.snapshot.sources.has(copied.artboard.id), false);
+  const reopened = await Project.open(folder);
+  assert.equal(reopened.canUndo, false);
+  assert.equal(reopened.canRedo, false);
+  assert.deepEqual(await reopened.execute(paste), copied);
+  assert.equal(reopened.snapshot.sources.has(copied.artboard.id), false);
+  const redo = run("redo");
+  const restored = await project.execute(redo);
+  assert.equal(restored.artboard.id, copied.artboard.id);
+  assert.deepEqual(project.snapshot.sources.get(restored.artboard.id), before);
+  await project.execute(run("undo"));
+  await project.execute(run("undo"));
+  assert.deepEqual(project.snapshot.sources.get(original.id), before);
+  assert.equal(project.canRedo, true);
+  await project.execute(run("update_artboard", { artboardId: original.id, patch: { x: 20 } }));
+  assert.equal(project.canRedo, false);
+  await assert.rejects(project.execute(run("redo")), { code: "HISTORY_EMPTY" });
+});
+
+test("artboard deletion survives reopening and undo restores the original artboard order", async (t) => {
+  const { project, folder } = await fixture(t);
+  const {
+    projectId,
+    artboards: [original],
+  } = project.snapshot.manifest;
+  const originalSource = project.snapshot.sources.get(original.id);
+  const add = command(projectId);
+  const { artboard: neighbor } = await project.execute(add);
+  const remove = {
+    projectId,
+    commandId: randomUUID(),
+    expectedRevision: 1,
+    operation: "delete_artboard",
+    arguments: { artboardId: original.id },
+  };
+  const deleted = await project.execute(remove);
+  const reopened = await Project.open(folder);
+  assert.deepEqual(reopened.snapshot.manifest.artboards, [neighbor]);
+  assert.equal(reopened.snapshot.sources.has(original.id), false);
+  assert.deepEqual(await reopened.execute(remove), deleted);
+
+  const restored = await project.execute({
+    projectId,
+    commandId: randomUUID(),
+    expectedRevision: deleted.revision,
+    operation: "undo",
+    arguments: {},
+  });
+  assert.deepEqual(project.snapshot.manifest.artboards, [
+    { ...original, sourceRevision: restored.revision },
+    neighbor,
+  ]);
+  assert.deepEqual(project.snapshot.sources.get(original.id), originalSource);
+  await project.execute({
+    projectId,
+    commandId: randomUUID(),
+    expectedRevision: restored.revision,
+    operation: "redo",
+    arguments: {},
+  });
+  assert.deepEqual((await Project.open(folder)).snapshot.manifest.artboards, [neighbor]);
 });

@@ -16,6 +16,7 @@ import { z } from "zod";
 import {
   boardInput,
   commandSchema,
+  coordinateLimit,
   id,
   manifestSchema,
   projectName,
@@ -54,6 +55,12 @@ function canonical(value: unknown): string {
 }
 
 export type Snapshot = { manifest: Manifest; sources: ReadonlyMap<string, Source> };
+type BoardInput = z.infer<typeof boardInput>;
+type ArtboardState = { board: Artboard; source: Source };
+type HistoryEntry =
+  | { before?: ArtboardState; after: ArtboardState; index?: never }
+  | { before: ArtboardState; after?: never; index: number };
+const historyLimit = 50;
 export type Asset = { bytes: Buffer; mime: string };
 const assetTypes = new Map([
   [".png", "image/png"],
@@ -66,7 +73,7 @@ const assetTypes = new Map([
   [".woff", "font/woff"],
 ]);
 const pointerSchema = z.strictObject({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.union([z.literal(1), z.literal(2)]),
   projectId: id,
   revision,
   snapshot: id,
@@ -139,7 +146,7 @@ async function readAssets(root: string) {
   return assets;
 }
 
-function metadata(artboardId: string, atRevision: number, input: z.infer<typeof boardInput>) {
+function metadata(artboardId: string, atRevision: number, input: BoardInput) {
   const { html, css, ...bounds } = input;
   const artboard: Artboard = {
     ...bounds,
@@ -150,6 +157,28 @@ function metadata(artboardId: string, atRevision: number, input: z.infer<typeof 
     cssRef: `${artboardId}.css`,
   };
   return { artboard, source: { html, css } };
+}
+
+function offsetCoordinate(value: number, offset: number) {
+  return value + offset <= coordinateLimit ? value + offset : value - offset;
+}
+
+function copyInput(original: ArtboardState, boards: Artboard[]): BoardInput {
+  const { name, width, height, x: originalX, y: originalY } = original.board;
+  let offset = 40;
+  let x = offsetCoordinate(originalX, offset);
+  let y = offsetCoordinate(originalY, offset);
+  while (boards.some((board) => board.x === x && board.y === y)) {
+    offset += 40;
+    x = offsetCoordinate(originalX, offset);
+    y = offsetCoordinate(originalY, offset);
+  }
+  const suffix = " copy";
+  const prefix = name
+    .slice(0, 100 - suffix.length)
+    .replace(/[\uD800-\uDBFF]$/, "")
+    .trimEnd();
+  return { name: prefix + suffix, width, height, x, y, ...original.source };
 }
 
 function starter(): Snapshot {
@@ -184,7 +213,11 @@ async function load(root: string): Promise<Snapshot> {
   const manifest = manifestSchema.parse(
     JSON.parse((await readRegular(join(folder, "manifest.json"), 32 * 1024 * 1024)).toString()),
   );
-  if (manifest.revision !== pointer.revision || manifest.projectId !== pointer.projectId) {
+  if (
+    manifest.schemaVersion !== pointer.schemaVersion ||
+    manifest.revision !== pointer.revision ||
+    manifest.projectId !== pointer.projectId
+  ) {
     throw new Error("Project pointer and revision disagree.");
   }
   const sources = new Map<string, Source>();
@@ -211,7 +244,10 @@ async function load(root: string): Promise<Snapshot> {
       result.projectId !== manifest.projectId ||
       result.revision < 1 ||
       result.revision > manifest.revision ||
-      !sources.has(result.artboard.id)
+      (manifest.schemaVersion === 1 && !sources.has(result.artboard.id)) ||
+      result.artboard.htmlRef !== `${result.artboard.id}.html` ||
+      result.artboard.cssRef !== `${result.artboard.id}.css` ||
+      result.artboard.sourceRevision > result.revision
     ) {
       throw new Error("Invalid command history.");
     }
@@ -268,6 +304,9 @@ async function publish(root: string, snapshot: Snapshot, onPhase?: (phase: Commi
 export class Project {
   #tail = Promise.resolve();
   #snapshot: Snapshot;
+  #undo: HistoryEntry[] = [];
+  #redo: HistoryEntry[] = [];
+  #clipboard?: { id: string; original: ArtboardState };
   readonly assetDigest: string;
 
   private constructor(
@@ -342,6 +381,23 @@ export class Project {
     return this.displayName;
   }
 
+  get canUndo() {
+    return this.#undo.length > 0;
+  }
+
+  get canRedo() {
+    return this.#redo.length > 0;
+  }
+
+  copyArtboard(artboardId: string, clipboardId: string) {
+    const board = this.#snapshot.manifest.artboards.find((item) => item.id === artboardId);
+    if (!board) throw new ProjectError("ARTBOARD_NOT_FOUND", "The artboard does not exist.");
+    this.#clipboard = {
+      id: clipboardId,
+      original: { board, source: this.#snapshot.sources.get(artboardId)! },
+    };
+  }
+
   whenIdle() {
     return this.#tail;
   }
@@ -382,14 +438,63 @@ export class Project {
         throw new ProjectError("PROJECT_CAPACITY", "Project revision capacity reached.");
       const boards = [...manifest.artboards];
       const nextSources = new Map(sources);
+      const operation = command.operation;
+      let entry: HistoryEntry;
       let board: Artboard;
-      if (command.operation === "create_artboard") {
+      if (operation === "undo" || operation === "redo") {
+        const history = operation === "undo" ? this.#undo : this.#redo;
+        const saved = history.at(-1);
+        if (!saved) throw new ProjectError("HISTORY_EMPTY", `Nothing to ${operation}.`);
+        entry = saved;
+        const target = operation === "undo" ? entry.before : entry.after;
+        const artboardId = (entry.after ?? entry.before).board.id;
+        const index = boards.findIndex((item) => item.id === artboardId);
+        const current = boards[index];
+        if (target) {
+          const sourceRevision =
+            current?.sourceDigest === target.board.sourceDigest
+              ? current.sourceRevision
+              : atRevision;
+          board = { ...target.board, sourceRevision };
+          if (current) boards[index] = board;
+          else if (entry.index !== undefined) boards.splice(entry.index, 0, board);
+          else boards.push(board);
+          nextSources.set(artboardId, target.source);
+        } else {
+          if (!current) throw new Error("The artboard to remove is missing.");
+          board = current;
+          boards.splice(index, 1);
+          nextSources.delete(artboardId);
+        }
+      } else if (command.operation === "delete_artboard") {
+        const { artboardId } = command.arguments;
+        const index = boards.findIndex((item) => item.id === artboardId);
+        if (index < 0) throw new ProjectError("ARTBOARD_NOT_FOUND", "The artboard does not exist.");
+        [board] = boards.splice(index, 1);
+        entry = { before: { board, source: sources.get(artboardId)! }, index };
+        nextSources.delete(artboardId);
+      } else if (command.operation !== "update_artboard") {
         if (boards.length >= 50)
           throw new ProjectError("PROJECT_CAPACITY", "This slice supports up to 50 artboards.");
-        const created = metadata(randomUUID(), atRevision, command.arguments);
+        let input: BoardInput;
+        if (command.operation === "paste_artboard") {
+          if (this.#clipboard?.id !== command.arguments.clipboardId)
+            throw new ProjectError("CLIPBOARD_EMPTY", "Copy an artboard in this project first.");
+          input = copyInput(this.#clipboard.original, boards);
+        } else if (command.operation === "duplicate_artboard") {
+          const { artboardId } = command.arguments;
+          const original = boards.find((item) => item.id === artboardId);
+          if (!original)
+            throw new ProjectError("ARTBOARD_NOT_FOUND", "The artboard does not exist.");
+          input = copyInput({ board: original, source: sources.get(artboardId)! }, boards);
+        } else {
+          input = command.arguments;
+        }
+        const created = metadata(randomUUID(), atRevision, input);
         board = created.artboard;
         boards.push(board);
         nextSources.set(board.id, created.source);
+        entry = { after: { board, source: created.source } };
       } else {
         const { artboardId, patch } = command.arguments;
         const index = boards.findIndex((item) => item.id === artboardId);
@@ -411,6 +516,10 @@ export class Project {
           board.sourceRevision = previousBoard.sourceRevision;
         boards[index] = board;
         nextSources.set(board.id, updated.source);
+        entry = {
+          before: { board: previousBoard, source: previousSource },
+          after: { board, source: updated.source },
+        };
       }
       const result: Commit = {
         status: "committed",
@@ -422,6 +531,10 @@ export class Project {
       const next = {
         manifest: {
           ...manifest,
+          schemaVersion:
+            operation === "delete_artboard" || operation === "undo" || operation === "redo"
+              ? (2 as const)
+              : manifest.schemaVersion,
           revision: atRevision,
           artboards: boards,
           commands: [...manifest.commands, { digest: fingerprint, result }],
@@ -437,6 +550,15 @@ export class Project {
         );
       }
       this.#snapshot = next;
+      if (operation === "undo") {
+        this.#undo.pop();
+        this.#redo.push(entry);
+      } else {
+        if (operation === "redo") this.#redo.pop();
+        else this.#redo.length = 0;
+        this.#undo.push(entry);
+        if (this.#undo.length > historyLimit) this.#undo.shift();
+      }
       this.onPhase?.("pointerPublished");
       return result;
     });

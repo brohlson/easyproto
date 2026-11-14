@@ -3,6 +3,8 @@ import {
   memo,
   useContext,
   useEffect,
+  useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -19,7 +21,13 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import type { DesktopArtboardPatch, DesktopBridge, DesktopState, Scene } from "../shared/model";
+import type {
+  DesktopArtboardCommand,
+  DesktopArtboardPatch,
+  DesktopBridge,
+  DesktopState,
+  Scene,
+} from "../shared/model";
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
 import { DevicePresets } from "./device-presets";
@@ -33,18 +41,48 @@ declare global {
 }
 
 type Board = Scene["artboards"][number];
+const artboardClipboardType = "application/x-easy-proto-artboard";
 type BoardNode = Node<Board, "artboard">;
+type ArtboardChange = {
+  [C in DesktopArtboardCommand as C["operation"]]: Pick<C, "operation" | "arguments">;
+}[DesktopArtboardCommand["operation"]];
 const ArtboardEditing = createContext<{
   disabled: boolean;
   begin(id: string): ((patch: DesktopArtboardPatch) => void) | undefined;
+  focusCopy(id: string): boolean;
 } | null>(null);
 
-const ArtboardNode = memo(function ArtboardNode({ id, data }: NodeProps<BoardNode>) {
-  const editing = useContext(ArtboardEditing)!;
-  const zoom = useStore((state) => state.transform[2]);
+function ArtboardPreview({ board }: { board: Board }) {
+  const [loaded, setLoaded] = useState(false);
 
   return (
-    <div className="artboard">
+    <div className="artboard-preview" data-loaded={loaded}>
+      <iframe
+        className={board.agentWorking ? "artboard-preview-working" : undefined}
+        title={board.name}
+        src={board.previewUrl}
+        sandbox=""
+        tabIndex={-1}
+        width={board.width}
+        height={board.height}
+        onLoad={() => setLoaded(true)}
+      />
+    </div>
+  );
+}
+
+const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProps<BoardNode>) {
+  const editing = useContext(ArtboardEditing)!;
+  const zoom = useStore((state) => state.transform[2]);
+  const artboard = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (selected && editing.focusCopy(id))
+      artboard.current?.closest<HTMLElement>(".react-flow__node")?.focus({ preventScroll: true });
+  }, [selected]);
+
+  return (
+    <div ref={artboard} className="artboard">
       <div
         className="artboard-meta"
         style={
@@ -84,15 +122,7 @@ const ArtboardNode = memo(function ArtboardNode({ id, data }: NodeProps<BoardNod
           />
         </div>
       </div>
-      <iframe
-        className={data.agentWorking ? "artboard-preview-working" : undefined}
-        title={data.name}
-        src={data.previewUrl}
-        sandbox=""
-        tabIndex={-1}
-        width={data.width}
-        height={data.height}
-      />
+      <ArtboardPreview key={data.previewUrl} board={data} />
     </div>
   );
 });
@@ -145,9 +175,13 @@ function App() {
   const latest = useRef<Scene>(null);
   const receivedVersion = useRef(-1);
   const drag = useRef<{ id: string; scene: Scene }>(null);
+  const pendingCopy = useRef<string>(null);
+  const clipboard = useRef<{ id: string; ready: Promise<boolean> }>(null);
 
   function reconcile(currentScene: Scene, reset = false) {
     const draggingId = drag.current?.id;
+    const copy = pendingCopy.current;
+    const selectCopy = copy && currentScene.artboards.some((board) => board.id === copy);
     setNodes((currentNodes) =>
       currentScene.artboards.map((board) => {
         const existing = reset ? undefined : currentNodes.find((node) => node.id === board.id);
@@ -162,7 +196,7 @@ function App() {
           height: board.height,
           ariaLabel: board.name,
           position,
-          selected: existing?.selected,
+          selected: selectCopy ? board.id === copy : existing?.selected,
         };
       }),
     );
@@ -176,6 +210,8 @@ function App() {
       const reset = current?.generation !== latest.current?.generation;
       if (reset) {
         drag.current = null;
+        pendingCopy.current = null;
+        clipboard.current = null;
         savingGeneration.current = null;
         setSaving(false);
         setMessage("");
@@ -204,7 +240,7 @@ function App() {
     document.documentElement.dataset.theme = colorMode;
   }, [colorMode]);
 
-  async function arrange(artboardId: string, patch: DesktopArtboardPatch, from: Scene) {
+  async function saveArtboard(change: ArtboardChange, from: Scene) {
     if (
       latest.current?.generation !== from.generation ||
       savingGeneration.current !== null ||
@@ -215,13 +251,20 @@ function App() {
     setSaving(true);
     setMessage("");
     try {
-      await window.easyProto.arrangeArtboard(from.generation, {
+      const commit = await window.easyProto.arrangeArtboard(from.generation, {
         projectId: from.projectId,
         commandId: crypto.randomUUID(),
         expectedRevision: from.revision,
-        operation: "update_artboard",
-        arguments: { artboardId, patch },
+        ...change,
       });
+      if (
+        (change.operation === "duplicate_artboard" ||
+          change.operation === "paste_artboard" ||
+          ((change.operation === "undo" || change.operation === "redo") &&
+            !from.artboards.some(({ id }) => id === commit.artboard.id))) &&
+        latest.current?.generation === from.generation
+      )
+        pendingCopy.current = commit.artboard.id;
     } catch (error) {
       const detail = error instanceof Error ? error.message.split("Error: ").at(-1) : undefined;
       if (latest.current?.generation === from.generation) {
@@ -239,6 +282,119 @@ function App() {
       }
     }
   }
+
+  function arrange(artboardId: string, patch: DesktopArtboardPatch, from: Scene) {
+    return saveArtboard({ operation: "update_artboard", arguments: { artboardId, patch } }, from);
+  }
+
+  const selected = nodes.find((node) => node.selected);
+  function canEditCanvas(target: EventTarget | null) {
+    return (
+      !choosing &&
+      !drag.current &&
+      savingGeneration.current === null &&
+      !(
+        target instanceof Element &&
+        target.closest("input, select, textarea, [contenteditable], [popover]")
+      ) &&
+      !document.querySelector(":popover-open")
+    );
+  }
+
+  const handleCopy = useEffectEvent((event: ClipboardEvent) => {
+    const current = latest.current;
+    if (
+      !event.clipboardData ||
+      !current ||
+      !selected ||
+      !canEditCanvas(event.target) ||
+      window.getSelection()?.toString()
+    )
+      return;
+    const id = crypto.randomUUID();
+    event.clipboardData.clearData();
+    event.clipboardData.setData(artboardClipboardType, id);
+    event.preventDefault();
+    const ready = window.easyProto.copyArtboard(current.generation, selected.id, id).then(
+      () => true,
+      () => {
+        if (latest.current?.generation === current.generation)
+          setMessage("The artboard could not be copied.");
+        return false;
+      },
+    );
+    clipboard.current = { id, ready };
+  });
+
+  const handlePaste = useEffectEvent(async (event: ClipboardEvent) => {
+    const current = latest.current;
+    const copied = clipboard.current;
+    if (
+      !current ||
+      !copied ||
+      !canEditCanvas(event.target) ||
+      event.clipboardData?.getData(artboardClipboardType) !== copied.id
+    )
+      return;
+    event.preventDefault();
+    if (await copied.ready) {
+      const latestScene = latest.current;
+      if (latestScene?.generation === current.generation)
+        void saveArtboard(
+          { operation: "paste_artboard", arguments: { clipboardId: copied.id } },
+          latestScene,
+        );
+    }
+  });
+
+  const handleShortcut = useEffectEvent((event: globalThis.KeyboardEvent) => {
+    const key = event.key.toLowerCase();
+    // The macOS Delete key reports Backspace. Forward Delete reports Delete.
+    const remove = key === "backspace" || key === "delete";
+    const canvasCommand = event.metaKey && (key === "d" || key === "z");
+    if (
+      !(canvasCommand || (remove && !event.metaKey)) ||
+      event.ctrlKey ||
+      event.altKey ||
+      (key !== "z" && event.shiftKey) ||
+      event.repeat ||
+      event.defaultPrevented ||
+      event.isComposing ||
+      !canEditCanvas(event.target)
+    )
+      return;
+
+    const current = latest.current;
+    if (!current) return;
+    if (key === "z") {
+      const redo = event.shiftKey;
+      if (redo ? !current.canRedo : !current.canUndo) return;
+      event.preventDefault();
+      void saveArtboard({ operation: redo ? "redo" : "undo", arguments: {} }, current);
+      return;
+    }
+    if (!selected) return;
+    event.preventDefault();
+    void saveArtboard(
+      {
+        operation: remove ? "delete_artboard" : "duplicate_artboard",
+        arguments: { artboardId: selected.id },
+      },
+      current,
+    );
+  });
+
+  useEffect(() => {
+    const paste = (event: ClipboardEvent) => void handlePaste(event);
+    window.addEventListener("keydown", handleShortcut, true);
+    window.addEventListener("copy", handleCopy);
+    window.addEventListener("paste", paste);
+    return () => {
+      window.removeEventListener("keydown", handleShortcut, true);
+      window.removeEventListener("copy", handleCopy);
+      window.removeEventListener("paste", paste);
+    };
+  }, []);
 
   function endDrag(node: BoardNode) {
     const gesture = drag.current;
@@ -269,6 +425,11 @@ function App() {
 
   const editing = {
     disabled: saving || choosing,
+    focusCopy(id: string) {
+      if (pendingCopy.current !== id) return false;
+      pendingCopy.current = null;
+      return true;
+    },
     begin(id: string) {
       const current = latest.current;
       if (!current || choosing || drag.current || savingGeneration.current !== null) return;
@@ -312,7 +473,6 @@ function App() {
   const busy = !desktop || choosing || saving;
   const choose = (mode: "create" | "open") =>
     void navigate(() => window.easyProto.chooseProject(mode));
-  const selected = nodes.find((node) => node.selected);
   return (
     <main className={scene ? "workspace" : "workspace home-view"}>
       <header>
@@ -432,7 +592,7 @@ function App() {
             </span>
             <span title="Shift+0 fits all artboards">
               {selected
-                ? `${selected.data.name} · ${selected.data.width} × ${selected.data.height}`
+                ? `${selected.data.name} · ${selected.data.width} × ${selected.data.height} · Delete to remove`
                 : "Drag to arrange · Shift+0 to fit"}
             </span>
           </footer>

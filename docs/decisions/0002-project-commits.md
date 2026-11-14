@@ -6,4 +6,12 @@ The service serializes commands within the open project. It writes and flushes t
 
 Deduplication covers every committed ID in the lifetime of the intact project ledger. Retries compare the normalized complete command envelope, including the original expected revision, and return the original result before checking for staleness. Different inputs using the same ID conflict. Failed commands consume no ID. There is no pruning in this slice. The 32 MiB manifest ceiling ends new writes with a save failure while existing committed outcomes remain available. Every snapshot currently stores complete sources and a ledger copy, so projects grow as edits accumulate.
 
+The desktop's duplicate command copies the selected artboard's committed source and viewport into a new artboard with its own ID and source files. It saves the copy and its offset in one revision. It uses the same command ledger and keeps the project asset namespace shared.
+
+Copy snapshots an artboard's committed source and layout in memory for the open project. The system clipboard carries an opaque token. Paste uses that token to locate the snapshot and creates a new board through the same command service. Opening another project or reopening the same one clears the copy.
+
+Undo and redo cover the last 50 committed artboard mutations in the open project, including MCP edits. Project naming and canvas navigation have separate lifecycles. Undo and redo publish new revisions, preserve IDs on restoration, and update their in-memory stacks after a successful save. A new mutation clears redo. The first delete, undo, or redo writes schema version 2, which allows historical command results to refer to a removed artboard. Easy Proto still reads version 1. Older builds refuse version 2 projects. Reopening preserves the resulting document and command ledger and starts a fresh undo history.
+
+Delete removes the artboard and its source from the active snapshot. Undo restores its ID, source, bounds, and place in the artboard order. The restored preview uses a new revision. Earlier saved snapshots retain their original files.
+
 Assets are read into memory at open through allowlisted project-relative paths. Copy the optional assets directory with the project. Capture identity separately includes the digest of those asset bytes, so the same document revision opened with different asset bytes has a different render identity.

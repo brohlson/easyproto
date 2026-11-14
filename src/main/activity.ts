@@ -30,6 +30,14 @@ export class ArtboardActivity {
     return false;
   }
 
+  clearLeases(artboardId: string) {
+    for (const [key, lease] of this.#leases) {
+      if (lease.artboardId !== artboardId) continue;
+      clearTimeout(lease.timer);
+      this.#leases.delete(key);
+    }
+  }
+
   #notify(artboardId: string, wasWorking: boolean) {
     const working = this.isWorking(artboardId);
     if (!this.signal.aborted && working !== wasWorking) this.changed();

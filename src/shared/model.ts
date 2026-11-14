@@ -3,7 +3,8 @@ import { artboardSize } from "./artboard-size";
 
 export const id = z.uuid();
 export const revision = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-const coordinate = z.number().min(-100_000).max(100_000);
+export const coordinateLimit = 100_000;
+const coordinate = z.number().min(-coordinateLimit).max(coordinateLimit);
 const dimension = z.number().int().min(artboardSize.min).max(artboardSize.max);
 export const layout = z.strictObject({
   name: z.string().trim().min(1).max(100),
@@ -42,6 +43,26 @@ export const envelope = z.strictObject({
 export const commandSchema = z.discriminatedUnion("operation", [
   envelope.extend({ operation: z.literal("create_artboard"), arguments: boardInput }),
   envelope.extend({
+    operation: z.literal("duplicate_artboard"),
+    arguments: z.strictObject({ artboardId: id }),
+  }),
+  envelope.extend({
+    operation: z.literal("paste_artboard"),
+    arguments: z.strictObject({ clipboardId: id }),
+  }),
+  envelope.extend({
+    operation: z.literal("delete_artboard"),
+    arguments: z.strictObject({ artboardId: id }),
+  }),
+  envelope.extend({
+    operation: z.literal("undo"),
+    arguments: z.strictObject({}),
+  }),
+  envelope.extend({
+    operation: z.literal("redo"),
+    arguments: z.strictObject({}),
+  }),
+  envelope.extend({
     operation: z.literal("update_artboard"),
     arguments: z.strictObject({ artboardId: id, patch: boardPatch }),
   }),
@@ -63,7 +84,7 @@ export const commitSchema = z.strictObject({
   artboard: boardSchema,
 });
 export const manifestSchema = z.strictObject({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.union([z.literal(1), z.literal(2)]),
   projectId: id,
   revision,
   artboards: z.array(boardSchema),
@@ -71,6 +92,18 @@ export const manifestSchema = z.strictObject({
 });
 
 export type Command = z.infer<typeof commandSchema>;
+export type DesktopArtboardCommand = Extract<
+  Command,
+  {
+    operation:
+      | "update_artboard"
+      | "duplicate_artboard"
+      | "paste_artboard"
+      | "delete_artboard"
+      | "undo"
+      | "redo";
+  }
+>;
 export type Artboard = z.infer<typeof boardSchema>;
 export type Source = z.infer<typeof source>;
 export type Commit = z.infer<typeof commitSchema>;
@@ -82,6 +115,8 @@ export type Scene = {
   projectId: string;
   revision: number;
   name: string;
+  canUndo: boolean;
+  canRedo: boolean;
   projects: RecentProject[];
   artboards: (Artboard & { previewUrl: string; agentWorking: boolean })[];
 };
@@ -92,7 +127,8 @@ export type DesktopState =
 export type DesktopBridge = {
   getScene(): Promise<DesktopState>;
   onScene(listener: (scene: DesktopState) => void): () => void;
-  arrangeArtboard(generation: number, command: Command): Promise<Commit>;
+  arrangeArtboard(generation: number, command: DesktopArtboardCommand): Promise<Commit>;
+  copyArtboard(generation: number, artboardId: string, clipboardId: string): Promise<void>;
   chooseProject(mode: "create" | "open"): Promise<void>;
   openRecentProject(id: string): Promise<void>;
   goHome(): Promise<void>;
@@ -103,6 +139,7 @@ export const ipc = {
   scene: "project:scene",
   changed: "project:changed",
   arrange: "project:arrange",
+  copy: "project:copy-artboard",
   choose: "project:choose",
   recent: "project:open-recent",
   home: "project:home",

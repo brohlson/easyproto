@@ -107,6 +107,8 @@ async function start() {
       view: "project",
       sceneVersion,
       name: project.name,
+      canUndo: project.canUndo,
+      canRedo: project.canRedo,
       projects,
       artboards: snapshot.artboards.map((board) => ({
         ...board,
@@ -234,18 +236,31 @@ async function start() {
     allowSender(event, window);
     return scene();
   });
+  ipcMain.handle(
+    ipc.copy,
+    (event, generation: unknown, artboardId: unknown, clipboardId: unknown) => {
+      allowSender(event, window);
+      const project = activeGeneration(generation);
+      project.copyArtboard(id.parse(artboardId), id.parse(clipboardId));
+    },
+  );
   ipcMain.handle(ipc.arrange, async (event, selectedGeneration: unknown, input: unknown) => {
     allowSender(event, window);
     const command = commandSchema.parse(input);
     if (
-      command.operation !== "update_artboard" ||
-      !desktopArtboardPatch.safeParse(command.arguments.patch).success
+      command.operation === "create_artboard" ||
+      (command.operation === "update_artboard" &&
+        !desktopArtboardPatch.safeParse(command.arguments.patch).success)
     ) {
-      throw new Error("This control can only change artboard name, position or size.");
+      throw new Error(
+        "This control can only change artboard name, position or size, or run a canvas editing command.",
+      );
     }
     try {
       const project = activeGeneration(selectedGeneration);
       const commit = await project.execute(command);
+      if (active?.project === project && !project.snapshot.sources.has(commit.artboard.id))
+        active.activity.clearLeases(commit.artboard.id);
       changed();
       return commit;
     } catch (error) {

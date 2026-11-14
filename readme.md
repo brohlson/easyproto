@@ -19,7 +19,9 @@ The runtime installer comes from the pinned Electron npm package and fetches the
 
 Home shows the projects you have created or opened on this device. Click a row to reopen it, or use **Create project** and select an empty folder in the macOS picker. Use **Settings** for **Home**, **Open project…**, and **Appearance**. Use **Open project…** to add an existing project or find a folder that moved.
 
-Double-click the project name or an artboard title to edit it. Enter or clicking away saves, and Escape cancels. You can also focus the name and press Enter to start editing. Project titles travel with their folders. Artboard titles, dimensions, and activity labels stay the same screen size as you zoom.
+Double-click the project name or an artboard title to edit it. Enter or clicking away saves, and Escape cancels. You can also focus the name and press Enter to start editing. Project titles travel with their folders. Artboard titles, dimensions, and activity labels stay the same screen size as you zoom. Select an artboard and press **⌘D** to save an offset copy with its own editable HTML and CSS. The copy becomes selected.
+
+Use **⌘C** and **⌘V** to copy and paste an artboard within the open project. Press **Delete** to remove the selected artboard. **⌘Z** undoes the latest artboard change, and **⇧⌘Z** redoes it. Undo and redo save their results, and the history resets when you leave or reopen the project. Text fields keep their usual editing shortcuts.
 
 You can launch straight into a folder with `pnpm start "--project=$PWD/My prototype"` after building. Use an empty folder or an existing project. Without a path, the app starts at Home. Changes save automatically. Copy the entire project folder, including `.easy-proto` and `assets`, to move it.
 

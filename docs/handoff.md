@@ -78,6 +78,24 @@ Click the dimensions above an artboard to choose a preset. The phone and tablet 
 
 The canvas uses scroll or pinch to zoom and Shift+0 to fit. Settings uses a borderless Lucide cog and shows the three appearance choices directly, with a checkmark for the active choice. All five macOS checks passed. They verified keyboard selection and focus restoration, the selected-size checkmark, an unchanged iframe across size updates, media-query switching, stale edit rejection, and matching capture and reopened dimensions. Both menus were inspected in Light and Dark, and preset popup bounds were checked at 660 × 480. [Verification log](../evidence/device-presets/verify.log) · [Preset picker](../evidence/device-presets/device-presets-dark-minimum.png) · [Settings](../evidence/device-presets/settings-dark.png)
 
-## Next bounded task
+## Artboard duplication
 
-Add artboard duplication through a single saved command, with a new stable ID, independently editable source, and an offset position.
+Command-D duplicates the selected artboard and selects the copy. One saved command gives the copy a new stable ID, independent HTML and CSS, and a 40-unit offset on each axis. Repeated copies skip occupied positions along the diagonal. Existing project assets stay shared. The shortcut is inactive while editing text or using a menu.
+
+The Apple Silicon macOS check exercised Command-D in Electron, edited the copy through the MCP SDK, confirmed the original source stayed the same, and reopened the saved project. The storage check confirmed replay, stale-revision rejection, and valid offsets at the canvas limit. [Verification log](../evidence/artboard-duplication/verify.log) · [Canvas](../evidence/artboard-duplication/artboard-duplicate.png)
+
+## Artboard clipboard and history
+
+Command-C captures the selected artboard as it exists at copy time. Command-V creates a new offset copy in the same open project. Undo and redo cover up to 50 artboard changes, including edits from MCP. Each action saves a new revision. The history and artboard clipboard expire on leaving or reopening the project. Text inputs retain their own shortcuts. See [project commits](decisions/0002-project-commits.md) for version 2 compatibility.
+
+The macOS checks cover native copy and paste in a disposable Electron project, keyboard undo and redo, independent copy source, and reopening after undo removed a pasted board. Storage verification covers replay of an older command after undo, copied source remaining frozen through a later edit, and redo clearing on new edits. [Verification log](../evidence/artboard-history/verify.log)
+
+## Artboard deletion
+
+Delete removes the selected artboard in one saved revision. Command-Z restores it in its original position and order, with the same ID and source. Shift-Command-Z removes it again. The shortcut leaves text editing alone.
+
+All nine Apple Silicon macOS checks passed. The Electron check verified both Delete key variants, Undo, Redo, MCP lookup and preview URL retirement, and reopening after removal. The storage check verified restoration and replay of a retried delete. [Verification log](../evidence/artboard-deletion/verify.log) · [Restored artboard](../evidence/artboard-deletion/artboard-restored.png)
+
+## Preview fade
+
+A newly mounted or replaced preview stays transparent until its iframe loads, then fades in over 180 ms. Reduced Motion reveals the loaded preview immediately. Geometry and selection stay visible during loading, and canvas moves and zoom retain the loaded frame. [Verification log](../evidence/artboard-preview-fade/verify.log)

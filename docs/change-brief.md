@@ -22,3 +22,12 @@ The corner resize handle and its keyboard resize controls were replaced at the u
 - Run focused checks during iteration. Verify the unpublished review candidate workflow in a disposable repository, load policy from the trusted base, and confirm the final commit uses the reviewed tree and parent.
 
 Route Home, previews, and MCP authority to Security. Route project persistence, revision semantics, and review provenance to Architecture/Reliability. Route canvas and menus to Frontend and Design. Route the dependency and review workflow to Infrastructure.
+
+## Artboard editing and preview entry
+
+- Command-D and Command-C followed by Command-V create offset copies with independent HTML and CSS. Verify source at copy time, a fresh ID on paste, and preservation of native text shortcuts.
+- Delete saves removal of the selected artboard. Command-Z restores its ID, source, position, size, and order. Verify redo, deleted preview retirement, and reopening after removal.
+- Undo and redo publish new revisions and retain retry results, including when an earlier result references a removed artboard. Verify v1 reads, v2 reopening, and session-scoped history.
+- Keep the artboard outline visible while the iframe loads. Fade in the preview after load, respect Reduced Motion, and preserve preview identity on canvas moves and zoom.
+
+Route persistence to Architecture/Reliability, clipboard and IPC scope to Security, and canvas shortcuts and preview entry to Frontend and Design.

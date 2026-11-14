@@ -1428,7 +1428,7 @@ test(
 );
 
 test(
-  "Home reopens projects, inline names persist, and canvas labels ignore zoom",
+  "Home reopens projects and the desktop saves artboard copies, deletion, undo and redo",
   { timeout: 50_000 },
   async (t) => {
     const root = await mkdtemp(join(tmpdir(), "easy-proto-home-"));
@@ -1658,5 +1658,248 @@ test(
     await title("artboard", "Sketches").waitFor();
     await returnHome();
     assert.equal(await row("Studio project").count(), 1);
+
+    await row("Studio project").click();
+    const sketchTitle = title("artboard", "Sketches");
+    await sketchTitle.waitFor();
+    const duplicateContext = await call("get_context");
+    const duplicateScope = { projectId, activationId: duplicateContext.activationId };
+    const original = await call("get_artboard", { ...duplicateScope, artboardId });
+    await desktop.keyboard.press("Meta+d");
+    assert.equal((await snapshot()).artboards.length, 1);
+    await desktop.locator(".react-flow__node .artboard").click({ position: { x: 40, y: 40 } });
+    await desktop.locator(".react-flow__node.selected").waitFor();
+    await sketchTitle.dblclick();
+    await edit("Artboard").press("Meta+d");
+    await edit("Artboard").press("Escape");
+    assert.equal((await snapshot()).artboards.length, 1);
+    await desktop.evaluate(() => {
+      const canv = document.querySelector(".canvas");
+      const inspect = () => {
+        const preview = canv.querySelector('.artboard-preview:has(iframe[title="Sketches copy"])');
+        if (!preview || window.easyProtoPreviewEntry) return;
+        window.easyProtoPreviewEntry = {
+          loaded: preview.dataset.loaded,
+          opacity: getComputedStyle(preview).opacity,
+          layout: [preview.offsetWidth, preview.offsetHeight],
+        };
+        observer.disconnect();
+      };
+      const observer = new MutationObserver(inspect);
+      observer.observe(canv, { childList: true, subtree: true });
+    });
+    await desktop.keyboard.press("Meta+d");
+    const copiedTitle = title("artboard", "Sketches copy");
+    await copiedTitle.waitFor();
+    const duplicate = (await snapshot()).artboards.find(({ id }) => id !== artboardId);
+    assert.ok(duplicate.id);
+    const copyNode = desktop.locator(`.react-flow__node[data-id="${duplicate.id}"]`);
+    await copyNode.and(desktop.locator(".react-flow__node.selected")).waitFor();
+    assert.deepEqual(await desktop.evaluate(() => window.easyProtoPreviewEntry), {
+      loaded: "false",
+      opacity: "0",
+      layout: [540, 360],
+    });
+    const copyPreview = copyNode.locator('.artboard-preview[data-loaded="true"]');
+    await copyPreview.waitFor();
+    assert.equal(
+      await copyPreview.evaluate((element) => getComputedStyle(element).transitionDuration),
+      "0.18s",
+    );
+    await desktop.waitForFunction(
+      (id) =>
+        getComputedStyle(document.querySelector(`[data-id="${id}"] .artboard-preview`)).opacity ===
+        "1",
+      duplicate.id,
+    );
+    assert.equal(await desktop.locator(".react-flow__node.selected").count(), 1);
+    assert.equal(await copyNode.evaluate((element) => element === document.activeElement), true);
+    assert.equal((await snapshot()).revision, original.revision + 1);
+    assert.deepEqual(
+      [duplicate.x, duplicate.y, duplicate.width, duplicate.height],
+      [
+        original.artboard.x + 40,
+        original.artboard.y + 40,
+        original.artboard.width,
+        original.artboard.height,
+      ],
+    );
+    const duplicateBoard = await call("get_artboard", {
+      ...duplicateScope,
+      artboardId: duplicate.id,
+    });
+    assert.equal(duplicateBoard.html, original.html);
+    assert.equal(duplicateBoard.css, original.css);
+    assert.notEqual(duplicateBoard.artboard.htmlRef, original.artboard.htmlRef);
+    assert.notEqual(duplicateBoard.artboard.cssRef, original.artboard.cssRef);
+    assert.equal(duplicate.agentWorking, false);
+    if (evidence) await desktop.screenshot({ path: join(evidence, "artboard-duplicate.png") });
+
+    const updated = await call("update_artboard", {
+      ...duplicateScope,
+      expectedRevision: duplicateBoard.revision,
+      commandId: randomUUID(),
+      arguments: {
+        artboardId: duplicate.id,
+        patch: { html: "<h1>Independent copy</h1>", css: "h1{color:teal}" },
+      },
+    });
+    assert.equal(updated.status, "committed");
+    await desktop
+      .frameLocator('iframe[title="Sketches copy"]')
+      .getByRole("heading", { name: "Independent copy" })
+      .waitFor();
+    await desktop
+      .frameLocator('iframe[title="Sketches"]')
+      .getByRole("heading", { name: "Make room for ideas." })
+      .waitFor();
+    const originalAfter = await call("get_artboard", { ...duplicateScope, artboardId });
+    assert.equal(originalAfter.html, original.html);
+    assert.equal(originalAfter.css, original.css);
+    await returnHome();
+    await row("Studio project").click();
+    await copiedTitle.waitFor();
+    await desktop
+      .frameLocator('iframe[title="Sketches copy"]')
+      .getByRole("heading", { name: "Independent copy" })
+      .waitFor();
+    const reopened = (await snapshot()).artboards.find(({ id }) => id === duplicate.id);
+    assert.deepEqual([reopened.x, reopened.y], [duplicate.x, duplicate.y]);
+    const sourceNode = desktop.locator(`.react-flow__node[data-id="${artboardId}"]`);
+    await sourceNode.locator(".artboard").click({ position: { x: 15, y: 35 } });
+    await sourceNode.and(desktop.locator(".react-flow__node.selected")).waitFor();
+    const copied = await sourceNode.evaluate((element) => {
+      const data = new DataTransfer();
+      element.dispatchEvent(
+        new ClipboardEvent("copy", { clipboardData: data, bubbles: true, cancelable: true }),
+      );
+      return Object.fromEntries(data.types.map((type) => [type, data.getData(type)]));
+    });
+    assert.deepEqual(Object.keys(copied), ["application/x-easy-proto-artboard"]);
+    assert.match(Object.values(copied)[0], /^[0-9a-f-]{36}$/);
+    const beforePaste = await snapshot();
+    await desktop.evaluate((copied) => {
+      const data = new DataTransfer();
+      for (const [type, value] of Object.entries(copied)) data.setData(type, value);
+      document.body.dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }),
+      );
+    }, copied);
+    await desktop.waitForFunction(
+      () => document.querySelectorAll(".react-flow__node").length === 3,
+    );
+    const pasted = (await snapshot()).artboards.find(
+      (item) => !beforePaste.artboards.some(({ id }) => id === item.id),
+    );
+    const pastedNode = desktop.locator(`.react-flow__node[data-id="${pasted.id}"]`);
+    await pastedNode.and(desktop.locator(".react-flow__node.selected")).waitFor();
+    assert.deepEqual([pasted.x, pasted.y], [original.artboard.x + 80, original.artboard.y + 80]);
+    await pastedNode.getByRole("button", { name: /Rename artboard/ }).dblclick();
+    const input = edit("Artboard");
+    await input.press("End");
+    await desktop.keyboard.insertText(" draft");
+    await input.press("Meta+z");
+    assert.equal(await input.inputValue(), pasted.name);
+    assert.equal((await snapshot()).artboards.length, 3);
+    await input.press("Escape");
+    await desktop.keyboard.press("Meta+z");
+    await pastedNode.waitFor({ state: "detached" });
+    assert.equal((await snapshot()).canRedo, true);
+    await desktop.keyboard.press("Meta+Shift+z");
+    await pastedNode.waitFor();
+    await desktop.keyboard.press("Meta+z");
+    await pastedNode.waitFor({ state: "detached" });
+    await returnHome();
+    await row("Studio project").click();
+    await copiedTitle.waitFor();
+    assert.deepEqual(
+      (await snapshot()).artboards.map(({ id }) => id),
+      beforePaste.artboards.map(({ id }) => id),
+    );
+    assert.equal((await snapshot()).canRedo, false);
+    await desktop.evaluate((copied) => {
+      const data = new DataTransfer();
+      for (const [type, value] of Object.entries(copied)) data.setData(type, value);
+      const handled = !document.body.dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }),
+      );
+      if (handled) throw new Error("Reopening should expire the prior activation's clipboard.");
+    }, copied);
+
+    const deletionStart = await snapshot();
+    await desktop.keyboard.press("Delete");
+    assert.equal((await snapshot()).revision, deletionStart.revision);
+    await sourceNode.locator(".artboard").click({ position: { x: 15, y: 35 } });
+    await sourceNode.and(desktop.locator(".react-flow__node.selected")).waitFor();
+    await sketchTitle.dblclick();
+    await edit("Artboard").press("End");
+    await edit("Artboard").press("Backspace");
+    assert.equal(await edit("Artboard").inputValue(), "Sketche");
+    await edit("Artboard").press("Escape");
+    assert.equal((await snapshot()).revision, deletionStart.revision);
+
+    const deletionContext = await call("get_context");
+    const activeScope = { projectId, activationId: deletionContext.activationId, artboardId };
+    const originalUrl = deletionStart.artboards.find(({ id }) => id === artboardId).previewUrl;
+    assert.equal(
+      (
+        await call("set_artboard_activity", {
+          ...activeScope,
+          activityId: randomUUID(),
+          status: "working",
+        })
+      ).working,
+      true,
+    );
+    await desktop.keyboard.press("Backspace");
+    await sourceNode.waitFor({ state: "detached" });
+    assert.equal((await snapshot()).revision, deletionStart.revision + 1);
+    assert.equal((await call("get_artboard", activeScope)).code, "ARTBOARD_NOT_FOUND");
+    assert.equal(
+      await app.evaluate(async ({ BrowserWindow }, url) => {
+        const window = BrowserWindow.getAllWindows().find((item) => item.isVisible());
+        return (await window.webContents.session.fetch(url)).status;
+      }, originalUrl),
+      404,
+    );
+    if (evidence) await desktop.screenshot({ path: join(evidence, "artboard-deleted.png") });
+    await desktop.emulateMedia({ reducedMotion: "reduce" });
+    await desktop.keyboard.press("Meta+z");
+    await sourceNode.and(desktop.locator(".react-flow__node.selected")).waitFor();
+    await desktop
+      .frameLocator('iframe[title="Sketches"]')
+      .getByRole("heading", { name: "Make room for ideas." })
+      .waitFor();
+    const restoredPreview = sourceNode.locator('.artboard-preview[data-loaded="true"]');
+    await restoredPreview.waitFor();
+    assert.deepEqual(
+      await restoredPreview.evaluate((element) => {
+        const { transitionDuration, opacity } = getComputedStyle(element);
+        return [transitionDuration, opacity];
+      }),
+      ["0s", "1"],
+    );
+    const restored = (await snapshot()).artboards.find(({ id }) => id === artboardId);
+    assert.equal(restored.agentWorking, false);
+    assert.notEqual(restored.previewUrl, originalUrl);
+    const restoredSource = await call("get_artboard", activeScope);
+    assert.equal(restoredSource.html, original.html);
+    assert.equal(restoredSource.css, original.css);
+    if (evidence) await desktop.screenshot({ path: join(evidence, "artboard-restored.png") });
+
+    await desktop.keyboard.press("Meta+Shift+z");
+    await sourceNode.waitFor({ state: "detached" });
+    await desktop.keyboard.press("Meta+z");
+    await sourceNode.and(desktop.locator(".react-flow__node.selected")).waitFor();
+    await desktop.keyboard.press("Delete");
+    await sourceNode.waitFor({ state: "detached" });
+    await returnHome();
+    await row("Studio project").click();
+    await copiedTitle.waitFor();
+    assert.deepEqual(
+      (await snapshot()).artboards.map(({ id }) => id),
+      [duplicate.id],
+    );
+    assert.equal((await snapshot()).canUndo, false);
   },
 );

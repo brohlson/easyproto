@@ -11,6 +11,8 @@ const bridge: DesktopBridge = {
     };
   },
   arrangeArtboard: (generation, command) => ipcRenderer.invoke(ipc.arrange, generation, command),
+  copyArtboard: (generation, artboardId, clipboardId) =>
+    ipcRenderer.invoke(ipc.copy, generation, artboardId, clipboardId),
   chooseProject: (mode) => ipcRenderer.invoke(ipc.choose, mode),
   openRecentProject: (id) => ipcRenderer.invoke(ipc.recent, id),
   goHome: () => ipcRenderer.invoke(ipc.home),

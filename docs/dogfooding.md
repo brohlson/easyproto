@@ -16,3 +16,11 @@ The first capture reported that Inter could not load from the project’s local 
 The Home boards now inform the desktop project launcher. The `Workspace · Edit and settings` artboard shows the inline title editor, fixed-size dimensions, and the Settings popover. All three were captured at 960 × 600 on macOS at project revision 59. See the [desktop evidence](../evidence/home-workspace/) for the implemented screens.
 
 The same workspace artboard was updated through MCP at project revision 84 to compare the device-size popup and the settings rows. The 960 × 600 dark capture is under `evidence/dogfooding/Workspace-device-presets.png`. Real interaction and Lucide icons are in the desktop implementation.
+
+`Workspace · Duplicate artboard` shows a selected copy offset from its original. It was captured in dark appearance at 760 × 540 at project revision 122. [Mockup capture](../evidence/dogfooding/Workspace-duplicate.png)
+
+The same artboard depicts Copy, Paste, Undo, and Redo at project revision 129. [Mockup capture](../evidence/dogfooding/Workspace-copy-undo.png)
+
+The Delete and Restore shortcuts were checked on the same artboard at project revision 174. [Mockup capture](../evidence/dogfooding/Workspace-delete.png)
+
+Revision 183 uses the same artboard to preview a 180 ms fade on the copied board. [Mockup capture](../evidence/dogfooding/Workspace-preview-entry.png)

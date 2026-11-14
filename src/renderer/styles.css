@@ -170,8 +170,11 @@ button:disabled { opacity: .55; }
 .activity-dots { display: inline-flex; gap: 2px; margin-left: 4px; vertical-align: .22em; }
 .activity-dots > span { width: 3px; height: 3px; border-radius: 50%; background: currentColor; }
 .screen-reader-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.artboard-preview { opacity: 0; pointer-events: none; }
+.artboard-preview[data-loaded="true"] { opacity: 1; }
 .artboard iframe { display: block; border: 0; background: #fff; pointer-events: none; color-scheme: light; }
 @media (prefers-reduced-motion: no-preference) {
+  .artboard-preview { transition: opacity 180ms ease-out; }
   .artboard-preview-working { animation: artboard-pulse 3s ease-in-out infinite; }
   .activity-dots > span { opacity: .35; animation: activity-dot 1.4s ease-in-out infinite; }
   .activity-dots > span:nth-child(2) { animation-delay: .16s; }
