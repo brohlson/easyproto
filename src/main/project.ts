@@ -11,13 +11,14 @@ import {
   rmdir,
   writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { z } from "zod";
 import {
   boardInput,
   commandSchema,
   id,
   manifestSchema,
+  projectName,
   revision,
   source,
   type Artboard,
@@ -71,6 +72,7 @@ const pointerSchema = z.strictObject({
   snapshot: id,
 });
 const managed = ".easy-proto";
+const projectLabel = z.strictObject({ name: projectName });
 const prepareBytes = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
 
@@ -218,6 +220,16 @@ async function load(root: string): Promise<Snapshot> {
   return { manifest, sources };
 }
 
+async function readName(root: string) {
+  try {
+    const bytes = await readRegular(join(root, managed, "name.json"), 4096);
+    return projectLabel.parse(JSON.parse(bytes.toString())).name;
+  } catch (error) {
+    if (!missing(error)) throw error;
+    return basename(root);
+  }
+}
+
 type CommitPhase = "snapshotWritten" | "pointerPublished";
 
 async function publish(root: string, snapshot: Snapshot, onPhase?: (phase: CommitPhase) => void) {
@@ -262,6 +274,7 @@ export class Project {
     readonly root: string,
     snapshot: Snapshot,
     readonly assets: ReadonlyMap<string, Asset>,
+    private displayName: string,
     private readonly onPhase?: (phase: CommitPhase) => void,
   ) {
     this.#snapshot = snapshot;
@@ -309,14 +322,24 @@ export class Project {
         if (!hasManagedFolder) await rmdir(join(root, managed)).catch(() => undefined);
         throw error;
       }
-      return new Project(root, snapshot, assets, onPhase);
+      return new Project(root, snapshot, assets, basename(root), onPhase);
     }
     if (mode === "create") throw new Error("This folder already contains a project.");
-    return new Project(root, await load(root), await readAssets(root), onPhase);
+    return new Project(
+      root,
+      await load(root),
+      await readAssets(root),
+      await readName(root),
+      onPhase,
+    );
   }
 
   get snapshot() {
     return this.#snapshot;
+  }
+
+  get name() {
+    return this.displayName;
   }
 
   whenIdle() {
@@ -332,7 +355,7 @@ export class Project {
 
   execute(input: unknown): Promise<Commit> {
     const command = commandSchema.parse(input);
-    const job = this.#tail.then(async () => {
+    return this.#enqueue(async () => {
       const { manifest, sources } = this.authorize(command.projectId);
       const fingerprint = digest(canonical(command));
       const previous = manifest.commands.find(
@@ -417,6 +440,31 @@ export class Project {
       this.onPhase?.("pointerPublished");
       return result;
     });
+  }
+
+  rename(previous: string, name: string) {
+    const label = projectLabel.parse({ name });
+    const bytes = prepareBytes(label);
+    return this.#enqueue(async () => {
+      if (this.name === label.name) return;
+      if (this.name !== previous)
+        throw new ProjectError("NAME_CHANGED", "The project was renamed while you were editing.");
+      const folder = join(this.root, managed);
+      const pending = join(folder, `.name-${randomUUID()}.tmp`);
+      try {
+        await requireDirectory(folder);
+        await writeFile(pending, bytes, { flag: "wx", flush: true });
+        await rename(pending, join(folder, "name.json"));
+      } catch {
+        await rm(pending, { force: true }).catch(() => undefined);
+        throw new ProjectError("SAVE_FAILED", "The project name could not be saved.");
+      }
+      this.displayName = label.name;
+    });
+  }
+
+  #enqueue<T>(run: () => Promise<T>) {
+    const job = this.#tail.then(run);
     this.#tail = job.then(
       () => undefined,
       () => undefined,

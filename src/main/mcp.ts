@@ -4,7 +4,8 @@ import { z } from "zod";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { boardInput, boardPatch, envelope, id, revision } from "../shared/model";
+import { boardInput, boardPatch, envelope, id, revision, type Command } from "../shared/model";
+import { activityLeaseMs, type ArtboardActivity } from "./activity";
 import { Project, ProjectError } from "./project";
 import type { Preview } from "./preview";
 
@@ -16,6 +17,8 @@ export type ActiveProject = {
   project: Project;
   activationId: string;
   signal: AbortSignal;
+  activity: ArtboardActivity;
+  retire: () => void;
 };
 
 function result(data: Record<string, unknown>) {
@@ -26,7 +29,7 @@ function result(data: Record<string, unknown>) {
 }
 
 function tools(
-  current: () => ActiveProject,
+  current: () => ActiveProject | undefined,
   preview: Preview,
   changed: () => void,
   checkWritable: () => void,
@@ -36,6 +39,7 @@ function tools(
   function active(projectId: string, activationId: string) {
     const scope = current();
     if (
+      !scope ||
       scope.activationId !== activationId ||
       scope.project.snapshot.manifest.projectId !== projectId
     ) {
@@ -55,17 +59,15 @@ function tools(
     return { scope, snapshot, board };
   }
 
-  async function commit(
-    operation: "create_artboard" | "update_artboard",
-    {
-      activationId,
-      ...request
-    }: { activationId: string } & z.infer<typeof envelope> & { arguments: unknown },
-  ) {
-    const { project } = active(request.projectId, activationId);
+  async function commit({ activationId, ...command }: Command & { activationId: string }) {
+    const { project, activity } = active(command.projectId, activationId);
     checkWritable();
-    const saved = await project.execute({ ...request, operation });
-    if (current().project === project) changed();
+    const execute = () => project.execute(command);
+    const saved =
+      command.operation === "update_artboard"
+        ? await activity.run(command.arguments.artboardId, execute)
+        : await execute();
+    if (current()?.project === project) changed();
     return result(saved);
   }
 
@@ -96,13 +98,16 @@ function tools(
     },
     () =>
       call(() => {
-        const { project, activationId } = current();
+        const scope = current();
+        if (!scope) throw new ProjectError("NO_PROJECT", "Open a project in Easy Proto.");
+        const { project, activationId } = scope;
         const { schemaVersion, projectId, revision, artboards } = project.snapshot.manifest;
         return result({
           schemaVersion,
           projectId,
           activationId,
           revision,
+          name: project.name,
           assetDigest: project.assetDigest,
           artboards,
         });
@@ -134,7 +139,7 @@ function tools(
         "Commit a new HTML/CSS artboard. Reuse the same command ID and arguments only when retrying.",
       inputSchema: envelope.extend({ activationId: id, arguments: boardInput }),
     },
-    (request) => call(() => commit("create_artboard", request)),
+    (request) => call(() => commit({ ...request, operation: "create_artboard" })),
   );
 
   server.registerTool(
@@ -146,7 +151,27 @@ function tools(
         arguments: z.strictObject({ artboardId: id, patch: boardPatch }),
       }),
     },
-    (request) => call(() => commit("update_artboard", request)),
+    (request) => call(() => commit({ ...request, operation: "update_artboard" })),
+  );
+
+  server.registerTool(
+    "set_artboard_activity",
+    {
+      description:
+        "Show Agent working on an artboard before drafting changes. Generate a UUID for activityId, renew working with the same ID before the lease expires, then send idle with that ID when done. Activity is temporary and does not save a revision.",
+      inputSchema: { ...scoped, activityId: id, status: z.enum(["working", "idle"]) },
+    },
+    ({ projectId, activationId, artboardId, activityId, status }) =>
+      call(() => {
+        const { scope } = getArtboard(projectId, activationId, artboardId);
+        const working = scope.activity.set(artboardId, activityId, status === "working");
+        return result({
+          artboardId,
+          activityId,
+          working,
+          ...(status === "working" && { expiresInMs: activityLeaseMs }),
+        });
+      }),
   );
 
   server.registerTool(
@@ -170,8 +195,8 @@ function tools(
             snapshot.manifest.revision,
           );
         }
-        const { details, png } = await preview
-          .capture(scope.project, snapshot, board, scope.signal)
+        const { details, png } = await scope.activity
+          .run(board.id, () => preview.capture(scope.project, snapshot, board, scope.signal))
           .finally(() => {
             active(request.projectId, request.activationId);
           });
@@ -205,7 +230,7 @@ async function readBody(request: IncomingMessage) {
 }
 
 export async function listen(
-  current: () => ActiveProject,
+  current: () => ActiveProject | undefined,
   preview: Preview,
   changed: () => void,
   checkWritable: () => void,

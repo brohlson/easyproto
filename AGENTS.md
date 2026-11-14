@@ -8,12 +8,19 @@ Build a macOS-first personal desktop workspace for agent-created HTML/CSS mockup
 
 - Work on one bounded user outcome with explicit acceptance criteria.
 - Inspect current code, relevant decisions, open findings, and the latest handoff before editing. Do not infer implementation from this planning starter.
-- Keep the primary agent responsible for coordination and scoped implementation. Invoke specialists as needed; the coordinator is a responsibility, not a sixth standing role.
-- Route reviews with [agents/review-routing.md](agents/review-routing.md), then load only the selected role files and relevant playbooks.
-- Follow [agents/review-protocol.md](agents/review-protocol.md). Independent reviewers inspect a fixed revision in fresh contexts. They do not approve their own implementation.
-- Run meaningful checks for the affected behavior. Preserve real outputs and distinguish observed results, hypotheses, and untested assumptions.
+- During a working session, the implementing agent checks the affected behavior and shows the result promptly. Keep each check proportionate to the change. Use Easy Proto for visual feedback when available.
+- Consult a relevant specialist early when a decision could be expensive to reverse, such as a project format change, a new privilege boundary, or an MCP contract change.
+- When the user says a batch is ready to commit or explicitly requests review, freeze the proposed changes, run verification, and route independent reviews with [agents/review-routing.md](agents/review-routing.md). Run the required reviewers in parallel in fresh contexts against the same candidate. Follow [agents/review-protocol.md](agents/review-protocol.md).
+- Preserve actual check results and distinguish observed behavior, hypotheses, and untested assumptions.
 - Address review findings within the authorized task. Escalate unresolved product tradeoffs, unavailable evidence, or permissions rather than repeatedly asking about routine fixes.
 - Keep changes small and coherent. Prefer a minimal correction to a speculative abstraction or broad rewrite.
+
+## Dogfood the design phase
+
+- For user-facing layout or interaction changes, start or update the relevant artboard in [EasyProtoMocks](mocks/EasyProtoMocks/) before implementing the interface. Use the [dogfooding workflow](docs/dogfooding.md) and [desktop design guidance](docs/design-guidance.md).
+- Make mockup changes through Easy Proto's MCP tools or canvas controls. Reuse an existing artboard when iterating, then capture and inspect the committed revision before translating it into production code.
+- When drafting edits to an existing artboard, use `set_artboard_activity` with a new activity ID and `working`. Renew it before the two-minute lease expires and send `idle` with the same ID when done.
+- Record friction encountered in the tool and the specific capability that was missing. Continue the requested work if the tool is unavailable, and record which design check still needs to happen in Easy Proto.
 
 ## Boundaries
 
@@ -27,7 +34,7 @@ Build a macOS-first personal desktop workspace for agent-created HTML/CSS mockup
 
 ## Completion
 
-A change is complete when its acceptance criteria are demonstrated, relevant checks pass on the reviewed revision, blocking findings are cleared under the review protocol, and documentation changes reflect an actual contract change. Deferring a critical or major finding does not clear its gate. A clean review may contain zero findings. Agent agreement is not evidence by itself.
+An iteration is ready to share when focused checks demonstrate the requested behavior or the remaining gaps are clear. Before committing a batch, verify the frozen candidate, clear its blocking findings, and confirm the commit will contain the reviewed changes. Deferring a critical or major finding does not clear its gate. A clean review may contain zero findings. Agent agreement is not evidence by itself.
 
 Record a concise handoff: current revision, what changed, observed verification, open findings with owners, and the next bounded task. Do not copy whole conversations into project memory.
 

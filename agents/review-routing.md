@@ -1,6 +1,6 @@
 # Review routing
 
-Route by changed behavior, declared risk, and affected trust or data boundaries. File paths are useful hints, not the sole classifier. Use the currently trusted policy and preserve the reason for each selected reviewer.
+Apply this table when a batch is ready to commit or the user asks for independent review. Route by changed behavior, declared risk, and affected trust or data boundaries. Use the currently trusted policy and preserve the reason for each selected reviewer.
 
 | Change | Default reviewers | Evidence focus |
 | --- | --- | --- |
@@ -18,5 +18,5 @@ Route by changed behavior, declared risk, and affected trust or data boundaries.
 
 For new features, pick the primary engineering owner and add Design for meaningful user workflow changes. Add another specialist only for a concrete affected boundary. An unfamiliar domain is a reason to inspect context, not to automatically call every role.
 
-Consult specialists before implementation when a decision changes the file format, privilege boundary, public tool contract, or major interaction model. Reserve full after-implementation review for the actual diff and evidence.
+During iteration, ask for early specialist input when a decision could be expensive to reverse. Changes to the file format, privilege boundaries, or public tool contracts are common examples. Early consultation informs the design. The independent review uses the finished candidate and its verification evidence.
 

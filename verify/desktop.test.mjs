@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, request } from "node:http";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -25,6 +25,14 @@ function raw(url, options, body = "{}") {
     req.end(body);
   });
 }
+
+async function zoomCanvas(page, deltaY) {
+  const { x, y, width, height } = await page.locator(".canvas").boundingBox();
+  await page.mouse.move(x + width / 2, y + height / 2);
+  await page.mouse.wheel(0, deltaY);
+}
+
+const fitCanvas = (page) => page.keyboard.press("Shift+Digit0");
 
 test(
   "macOS Electron and real MCP client exercise the complete desktop slice",
@@ -80,7 +88,6 @@ test(
       desktop = await app.firstWindow();
       for (const stream of [app.process().stdout, app.process().stderr])
         stream.on("data", (data) => logs.push(data.toString()));
-      await desktop.getByText("Saved · Revision", { exact: false }).waitFor({ timeout: 8000 });
       await desktop
         .frameLocator('iframe[title="Field notes"]')
         .getByRole("heading", { name: "Make room for ideas." })
@@ -96,6 +103,29 @@ test(
       assert.match(activationId, /^[0-9a-f-]{36}$/);
       return endpoint;
     }
+
+    const waitForRevision = async (revision) => {
+      const deadline = Date.now() + 5000;
+      do {
+        const scene = await desktop.evaluate(() => window.easyProto.getScene());
+        if (scene.revision === revision) return;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      } while (Date.now() < deadline);
+      assert.fail(`Project did not reach revision ${revision}`);
+    };
+    const settings = () => desktop.getByRole("button", { name: "Settings", exact: true });
+    const openSettings = async () => {
+      if (!(await desktop.locator("#settings").isVisible())) await settings().click();
+    };
+    const setAppearance = async (theme) => {
+      await openSettings();
+      const label = { light: "Light", dark: "Dark", system: "System" }[theme];
+      await desktop
+        .getByRole("group", { name: "Appearance" })
+        .getByRole("button", { name: label })
+        .click();
+      await desktop.locator("#settings").waitFor({ state: "hidden" });
+    };
 
     const scope = (name, args) => (name === "get_context" ? args : { activationId, ...args });
     const data = async (name, args = {}) => {
@@ -150,6 +180,7 @@ test(
       "create_artboard",
       "get_artboard",
       "get_context",
+      "set_artboard_activity",
       "update_artboard",
     ]);
     const { projectId, revision } = await data("get_context");
@@ -188,7 +219,7 @@ test(
     await frame.getByRole("heading", { name: "Prototype one" }).waitFor();
     statuses.push("MCP create rendered its HTML in the live canvas");
     const board = desktop.locator(".react-flow__node").filter({ hasText: "Agent mockup" });
-    await desktop.getByRole("button", { name: /fit view/i }).click();
+    await fitCanvas(desktop);
     const initialFrame = desktop.frames().find((candidate) => candidate.url().includes(artboardId));
     await board.click({ position: { x: 60, y: 60 } });
     assert.ok((await board.getAttribute("class")).includes("selected"));
@@ -203,7 +234,7 @@ test(
     if (beforePan === (await canvasTransform()))
       throw new Error("Canvas pan did not change the viewport.");
     const beforeZoom = await canvasTransform();
-    await desktop.getByRole("button", { name: /zoom in/i }).click();
+    await zoomCanvas(desktop, -100);
     await desktop.waitForFunction(
       (before) => document.querySelector(".react-flow__viewport").getAttribute("style") !== before,
       beforeZoom,
@@ -227,7 +258,7 @@ test(
     await desktop.mouse.down();
     await desktop.mouse.move(dragX - 44, dragY + 60, { steps: 8 });
     await desktop.mouse.up();
-    await desktop.getByText("Saved · Revision 2", { exact: true }).waitFor({ timeout: 5000 });
+    await waitForRevision(2);
     const dragged = await data("get_artboard", { projectId, artboardId });
     assert.notEqual(dragged.artboard.x, 620);
     assert.notEqual(dragged.artboard.y, 40);
@@ -238,7 +269,7 @@ test(
     );
     assert.equal(await initialFrame.evaluate(() => innerWidth), 320);
     await board.press("ArrowRight");
-    await desktop.getByText("Saved · Revision 3", { exact: true }).waitFor({ timeout: 5000 });
+    await waitForRevision(3);
     const moved = await data("get_artboard", { projectId, artboardId });
     assert.equal(moved.artboard.x, dragged.artboard.x + 5);
     assert.equal(moved.artboard.y, dragged.artboard.y);
@@ -416,7 +447,7 @@ test(
     statuses.push({ capture: details, captureIsolation, pngSampleBGRA: sample });
     if (evidence) {
       await mkdir(evidence, { recursive: true });
-      await desktop.getByRole("button", { name: /fit view/i }).click();
+      await fitCanvas(desktop);
       await desktop.waitForFunction(() => {
         const canvas = document.querySelector(".canvas").getBoundingClientRect();
         return [...document.querySelectorAll(".artboard-label")].every((label) => {
@@ -432,7 +463,7 @@ test(
           .setSize(660, 480),
       );
       await desktop.waitForFunction(() => innerWidth === 660);
-      await desktop.getByRole("button", { name: /fit view/i }).click();
+      await fitCanvas(desktop);
       await desktop.waitForFunction(() => {
         const canvas = document.querySelector(".canvas").getBoundingClientRect();
         return [...document.querySelectorAll(".artboard-label")].every((label) => {
@@ -488,6 +519,107 @@ test(
       "Stale/collision rejected; quit and reopen preserved layout and sources; exact retries replayed without new revisions",
     );
 
+    const activityScope = { projectId, artboardId, activityId: randomUUID() };
+    const parallelActivity = { ...activityScope, activityId: randomUUID() };
+    const setActivity = (status, scope = activityScope) =>
+      data("set_artboard_activity", { ...scope, status });
+    const activityLabel = () => desktop.getByRole("status").filter({ hasText: "Agent working" });
+    const activeLabel = () => activityLabel().filter({ hasText: "Agent working on Agent mockup" });
+    const activityFrame = desktop.frames().find((frame) => frame.url().includes(artboardId));
+    const activityDocument = await activityFrame.locator("html").elementHandle();
+    assert.equal((await setActivity("working")).expiresInMs, 120_000);
+    await activeLabel().waitFor();
+    assert.equal(await activityLabel().count(), 1);
+    const preview = desktop.locator(`[data-id="${artboardId}"] iframe`);
+    assert.equal(await desktop.locator(".artboard-preview-working").count(), 1);
+    assert.deepEqual(
+      await preview.evaluate((element) => {
+        const [pulse] = element.getAnimations();
+        pulse.pause();
+        return [0, 1500, 3000].map((time) => {
+          pulse.currentTime = time;
+          return getComputedStyle(element).opacity;
+        });
+      }),
+      ["1", "0.8", "1"],
+    );
+    assert.equal(await activeLabel().evaluate((label) => getComputedStyle(label).opacity), "1");
+    const dots = activeLabel().locator(".activity-dots > span");
+    assert.deepEqual(
+      await dots.evaluateAll((elements) =>
+        elements.map((dot) => [
+          getComputedStyle(dot).animationName,
+          getComputedStyle(dot).animationDelay,
+        ]),
+      ),
+      [
+        ["activity-dot", "0s"],
+        ["activity-dot", "0.16s"],
+        ["activity-dot", "0.32s"],
+      ],
+    );
+    await desktop.emulateMedia({ reducedMotion: "reduce" });
+    assert.equal(await preview.evaluate((element) => element.getAnimations().length), 0);
+    assert.equal(await preview.evaluate((element) => getComputedStyle(element).opacity), "1");
+    assert.deepEqual(
+      await dots.evaluateAll((elements) =>
+        elements.map((dot) => getComputedStyle(dot).animationName),
+      ),
+      ["none", "none", "none"],
+    );
+    await activeLabel().waitFor();
+    await desktop.emulateMedia({ reducedMotion: "no-preference" });
+    if (evidence) {
+      await mkdir(evidence, { recursive: true });
+      await preview.evaluate((element) => {
+        const [pulse] = element.getAnimations();
+        pulse.pause();
+        pulse.currentTime = 1500;
+      });
+      await desktop.screenshot({ path: join(evidence, "artboard-activity.png") });
+      await setAppearance("dark");
+      await desktop.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+      await desktop.screenshot({ path: join(evidence, "artboard-activity-dark.png") });
+      await setAppearance("system");
+    }
+    assert.equal((await setActivity("working")).working, true);
+    assert.equal((await setActivity("working", parallelActivity)).working, true);
+    assert.equal((await setActivity("idle")).working, true);
+    assert.equal((await setActivity("idle")).working, true);
+    await activeLabel().waitFor();
+    await failure(
+      "set_artboard_activity",
+      { ...activityScope, artboardId: randomUUID(), status: "working" },
+      "ARTBOARD_NOT_FOUND",
+    );
+    assert.equal((await setActivity("idle", parallelActivity)).working, false);
+    await activeLabel().waitFor({ state: "hidden" });
+    assert.equal(await desktop.locator(".artboard-preview-working").count(), 0);
+    assert.equal(await preview.evaluate((element) => getComputedStyle(element).opacity), "1");
+    assert.equal(
+      await activityDocument.evaluate((element) => element === document.documentElement),
+      true,
+    );
+    assert.equal((await data("get_context")).revision, 4);
+    assert.deepEqual(JSON.parse(await readFile(join(project, "project.json"), "utf8")), pointer);
+    statuses.push(
+      "Explicit activity pulsed only its artboard between 100% and 80% opacity, respected reduced motion, overlapped independently, and left its iframe and project pointer intact.",
+    );
+
+    // Accelerate only the main process lease timer to observe abandoned activity cleanup.
+    await app.evaluate(() => {
+      const original = globalThis.setTimeout;
+      globalThis.setTimeout = (callback, delay, ...args) => {
+        if (delay !== 120_000) return original(callback, delay, ...args);
+        globalThis.setTimeout = original;
+        return original(callback, 1_000, ...args);
+      };
+    });
+    await setActivity("working");
+    await activeLabel().waitFor();
+    await activeLabel().waitFor({ state: "hidden", timeout: 5_000 });
+    statuses.push("An abandoned activity expired and cleared from the canvas.");
+
     // Hold Chromium after frame readiness so a real MCP update can commit before the PNG is taken.
     await app.evaluate(({ app }) => {
       app.once("browser-window-created", (_event, window) => {
@@ -517,6 +649,7 @@ test(
     }
     try {
       assert.ok(overlap, "Chromium capture did not reach the synchronization point.");
+      await activeLabel().waitFor();
       const newer = await data("update_artboard", {
         projectId,
         commandId: randomUUID(),
@@ -531,6 +664,7 @@ test(
       });
     }
     const pinned = await capturing;
+    await activeLabel().waitFor({ state: "hidden" });
     assert.equal(pinned.isError, undefined);
     assert.equal(pinned.structuredContent.revision, 4);
     assert.equal(pinned.structuredContent.sourceDigest, commit.artboard.sourceDigest);
@@ -663,12 +797,14 @@ test(
             : { canceled: true, filePaths: [] };
         };
       }, folder);
-      const control = desktop.getByRole("button", { name: action, exact: true });
+      await openSettings();
+      const label = action === "New Project" ? "Create project" : "Open project…";
+      const control = desktop
+        .locator("#settings")
+        .getByRole("button", { name: label, exact: true });
       await control.click();
       await desktop.waitForFunction(() =>
-        [...document.querySelectorAll(".project-actions button")].every(
-          (button) => !button.disabled,
-        ),
+        [...document.querySelectorAll("#settings button")].every((button) => !button.disabled),
       );
       const picker = await app.evaluate(() => globalThis.easyProtoPicker);
       assert.equal(picker.parent, true);
@@ -700,7 +836,7 @@ test(
     assert.notEqual(fresh.activationId, original.activationId);
     assert.equal(fresh.revision, 0);
     await desktop.getByText("Fresh project", { exact: true }).waitFor();
-    await desktop.getByText("Saved · Revision 0", { exact: true }).waitFor();
+    await waitForRevision(0);
     await desktop
       .frameLocator('iframe[title="Field notes"]')
       .getByRole("heading", { name: "Make room for ideas." })
@@ -763,6 +899,13 @@ test(
       });
     });
     const oldScope = { projectId, artboardId, activationId: returned.activationId };
+    const oldActivity = {
+      ...activityScope,
+      activationId: oldScope.activationId,
+      status: "working",
+    };
+    await data("set_artboard_activity", oldActivity);
+    await activeLabel().waitFor();
     const pending = client.callTool({
       name: "capture_artboard",
       arguments: { ...oldScope, revision: 8 },
@@ -784,6 +927,7 @@ test(
       .frameLocator('iframe[title="Agent mockup"]')
       .getByRole("heading", { name: "Copy only" })
       .waitFor();
+    await activeLabel().waitFor({ state: "hidden" });
     const retired = await pending;
     assert.equal(retired.structuredContent.code, "PROJECT_SCOPE");
     assert.equal(
@@ -798,6 +942,7 @@ test(
     for (const [tool, args] of [
       ["get_artboard", oldScope],
       ["capture_artboard", { ...oldScope, revision: 8 }],
+      ["set_artboard_activity", oldActivity],
       [
         "create_artboard",
         {
@@ -893,7 +1038,7 @@ test(
       }
       assert.equal(await app.evaluate(() => Boolean(globalThis.releasePickerCommit)), true);
       reopening = choose("Open Project", copy);
-      await desktop.getByText("Selecting project…", { exact: true }).waitFor({ timeout: 5000 });
+      await desktop.waitForFunction(() => document.querySelector("#settings button").disabled);
       assert.equal((await data("get_context")).activationId, switched.activationId);
       await failure(
         "update_artboard",
@@ -956,7 +1101,7 @@ test(
           },
         },
       ),
-      /only change artboard position and size/,
+      /only change artboard name, position or size/,
     );
     const unauthorized = await app.evaluate(
       async ({ BrowserWindow }, { generation, command }) => {
@@ -1019,7 +1164,7 @@ test(
     };
     const responsiveCommit = await data("update_artboard", responsive);
     const responsiveNode = desktop.locator(".react-flow__node").filter({ hasText: "Agent mockup" });
-    await desktop.getByRole("button", { name: /fit view/i }).click();
+    await fitCanvas(desktop);
     const responsiveFrame = desktop.frameLocator('iframe[title="Agent mockup"]');
     await responsiveFrame.getByText("Compact layout").waitFor();
     const inside = desktop.frames().find((frame) => frame.url().includes(artboardId));
@@ -1035,7 +1180,7 @@ test(
     );
     const beforeZoomBox = await iframe.boundingBox();
     const beforeResizeZoom = await canvasTransform();
-    await desktop.getByRole("button", { name: /zoom in/i }).click();
+    await zoomCanvas(desktop, -100);
     await desktop.waitForFunction(
       (before) => document.querySelector(".react-flow__viewport").getAttribute("style") !== before,
       beforeResizeZoom,
@@ -1056,186 +1201,115 @@ test(
     assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [320, 240]);
     assert.equal(await responsiveFrame.getByText("Compact layout").isVisible(), true);
     assert.equal((await data("get_context")).revision, 10);
-    const turnZoom = await desktop
-      .locator(".react-flow__viewport")
-      .evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
-    await responsiveNode.click({ position: { x: 28, y: 30 } });
-    const handle = responsiveNode.getByRole("button", { name: "Resize Agent mockup" });
-    const handleBox = await handle.boundingBox();
-    assert.ok(handleBox.width >= 23.9);
-    const hx = handleBox.x + handleBox.width / 2;
-    const hy = handleBox.y + handleBox.height / 2;
-    await desktop.mouse.move(hx, hy);
-    await desktop.keyboard.down("Meta");
-    await desktop.mouse.down();
-    await desktop.mouse.move(hx + 128 * turnZoom, hy + 45 * turnZoom, { steps: 7 });
-    await responsiveFrame.getByText("Wide layout").waitFor({ timeout: 5000 });
-    const other = desktop.locator(".react-flow__node").filter({ hasText: "Field notes" });
-    await other.press("Enter");
-    assert.equal(await handle.count(), 1);
-    assert.ok(await desktop.getByRole("button", { name: /zoom in/i }).isDisabled());
-    assert.ok(await desktop.getByRole("button", { name: /zoom out/i }).isDisabled());
-    assert.ok(await desktop.getByRole("button", { name: /fit view/i }).isDisabled());
-    const activeCamera = await canvasTransform();
-    await desktop.mouse.wheel(0, -200);
-    await desktop.keyboard.up("Meta");
-    await desktop.keyboard.down("Space");
-    await desktop.mouse.wheel(70, 90);
-    await desktop.mouse.move(hx + 125 * turnZoom, hy + 42 * turnZoom, { steps: 2 });
-    await desktop.mouse.move(hx + 128 * turnZoom, hy + 45 * turnZoom, { steps: 2 });
-    await desktop.keyboard.up("Space");
-    assert.equal(await canvasTransform(), activeCamera);
-    const draft = await inside.evaluate(() => [innerWidth, innerHeight]);
-    assert.ok(Math.abs(draft[0] - 448) <= 1 && Math.abs(draft[1] - 285) <= 1, String(draft));
-    assert.equal((await data("get_context")).revision, 10);
-    await desktop.mouse.up();
-    await desktop.getByText("Saved · Revision 11", { exact: true }).waitFor({ timeout: 5000 });
+    const dimensions = responsiveNode.getByRole("button", { name: /Device size/ });
+    const deviceMenu = responsiveNode.getByRole("group", { name: "Device sizes" });
+    const device = (name) => deviceMenu.getByRole("button", { name });
+    assert.equal(
+      await desktop
+        .locator(".react-flow__controls, .react-flow__attribution, .resize-handle")
+        .count(),
+      0,
+    );
+    await dimensions.press("Enter");
+    await deviceMenu.waitFor();
+    await desktop.waitForFunction(() => document.activeElement?.textContent.includes("iPhone SE"));
+    await desktop.keyboard.press("ArrowDown");
+    const iphone = device(/iPhone 16 Pro 402/);
+    assert.equal(await iphone.evaluate((element) => element === document.activeElement), true);
+    await desktop.keyboard.press("Enter");
+    await deviceMenu.waitFor({ state: "hidden" });
+    await waitForRevision(11);
+    await responsiveFrame.getByText("Wide layout").waitFor();
     const resized = await data("get_artboard", {
       projectId,
-      activationId: reopenedCopy.activationId,
       artboardId,
+      activationId: reopenedCopy.activationId,
     });
-    assert.deepEqual([resized.artboard.width, resized.artboard.height], draft);
+    assert.deepEqual([resized.artboard.width, resized.artboard.height], [402, 874]);
     assert.deepEqual(
       [resized.artboard.x, resized.artboard.y],
       [responsiveCommit.artboard.x, responsiveCommit.artboard.y],
     );
     assert.equal(resized.artboard.sourceRevision, responsiveCommit.artboard.sourceRevision);
+    assert.equal(inside.url(), frameUrl);
     assert.equal(
       desktop.frames().find((frame) => frame.url().includes(artboardId)),
       inside,
     );
-    assert.equal(inside.url(), frameUrl);
-    statuses.push({
-      resize: {
-        before: [320, 240],
-        during: draft,
-        after: [resized.artboard.width, resized.artboard.height],
-        zoom: turnZoom,
-        zoomedDisplayWidth: afterZoomBox.width,
-        initialDisplayWidth: beforeZoomBox.width,
-        committedRevision: 11,
-        mediaQuery: "compact before and after zoom, wide during and after resize",
-        cameraStableDuringModifierWheel: true,
-        handleRetainedDuringSelectionAttempt: true,
-      },
-    });
+    assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [402, 874]);
+    const menuFocus = () => dimensions.evaluate((element) => element === document.activeElement);
+    assert.equal(await menuFocus(), true);
 
-    await handle.press("Shift+ArrowLeft");
-    await desktop.getByText("Saved · Revision 12", { exact: true }).waitFor({ timeout: 5000 });
-    const keyboardWidth = draft[0] - 20;
-    assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [
-      keyboardWidth,
-      draft[1],
-    ]);
-    const keyboardLocation = await handle.boundingBox();
-    const cancelX = keyboardLocation.x + keyboardLocation.width / 2;
-    const cancelY = keyboardLocation.y + keyboardLocation.height / 2;
-    await desktop.mouse.move(cancelX, cancelY);
-    await desktop.mouse.down();
-    await desktop.mouse.move(cancelX + 35 * turnZoom, cancelY, { steps: 4 });
+    await dimensions.click();
+    await deviceMenu.waitFor();
+    assert.equal(await iphone.getAttribute("aria-pressed"), "true");
     await desktop.keyboard.press("Escape");
-    await desktop.mouse.up();
-    await desktop.waitForFunction(
-      (width) => document.querySelector('iframe[title="Agent mockup"]').width === String(width),
-      keyboardWidth,
-      { timeout: 5000 },
-    );
-    await inside.waitForFunction((width) => innerWidth === width, keyboardWidth, { timeout: 5000 });
-    assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [
-      keyboardWidth,
-      draft[1],
-    ]);
-    assert.equal((await data("get_context")).revision, 12);
+    await deviceMenu.waitFor({ state: "hidden" });
+    await waitForRevision(11);
+    await dimensions.click();
+    await iphone.click();
+    await deviceMenu.waitFor({ state: "hidden" });
+    await waitForRevision(11);
 
-    await responsiveNode.click({ position: { x: 28, y: 30 } });
-    const spaceHeldBox = await handle.boundingBox({ timeout: 5000 });
-    await desktop.mouse.move(
-      spaceHeldBox.x + spaceHeldBox.width / 2,
-      spaceHeldBox.y + spaceHeldBox.height / 2,
-    );
-    await desktop.keyboard.down("Space");
-    await desktop.mouse.down();
-    await desktop.keyboard.up("Space");
-    await desktop.mouse.up();
-    const priorWheelScale = await desktop
-      .locator(".react-flow__viewport")
-      .evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
-    await desktop.mouse.wheel(0, -30);
-    await desktop.waitForFunction(
-      (prior) =>
-        new DOMMatrixReadOnly(
-          getComputedStyle(document.querySelector(".react-flow__viewport")).transform,
-        ).a > prior,
-      priorWheelScale,
-      { timeout: 5000 },
-    );
-    await desktop.getByRole("button", { name: /fit view/i }).click();
-    statuses.push(
-      "Space held before resize and released during it did not change the next plain wheel from zoom to pan.",
-    );
-
-    await responsiveNode.click({ position: { x: 28, y: 30 } });
-    const conflictBox = await handle.boundingBox({ timeout: 5000 });
-    const conflictZoom = await desktop
-      .locator(".react-flow__viewport")
-      .evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
-    const conflictX = conflictBox.x + conflictBox.width / 2;
-    const conflictY = conflictBox.y + conflictBox.height / 2;
-    await desktop.mouse.move(conflictX, conflictY);
-    await desktop.mouse.down();
-    await desktop.mouse.move(conflictX + 35 * conflictZoom, conflictY, { steps: 4 });
+    await dimensions.click();
+    await deviceMenu.waitFor();
     await data("update_artboard", {
       projectId,
       activationId: reopenedCopy.activationId,
       commandId: randomUUID(),
-      expectedRevision: 12,
+      expectedRevision: 11,
       arguments: { artboardId, patch: { width: 380 } },
     });
-    await desktop.mouse.up();
+    await dimensions.getAttribute("aria-label");
+    await device(/iPad mini 768/).click();
     const resizeError = desktop.getByRole("alert");
     assert.match(await resizeError.innerText({ timeout: 5000 }), /try the change again/i);
     await resizeError.getByRole("button", { name: "Dismiss" }).click();
     await responsiveFrame.getByText("Compact layout").waitFor();
-    assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [380, draft[1]]);
-    assert.equal((await data("get_context")).revision, 13);
-    statuses.push(
-      "Keyboard resize committed with Shift step; Escape canceled a draft; a stale resize rolled back to the newer MCP width.",
-    );
+    assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [380, 874]);
+    await waitForRevision(12);
 
-    const sizeCapture = await client.callTool({
-      name: "capture_artboard",
-      arguments: {
-        projectId,
-        artboardId,
-        activationId: reopenedCopy.activationId,
-        revision: 13,
+    await dimensions.click();
+    await device(/iPad mini 768/).click();
+    await waitForRevision(13);
+    await responsiveFrame.getByText("Wide layout").waitFor();
+    assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [768, 1024]);
+    statuses.push({
+      devicePresets: {
+        initialViewport: [320, 240],
+        displayWidthBeforeZoom: beforeZoomBox.width,
+        displayWidthAfterZoom: afterZoomBox.width,
+        iphone: [402, 874],
+        ipad: [768, 1024],
+        mediaQuery: "compact after zoom, wide after applying a preset",
+        staleSelectionRejected: true,
+        escapeAndSameSizePreservedRevision: true,
       },
     });
-    assert.equal(sizeCapture.isError, undefined, JSON.stringify(sizeCapture.content));
+    const sizeCapture = await client.callTool({
+      name: "capture_artboard",
+      arguments: { projectId, artboardId, activationId: reopenedCopy.activationId, revision: 13 },
+    });
+    assert.equal(sizeCapture.isError, undefined, JSON.stringify(sizeCapture.content[0]));
     assert.deepEqual(
       [sizeCapture.structuredContent.pixelWidth, sizeCapture.structuredContent.pixelHeight],
-      [380, draft[1]],
+      [768, 1024],
     );
     const afterResizeReopen = await choose("Open Project", copy);
     assert.equal(afterResizeReopen.revision, 13);
-    await responsiveFrame.getByText("Compact layout").waitFor();
+    await responsiveFrame.getByText("Wide layout").waitFor();
     const reopenedFrame = desktop.frames().find((frame) => frame.url().includes(artboardId));
-    assert.deepEqual(await reopenedFrame.evaluate(() => [innerWidth, innerHeight]), [
-      380,
-      draft[1],
-    ]);
+    assert.deepEqual(await reopenedFrame.evaluate(() => [innerWidth, innerHeight]), [768, 1024]);
     assert.ok(
       sizeCapture.structuredContent.unresolved.some((issue) =>
         issue.includes("Font could not load: ChromeOnly"),
       ),
     );
-    statuses.push("Capture and folder reopen matched the committed resized viewport.");
+    statuses.push("Capture and folder reopen matched the committed device preset.");
     statuses.push(
       "Arrange IPC refused a different sender and a mixed HTML/geometry patch; the bundled chrome font failed to load in both live and captured previews.",
     );
 
-    const appearance = desktop.getByRole("combobox", { name: "Appearance" });
     const themeInfo = () =>
       desktop.evaluate(async () => {
         await document.fonts.ready;
@@ -1243,27 +1317,40 @@ test(
         return {
           scheme: getComputedStyle(document.documentElement).colorScheme,
           background: getComputedStyle(document.querySelector("header")).backgroundColor,
+          canvas: getComputedStyle(document.querySelector(".react-flow__background"))
+            .backgroundColor,
           inter: inter?.status,
         };
       });
-    await appearance.selectOption("light");
+    await setAppearance("light");
     await desktop.waitForFunction(() => document.documentElement.dataset.theme === "light");
     const light = await themeInfo();
-    assert.deepEqual(light, { scheme: "light", background: "rgb(255, 255, 255)", inter: "loaded" });
-    await responsiveNode.click({ position: { x: 28, y: 30 } });
-    await handle.getAttribute("aria-label");
+    assert.deepEqual(light, {
+      scheme: "light",
+      background: "rgb(255, 255, 255)",
+      canvas: "rgb(245, 245, 245)",
+      inter: "loaded",
+    });
     const appArtboardColor = await reopenedFrame.evaluate(
       () => getComputedStyle(document.body).backgroundColor,
     );
-    if (evidence)
+    if (evidence) {
+      await openSettings();
       await desktop.screenshot({
-        path: join(evidence, "artboard-resize-light.png"),
+        path: join(evidence, "settings-light.png"),
         animations: "disabled",
       });
-    await appearance.selectOption("dark");
+      await desktop.keyboard.press("Escape");
+    }
+    await setAppearance("dark");
     await desktop.waitForFunction(() => document.documentElement.dataset.theme === "dark");
     const dark = await themeInfo();
-    assert.deepEqual(dark, { scheme: "dark", background: "rgb(17, 17, 17)", inter: "loaded" });
+    assert.deepEqual(dark, {
+      scheme: "dark",
+      background: "rgb(44, 44, 44)",
+      canvas: "rgb(30, 30, 30)",
+      inter: "loaded",
+    });
     assert.equal(
       await reopenedFrame.evaluate(() => getComputedStyle(document.body).backgroundColor),
       appArtboardColor,
@@ -1272,11 +1359,14 @@ test(
       desktop.frames().find((frame) => frame.url().includes(artboardId)),
       reopenedFrame,
     );
-    if (evidence)
+    if (evidence) {
+      await openSettings();
       await desktop.screenshot({
-        path: join(evidence, "artboard-resize-dark.png"),
+        path: join(evidence, "settings-dark.png"),
         animations: "disabled",
       });
+      await desktop.keyboard.press("Escape");
+    }
     await app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
         .find((window) => window.isVisible())
@@ -1284,87 +1374,34 @@ test(
     );
     await desktop.waitForFunction(() => innerWidth === 660);
     await desktop.waitForFunction(
-      () =>
-        document.querySelector('select[aria-label="Appearance"]').getBoundingClientRect().right <=
-        innerWidth,
+      () => document.querySelector(".settings-button").getBoundingClientRect().right <= innerWidth,
       undefined,
       { timeout: 5000 },
     );
-    await handle.press("Tab");
-    await desktop.keyboard.press("Shift+Tab");
-    await desktop.getByText(/Arrow keys resize/).waitFor({ timeout: 5000 });
-    await desktop.waitForFunction(
-      () => {
-        const button = document.activeElement;
-        if (!button?.classList.contains("resize-handle")) return false;
-        const bounds = button.getBoundingClientRect();
-        const canvas = button.closest(".canvas").getBoundingClientRect();
-        return (
-          bounds.left >= canvas.left &&
-          bounds.top >= canvas.top &&
-          bounds.right <= canvas.right &&
-          bounds.bottom <= canvas.bottom
-        );
-      },
-      undefined,
-      { timeout: 5000 },
-    );
-    await desktop.getByRole("button", { name: /fit view/i }).click();
-    await desktop
-      .frameLocator('iframe[title="Field notes"]')
-      .getByRole("heading", { name: "Make room for ideas." })
-      .waitFor();
-    await responsiveFrame.getByRole("heading", { name: "Responsive fixture" }).waitFor();
-    await desktop.evaluate(
-      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
-    );
+    await fitCanvas(desktop);
+    await dimensions.click();
+    await deviceMenu.waitFor();
+    const menuBox = await deviceMenu.boundingBox();
+    assert.ok(menuBox.x >= 0 && menuBox.y >= 0);
+    assert.ok(menuBox.x + menuBox.width <= 660 && menuBox.y + menuBox.height <= 480);
     if (evidence)
       await desktop.screenshot({
-        path: join(evidence, "artboard-resize-dark-minimum.png"),
+        path: join(evidence, "device-presets-dark-minimum.png"),
         animations: "disabled",
       });
-    await appearance.selectOption("light");
-    await desktop.waitForFunction(() => document.documentElement.dataset.theme === "light");
+    await desktop.keyboard.press("Escape");
+    await deviceMenu.waitFor({ state: "hidden" });
+    await setAppearance("light");
+    await dimensions.click();
+    await deviceMenu.waitFor();
     if (evidence)
       await desktop.screenshot({
-        path: join(evidence, "artboard-resize-light-minimum.png"),
+        path: join(evidence, "device-presets-light-minimum.png"),
         animations: "disabled",
       });
-    // Repeated keyboard growth can push a focused corner beyond the window at this zoom.
-    await handle.press("Tab");
-    await desktop.keyboard.press("Shift+Tab");
-    await desktop.getByText(/Arrow keys resize/).waitFor({ timeout: 5000 });
-    const beforeKeyboardPan = await canvasTransform();
-    let keyboardRevealed = false;
-    for (let revision = 14; revision <= 30; revision++) {
-      await desktop.keyboard.press("Shift+ArrowRight");
-      await desktop
-        .getByText(`Saved · Revision ${revision}`, { exact: true })
-        .waitFor({ timeout: 5000 });
-      const visible = await handle.evaluate((button) => {
-        const bounds = button.getBoundingClientRect();
-        const canvas = button.closest(".canvas").getBoundingClientRect();
-        return (
-          document.activeElement === button &&
-          bounds.right <= canvas.right &&
-          bounds.left >= canvas.left
-        );
-      });
-      assert.equal(visible, true);
-      if ((await canvasTransform()) !== beforeKeyboardPan) {
-        keyboardRevealed = true;
-        break;
-      }
-    }
-    assert.equal(
-      keyboardRevealed,
-      true,
-      "Keyboard growth did not exercise revealing a clipped handle.",
-    );
-    statuses.push(
-      "Repeated keyboard growth kept the focused handle inside the minimum-size canvas and panned when necessary.",
-    );
-    await appearance.selectOption("system");
+    await desktop.keyboard.press("Escape");
+    await deviceMenu.waitFor({ state: "hidden" });
+    await setAppearance("system");
     await desktop.waitForFunction(
       () =>
         document.documentElement.dataset.theme ===
@@ -1387,5 +1424,239 @@ test(
         authoredArtboardBackground: appArtboardColor,
       },
     });
+  },
+);
+
+test(
+  "Home reopens projects, inline names persist, and canvas labels ignore zoom",
+  { timeout: 50_000 },
+  async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "easy-proto-home-"));
+    const project = join(root, "Project folder");
+    const profile = join(root, "profile");
+    const token = randomBytes(32).toString("base64url");
+    await mkdir(project);
+    let app, desktop, client, port;
+    t.after(async () => {
+      await client?.close();
+      await app?.close();
+      await rm(root, { recursive: true, force: true });
+    });
+    async function launch() {
+      const reservation = createServer();
+      await new Promise((resolve) => reservation.listen(0, "127.0.0.1", resolve));
+      port = reservation.address().port;
+      await new Promise((resolve) => reservation.close(resolve));
+      app = await electron.launch({
+        args: [process.cwd()],
+        env: {
+          ...process.env,
+          EASY_PROTO_PROFILE: profile,
+          EASY_PROTO_TOKEN: token,
+          EASY_PROTO_PORT: String(port),
+        },
+      });
+      desktop = await app.firstWindow();
+      await desktop.getByRole("heading", { name: "Projects" }).waitFor();
+    }
+    async function connect() {
+      client = new Client({ name: "home-integration", version: "1.0.0" });
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
+          requestInit: { headers: { Authorization: "Bearer " + token } },
+        }),
+      );
+    }
+    async function call(name, args = {}) {
+      return (await client.callTool({ name, arguments: args })).structuredContent;
+    }
+    async function menu() {
+      await desktop.getByRole("button", { name: "Settings", exact: true }).click();
+      await desktop.locator("#settings").waitFor();
+    }
+    async function returnHome() {
+      await menu();
+      await desktop.getByRole("button", { name: "Home", exact: true }).click();
+      await desktop.getByRole("heading", { name: "Projects" }).waitFor();
+    }
+    const snapshot = () => desktop.evaluate(() => window.easyProto.getScene());
+    const edit = (kind) => desktop.getByRole("textbox", { name: kind + " name", exact: true });
+    const title = (kind, name) =>
+      desktop.getByRole("button", { name: "Rename " + kind + " " + name, exact: true });
+    const row = (name) => desktop.locator(".home").getByRole("button", { name, exact: true });
+
+    await launch();
+    await connect();
+    await desktop.getByText("No projects yet", { exact: true }).waitFor();
+    assert.deepEqual((await snapshot()).projects, []);
+    assert.equal((await call("get_context")).code, "NO_PROJECT");
+    assert.equal(await desktop.getByRole("group", { name: "Appearance" }).count(), 0);
+    if (evidence) await desktop.screenshot({ path: join(evidence, "home-empty.png") });
+    await app.evaluate(({ dialog }, project) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [project] });
+    }, project);
+    await desktop.getByRole("button", { name: "Create project", exact: true }).click();
+    const projectTitle = title("project", "Project folder");
+    await projectTitle.waitFor();
+    assert.equal(await desktop.getByText("Saved · Revision", { exact: false }).count(), 0);
+    const context = await call("get_context");
+    const {
+      activationId,
+      projectId,
+      artboards: [{ id: artboardId }],
+    } = context;
+    const auth = { projectId, activationId, artboardId };
+    const initial = await snapshot();
+    const previewUrl = initial.artboards[0].previewUrl;
+    await projectTitle.dblclick();
+    await edit("Project").fill("Canceled name");
+    await edit("Project").press("Escape");
+    await projectTitle.waitFor();
+    assert.equal(await projectTitle.evaluate((button) => document.activeElement === button), true);
+    await projectTitle.press("Enter");
+    await edit("Project").fill("  Studio project  ");
+    await edit("Project").press("Enter");
+    await title("project", "Studio project").waitFor();
+    assert.equal((await snapshot()).revision, initial.revision);
+    assert.equal((await call("get_context")).name, "Studio project");
+    assert.deepEqual(
+      JSON.parse(await readFile(join(project, ".easy-proto", "name.json"), "utf8")),
+      { name: "Studio project" },
+    );
+
+    const artboard = title("artboard", "Field notes");
+    const node = desktop.locator(".react-flow__node");
+    const dimensions = node.locator(".artboard-dimensions");
+    const frame = desktop.frames().find((item) => item.url() === previewUrl);
+    const frameSize = () => frame.evaluate(() => [innerWidth, innerHeight]);
+    const transform = () => desktop.locator(".react-flow__viewport").getAttribute("style");
+    await fitCanvas(desktop);
+    await desktop.waitForFunction(() => !!document.querySelector(".artboard-meta"));
+    const before = await transform();
+    await artboard.dblclick();
+    assert.equal(await transform(), before);
+    await edit("Artboard").fill("Canceled board");
+    await edit("Artboard").press("Escape");
+    await artboard.waitFor();
+    await artboard.dblclick();
+    await edit("Artboard").fill("Sketches");
+    await edit("Artboard").press("ArrowLeft");
+    await edit("Artboard").press("Enter");
+    const renamed = title("artboard", "Sketches");
+    await renamed.waitFor();
+    assert.equal((await snapshot()).revision, initial.revision + 1);
+    assert.equal((await snapshot()).artboards[0].x, initial.artboards[0].x);
+    assert.equal((await snapshot()).artboards[0].previewUrl, previewUrl);
+
+    const activity = { ...auth, activityId: randomUUID() };
+    assert.equal(
+      (await call("set_artboard_activity", { ...activity, status: "working" })).working,
+      true,
+    );
+    const activityLabel = node.getByRole("status").filter({ hasText: "Agent working" });
+    await activityLabel.waitFor();
+    const heights = () =>
+      Promise.all(
+        [renamed, dimensions, activityLabel].map((locator) =>
+          locator.evaluate((element) => element.getBoundingClientRect().height),
+        ),
+      );
+    const startingHeights = await heights();
+    const startingWidth = (await node.boundingBox()).width;
+    const zoom = () =>
+      node
+        .locator(".artboard-meta")
+        .evaluate((element) => 1 / Number(element.style.getPropertyValue("--inverse-zoom")));
+    async function zoomTo(deltaY, reached) {
+      for (let i = 0; i < 22; i++) {
+        const previous = await zoom();
+        if (reached(previous)) return;
+        await zoomCanvas(desktop, deltaY);
+        await desktop.waitForFunction(
+          (previous) =>
+            1 /
+              Number(
+                document.querySelector(".artboard-meta").style.getPropertyValue("--inverse-zoom"),
+              ) !==
+            previous,
+          previous,
+          { timeout: 2000 },
+        );
+      }
+      assert.fail("Did not reach target zoom");
+    }
+    await zoomTo(125, (value) => value <= 0.1);
+    assert.ok((await node.boundingBox()).width < startingWidth / 4);
+    assert.ok(
+      (await heights()).every(
+        (height, index) => height >= 16 && Math.abs(height - startingHeights[index]) < 0.5,
+      ),
+    );
+    assert.deepEqual(await frameSize(), [540, 360]);
+    await zoomTo(-125, (value) => value >= 2.95);
+    assert.ok(
+      (await heights()).every((height, index) => Math.abs(height - startingHeights[index]) < 0.5),
+    );
+    assert.deepEqual(await frameSize(), [540, 360]);
+    assert.equal(
+      desktop.frames().find((item) => item.url() === previewUrl),
+      frame,
+    );
+    await fitCanvas(desktop);
+    if (evidence) {
+      await menu();
+      await desktop.screenshot({ path: join(evidence, "workspace-settings.png") });
+      await desktop.keyboard.press("Escape");
+      await desktop.locator("#settings").waitFor({ state: "hidden" });
+    }
+
+    await returnHome();
+    assert.equal((await call("get_context")).code, "NO_PROJECT");
+    assert.equal((await call("get_artboard", auth)).code, "PROJECT_SCOPE");
+    assert.equal(
+      await app.evaluate(async ({ BrowserWindow }, url) => {
+        const session = BrowserWindow.getAllWindows().find((window) => window.isVisible())
+          .webContents.session;
+        return (await session.fetch(url)).status;
+      }, previewUrl),
+      404,
+    );
+    assert.deepEqual(Object.keys((await snapshot()).projects[0]).sort(), ["id", "name"]);
+    if (evidence) await desktop.screenshot({ path: join(evidence, "home-projects.png") });
+    await row("Studio project").click();
+    await renamed.waitFor();
+    assert.notEqual((await call("get_context")).activationId, activationId);
+
+    await client.close();
+    client = undefined;
+    await app.close();
+    app = undefined;
+    await launch();
+    await connect();
+    await row("Studio project").waitFor();
+    const moved = join(root, "Moved folder");
+    await rename(project, moved);
+    await row("Studio project").click();
+    const alert = desktop.getByRole("alert");
+    assert.match(await alert.innerText(), /If it moved/);
+    await alert.getByRole("button", { name: "Dismiss" }).click();
+    await symlink(moved, project, "dir");
+    try {
+      await row("Studio project").click();
+      assert.match(await alert.innerText(), /If it moved/);
+      assert.equal((await call("get_context")).code, "NO_PROJECT");
+      await alert.getByRole("button", { name: "Dismiss" }).click();
+    } finally {
+      await rm(project);
+    }
+    await app.evaluate(({ dialog }, moved) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [moved] });
+    }, moved);
+    await menu();
+    await desktop.getByRole("button", { name: "Open project…" }).click();
+    await title("project", "Studio project").waitFor();
+    await title("artboard", "Sketches").waitFor();
+    await returnHome();
+    assert.equal(await row("Studio project").count(), 1);
   },
 );

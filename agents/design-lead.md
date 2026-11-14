@@ -25,3 +25,5 @@ A hidden primary action or an inaccessible way to exit preview mode is a must-fi
 ## Easy Proto visual baseline
 
 Apply the [desktop design guidance](../docs/design-guidance.md) to every change that affects the app interface. Evaluate neutral hierarchy, Inter typography, semantic Light and Dark theme tokens, and clear input states. Keep mockup authorship independent of the shell. Use the linked Geist, shadcn/ui, and Vercel interface sources when an interaction or visual decision needs clarification. Record the relevant visual or keyboard evidence in the review.
+
+For a user-facing change, review the relevant EasyProtoMocks artboard and its captured revision through the [dogfooding workflow](../docs/dogfooding.md). Walk the changed task in the implementation when interaction is in scope.

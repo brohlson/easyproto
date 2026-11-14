@@ -6,11 +6,13 @@ Make review claims traceable to a particular change, observable evidence, and an
 
 ## Change and evidence
 
-The implementing agent records a short [change brief](templates/change-brief.md), affected invariants, and relevant checks. Review a clean committed snapshot. Record the base and reviewed commit; for exported or non-Git inputs, an adapter must create an immutable snapshot and equivalent content digest before claiming review freshness.
+During a working session, the implementing agent runs focused checks and records meaningful results. Start independent review when the batch is ready to commit or the user asks for it. The implementing agent records a short [change brief](templates/change-brief.md), affected invariants, and relevant checks.
+
+Review an immutable candidate. Record its trusted base and reviewed commit ID. An unpublished Git candidate can identify the proposed tree without advancing the branch. For non-Git inputs, the adapter records an immutable snapshot and equivalent content digest before claiming review freshness.
 
 Run checks against that snapshot in an isolated test workspace. Capture the actual command, exit status, environment, and log or screenshot artifact. The trusted runner records executions. A model-authored sentence saying a test passed is not a substitute for its execution result.
 
-Pass each reviewer the same change and acceptance criteria, relevant context, and evidence. Keep reviewer sessions independent until they submit their initial reports. Read-only access to the source and scoped execution in a disposable workspace must be enforced by the runtime. Test output may be written to that disposable workspace; reviewers do not modify the implementation being reviewed.
+Run the selected reviewers in parallel. Pass each reviewer the same change and acceptance criteria, relevant context, and evidence. Keep reviewer sessions independent until they submit their initial reports. Read-only access to the source and scoped execution in a disposable workspace must be enforced by the runtime. Test output may be written to that disposable workspace; reviewers do not modify the implementation being reviewed.
 
 ## Report
 
@@ -45,7 +47,7 @@ Resolve disagreements against the user requirement and evidence, not a vote amon
 
 ## Freshness and enforcement
 
-The planned acceptance gate must verify report schema, expected reviewers, reviewed revision, completed trusted checks, and the disposition of blockers. A report from a different revision is stale. Initially rerun affected reviewers after a code change; carry-forward of unrelated coverage requires an explicit runner-validated scope/dependency comparison and is an optional later optimization.
+The planned acceptance gate must verify report schema, expected reviewers, reviewed revision, completed trusted checks, and the disposition of blockers. Before advancing the branch, compare the staged tree and its parent with the reviewed candidate. A change to either requires a new candidate and renewed verification. Rerun checks and affected reviewers after a fix. Carry-forward of unrelated coverage requires an explicit runner-validated scope/dependency comparison.
 
 Schema validation alone cannot prove a review is correct, an identity is independent, or a check actually ran. Those require runner provenance and CI integration. Report edits after acceptance must be auditable.
 

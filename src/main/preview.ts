@@ -331,6 +331,10 @@ export class Preview {
     return { generation, projectId: manifest.projectId, revision: manifest.revision, artboards };
   }
 
+  clearLive() {
+    this.#live.clear();
+  }
+
   async capture(project: Project, snapshot: Snapshot, board: Artboard, signal: AbortSignal) {
     if (this.#pendingCaptures >= 4)
       throw new ProjectError("CAPTURE_BUSY", "The capture queue is full. Try again shortly.");

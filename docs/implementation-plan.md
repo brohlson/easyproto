@@ -48,13 +48,13 @@ Keep domain context curated: architecture decisions, invariants, schema/client c
 # Development and review workflow
 
 1. Write a short change brief with the user outcome, acceptance criteria, affected components, invariants, and relevant verification.
-2. Implement one bounded change. Preserve actual check results and a clean source revision.
-3. Route to one or two relevant specialists. Add another only for a concrete affected boundary.
-4. Run reviewers in fresh contexts against the same immutable revision, without showing them each other's conclusions first.
+2. Implement bounded changes and run focused checks during iteration. Preserve actual results.
+3. When the batch is ready to commit or the user asks for review, freeze the candidate and route to one or two relevant specialists. Add another only for a concrete affected boundary.
+4. Run reviewers in parallel in fresh contexts against the same immutable candidate and verification evidence. Keep their initial reports independent.
 5. Collect structured findings. Distinguish `pass`, `changes_required`, and `needs_evidence`.
 6. Resolve findings through a scoped fix, an evidenced dismissal, a tracked follow-up, or an explicit accepted-risk decision.
 7. Recheck the affected behavior and reviewer scope on the new revision. Preserve source identity and evidence provenance.
-8. Record a short handoff and the next bounded task.
+8. Confirm the authorized commit will use the reviewed tree and parent. Record a short handoff and the next bounded task.
 
 The proposed report schema includes role/run identity, change and source revision, policy version, reviewed scope, checks, findings, and remaining uncertainty. Every substantive finding carries evidence, consequence, owner, correction, and a verification criterion.
 

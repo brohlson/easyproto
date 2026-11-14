@@ -25,5 +25,5 @@ These are project-local procedures. They are not automatically discovered by eve
 
 Give a reviewer the user outcome, acceptance criteria, base/head revision, diff and relevant surrounding source, applicable invariants and decisions, and check artifacts. Ask for a report following [the protocol](review-protocol.md). Withhold other reviewers' conclusions until independent reports are complete.
 
-Use [routing](review-routing.md) to keep routine reviews small. Start with manual selection and one or two relevant specialists. Automate repeated steps after the first real changes reveal what the runner needs.
+During iteration, the implementing agent runs focused checks. When a batch is ready to commit or the user asks for review, use [routing](review-routing.md) to select one or two relevant specialists and follow the [Codex review workflow](codex-review.md). Run independent reviews in parallel against the same frozen candidate.
 

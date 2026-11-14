@@ -3,18 +3,14 @@ import {
   memo,
   useContext,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent,
-  type PointerEvent,
 } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Background,
-  ControlButton,
-  Controls,
   ReactFlow,
   applyNodeChanges,
   useNodesState,
@@ -23,10 +19,12 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { artboardSize } from "../shared/artboard-size";
-import type { DesktopBridge, GeometryPatch, Scene } from "../shared/model";
+import type { DesktopArtboardPatch, DesktopBridge, DesktopState, Scene } from "../shared/model";
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
+import { DevicePresets } from "./device-presets";
+import { EditableName } from "./editable-name";
+import { Settings, type Theme } from "./settings";
 
 declare global {
   interface Window {
@@ -35,92 +33,59 @@ declare global {
 }
 
 type Board = Scene["artboards"][number];
-type Size = Pick<Board, "width" | "height">;
 type BoardNode = Node<Board, "artboard">;
-const ResizeControl = createContext<{
+const ArtboardEditing = createContext<{
   disabled: boolean;
-  activeId: string | null;
-  focused(focused: boolean): void;
-  begin(id: string): Size | undefined;
-  update(id: string, size: Size): void;
-  finish(id: string, size?: Size): void;
+  begin(id: string): ((patch: DesktopArtboardPatch) => void) | undefined;
 } | null>(null);
 
-function resizeFrom(start: Size, dx: number, dy: number): Size {
-  const clamp = (size: number) =>
-    Math.min(artboardSize.max, Math.max(artboardSize.min, Math.round(size)));
-  return { width: clamp(start.width + dx), height: clamp(start.height + dy) };
-}
-
-const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProps<BoardNode>) {
-  const resize = useContext(ResizeControl)!;
-  const { getZoom, screenToFlowPosition, setCenter } = useReactFlow();
-  const zoom = useStore((state) => (selected ? state.transform[2] : 1));
-  const pointer = useRef<{ pointerId: number; x: number; y: number; zoom: number; size: Size }>(
-    null,
-  );
-  const handle = useRef<HTMLButtonElement>(null);
-  const keyboardFocus = useRef(false);
-
-  function revealHandle(button: HTMLButtonElement) {
-    const bounds = button.getBoundingClientRect();
-    const canvas = button.closest(".canvas")?.getBoundingClientRect();
-    if (!canvas) return;
-    const inset = 5;
-    if (
-      bounds.left < canvas.left + inset ||
-      bounds.top < canvas.top + inset ||
-      bounds.right > canvas.right - inset ||
-      bounds.bottom > canvas.bottom - inset
-    ) {
-      const center = screenToFlowPosition({
-        x: bounds.x + bounds.width / 2,
-        y: bounds.y + bounds.height / 2,
-      });
-      void setCenter(center.x, center.y, { zoom: getZoom() });
-    }
-  }
-
-  useLayoutEffect(() => {
-    const button = handle.current;
-    if (button && keyboardFocus.current && document.activeElement === button && !pointer.current)
-      revealHandle(button);
-  }, [data.width, data.height]);
-
-  useEffect(() => {
-    if (resize.activeId === id || !pointer.current) return;
-    const { pointerId } = pointer.current;
-    pointer.current = null;
-    const button = handle.current;
-    if (button?.hasPointerCapture(pointerId)) button.releasePointerCapture(pointerId);
-  }, [id, resize.activeId]);
-
-  function pointerSize(event: PointerEvent<HTMLButtonElement>) {
-    const start = pointer.current;
-    if (!start || start.pointerId !== event.pointerId) return;
-    return resizeFrom(
-      start.size,
-      (event.clientX - start.x) / start.zoom,
-      (event.clientY - start.y) / start.zoom,
-    );
-  }
-
-  function endPointer(event: PointerEvent<HTMLButtonElement>, commit: boolean) {
-    if (pointer.current?.pointerId !== event.pointerId) return;
-    const size = commit ? pointerSize(event) : undefined;
-    pointer.current = null;
-    resize.finish(id, size);
-  }
+const ArtboardNode = memo(function ArtboardNode({ id, data }: NodeProps<BoardNode>) {
+  const editing = useContext(ArtboardEditing)!;
+  const zoom = useStore((state) => state.transform[2]);
 
   return (
     <div className="artboard">
-      <div className="artboard-label">
-        <span>{data.name}</span>
-        <span>
-          {data.width} × {data.height}
-        </span>
+      <div
+        className="artboard-meta"
+        style={
+          {
+            "--inverse-zoom": 1 / zoom,
+            "--label-width": `${Math.max(172, data.width * zoom)}px`,
+          } as CSSProperties
+        }
+      >
+        <div className="artboard-activity" role="status">
+          {data.agentWorking && (
+            <span>
+              Agent working<span className="screen-reader-only"> on {data.name}</span>
+              <span className="activity-dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+            </span>
+          )}
+        </div>
+        <div className="artboard-label">
+          <EditableName
+            kind="artboard"
+            name={data.name}
+            disabled={editing.disabled}
+            begin={() => {
+              const save = editing.begin(id);
+              return save && ((name) => save({ name }));
+            }}
+          />
+          <DevicePresets
+            width={data.width}
+            height={data.height}
+            disabled={editing.disabled}
+            begin={() => editing.begin(id)}
+          />
+        </div>
       </div>
       <iframe
+        className={data.agentWorking ? "artboard-preview-working" : undefined}
         title={data.name}
         src={data.previewUrl}
         sandbox=""
@@ -128,63 +93,6 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
         width={data.width}
         height={data.height}
       />
-      {(selected || resize.activeId === id) && (
-        <button
-          ref={handle}
-          type="button"
-          className="resize-handle nodrag nopan"
-          aria-label={`Resize ${data.name}`}
-          title="Drag or use arrow keys to resize"
-          aria-disabled={resize.disabled}
-          aria-describedby="canvas-instructions"
-          style={{ "--resize-inverse-zoom": 1 / zoom } as CSSProperties}
-          onBlur={() => {
-            keyboardFocus.current = false;
-            resize.focused(false);
-          }}
-          onFocus={(event) => {
-            const button = event.currentTarget;
-            if (pointer.current || !button.matches(":focus-visible")) return;
-            keyboardFocus.current = true;
-            resize.focused(true);
-            revealHandle(button);
-          }}
-          onPointerDown={(event) => {
-            if (!event.isPrimary || event.button !== 0) return;
-            const size = resize.begin(id);
-            if (!size) return;
-            pointer.current = {
-              pointerId: event.pointerId,
-              x: event.clientX,
-              y: event.clientY,
-              zoom: getZoom(),
-              size,
-            };
-            event.currentTarget.focus({ preventScroll: true });
-            event.currentTarget.setPointerCapture(event.pointerId);
-          }}
-          onPointerMove={(event) => {
-            const size = pointerSize(event);
-            if (size) resize.update(id, size);
-          }}
-          onPointerUp={(event) => endPointer(event, true)}
-          onPointerCancel={(event) => endPointer(event, false)}
-          onLostPointerCapture={(event) => endPointer(event, false)}
-          onKeyDown={(event) => {
-            const direction = arrows.get(event.key);
-            if (!direction) return;
-            event.preventDefault();
-            event.stopPropagation();
-            if (event.repeat) return;
-            const size = resize.begin(id);
-            if (!size) return;
-            keyboardFocus.current = true;
-            resize.focused(true);
-            const step = event.shiftKey ? 20 : 5;
-            resize.finish(id, resizeFrom(size, direction.x * step, direction.y * step));
-          }}
-        />
-      )}
     </div>
   );
 });
@@ -197,82 +105,61 @@ const arrows = new Map([
   ["ArrowRight", { x: 1, y: 0 }],
 ]);
 
-function CameraControls({ resizing }: { resizing: boolean }) {
-  const { zoomIn, zoomOut, fitView } = useReactFlow();
-  const fit = { padding: 0.4, maxZoom: 1 };
-  return (
-    <Controls position="bottom-right" showInteractive={false} showZoom={false} showFitView={false}>
-      <ControlButton
-        aria-label="Zoom In"
-        title="Zoom In"
-        disabled={resizing}
-        onClick={() => void zoomIn()}
-      >
-        <span aria-hidden="true">+</span>
-      </ControlButton>
-      <ControlButton
-        aria-label="Zoom Out"
-        title="Zoom Out"
-        disabled={resizing}
-        onClick={() => void zoomOut()}
-      >
-        <span aria-hidden="true">−</span>
-      </ControlButton>
-      <ControlButton
-        aria-label="Fit View"
-        title="Fit View"
-        disabled={resizing}
-        onClick={() => void fitView(fit)}
-      >
-        <span className="fit-icon" aria-hidden="true" />
-      </ControlButton>
-    </Controls>
-  );
+function FitShortcut() {
+  const { fitView } = useReactFlow();
+  useEffect(() => {
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (
+        event.code !== "Digit0" ||
+        !event.shiftKey ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        (event.target instanceof Element &&
+          event.target.closest("input, select, textarea, [contenteditable], [popover]")) ||
+        document.querySelector(":popover-open")
+      )
+        return;
+      event.preventDefault();
+      void fitView({ padding: 0.4, maxZoom: 1 });
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [fitView]);
+  return null;
 }
 
 function App() {
-  const [scene, setScene] = useState<Scene>();
+  const [desktop, setDesktop] = useState<DesktopState>();
+  const scene = desktop?.view === "project" ? desktop : undefined;
   const [nodes, setNodes] = useNodesState<BoardNode>([]);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [choosing, setChoosing] = useState(false);
-  const [theme, setTheme] = useState<"system" | "light" | "dark">("system");
+  const [theme, setTheme] = useState<Theme>("system");
   const [systemDark, setSystemDark] = useState(
     () => matchMedia("(prefers-color-scheme: dark)").matches,
   );
   const colorMode = theme === "system" ? (systemDark ? "dark" : "light") : theme;
-  const [resizeId, setResizeId] = useState<string | null>(null);
-  const resizing = resizeId !== null;
-  const [resizeFocused, setResizeFocused] = useState(false);
-  const activeResize = useRef<{ id: string; scene: Scene; size: Size }>(null);
   const savingGeneration = useRef<number>(null);
   const latest = useRef<Scene>(null);
+  const receivedVersion = useRef(-1);
   const drag = useRef<{ id: string; scene: Scene }>(null);
 
-  function releaseResize() {
-    const current = activeResize.current;
-    if (!current) return;
-    activeResize.current = null;
-    setResizeId(null);
-    return current;
-  }
-
   function reconcile(currentScene: Scene, reset = false) {
-    const draft = activeResize.current;
     const draggingId = drag.current?.id;
     setNodes((currentNodes) =>
       currentScene.artboards.map((board) => {
         const existing = reset ? undefined : currentNodes.find((node) => node.id === board.id);
         const position =
           draggingId === board.id && existing ? existing.position : { x: board.x, y: board.y };
-        const size = draft?.id === board.id ? draft.size : board;
         return {
           ...existing,
           id: board.id,
           type: "artboard",
-          data: { ...board, width: size.width, height: size.height },
-          width: size.width,
-          height: size.height,
+          data: board,
+          width: board.width,
+          height: board.height,
           ariaLabel: board.name,
           position,
           selected: existing?.selected,
@@ -282,27 +169,21 @@ function App() {
   }
 
   useEffect(() => {
-    function receive(next: Scene) {
-      const previous = latest.current;
-      if (
-        previous &&
-        (next.generation < previous.generation ||
-          (next.generation === previous.generation && next.revision < previous.revision))
-      )
-        return;
-      const reset = next.generation !== previous?.generation;
+    function receive(next: DesktopState) {
+      if (next.sceneVersion <= receivedVersion.current) return;
+      receivedVersion.current = next.sceneVersion;
+      const current = next.view === "project" ? next : null;
+      const reset = current?.generation !== latest.current?.generation;
       if (reset) {
         drag.current = null;
-        activeResize.current = null;
         savingGeneration.current = null;
-        setResizeId(null);
-        setResizeFocused(false);
         setSaving(false);
         setMessage("");
       }
-      latest.current = next;
-      setScene(next);
-      reconcile(next, reset);
+      latest.current = current;
+      setDesktop(next);
+      if (current) reconcile(current, reset);
+      else setNodes([]);
     }
     const unsubscribe = window.easyProto.onScene(receive);
     window.easyProto
@@ -323,28 +204,7 @@ function App() {
     document.documentElement.dataset.theme = colorMode;
   }, [colorMode]);
 
-  useEffect(() => {
-    function cancelResize(event: globalThis.KeyboardEvent) {
-      if (event.key !== "Escape" || !activeResize.current || !latest.current) return;
-      event.preventDefault();
-      event.stopPropagation();
-      releaseResize();
-      reconcile(latest.current);
-    }
-    function holdCamera(event: WheelEvent) {
-      if (!activeResize.current) return;
-      event.preventDefault();
-      event.stopPropagation();
-    }
-    window.addEventListener("keydown", cancelResize, true);
-    window.addEventListener("wheel", holdCamera, { capture: true, passive: false });
-    return () => {
-      window.removeEventListener("keydown", cancelResize, true);
-      window.removeEventListener("wheel", holdCamera, true);
-    };
-  }, []);
-
-  async function arrange(artboardId: string, patch: GeometryPatch, from: Scene) {
+  async function arrange(artboardId: string, patch: DesktopArtboardPatch, from: Scene) {
     if (
       latest.current?.generation !== from.generation ||
       savingGeneration.current !== null ||
@@ -368,7 +228,7 @@ function App() {
         setMessage(
           detail?.includes("Refresh the project revision")
             ? "The project was updated while you were editing. Try the change again."
-            : detail || "The artboard layout could not be saved.",
+            : detail || "The artboard change could not be saved.",
         );
       }
     } finally {
@@ -391,14 +251,14 @@ function App() {
   function moveWithKeyboard(event: KeyboardEvent) {
     const direction = arrows.get(event.key);
     if (!direction || !(event.target instanceof HTMLElement)) return;
-    if (event.target.closest(".resize-handle")) return;
+    if (event.target.closest("button, input")) return;
     const nodeId = event.target.closest<HTMLElement>(".react-flow__node")?.dataset.id;
     const current = latest.current;
     const board = current?.artboards.find((item) => item.id === nodeId);
     if (!current || !board || !nodes.some((node) => node.id === nodeId && node.selected)) return;
     event.preventDefault();
     event.stopPropagation();
-    if (drag.current || activeResize.current || event.repeat) return;
+    if (drag.current || event.repeat) return;
     const step = event.shiftKey ? 20 : 5;
     void arrange(
       board.id,
@@ -407,54 +267,20 @@ function App() {
     );
   }
 
-  const resize = {
+  const editing = {
     disabled: saving || choosing,
-    activeId: resizeId,
-    focused: setResizeFocused,
     begin(id: string) {
       const current = latest.current;
-      const board = current?.artboards.find((item) => item.id === id);
-      if (
-        !current ||
-        !board ||
-        choosing ||
-        savingGeneration.current !== null ||
-        drag.current ||
-        activeResize.current
-      )
-        return;
-      const size = { width: board.width, height: board.height };
-      activeResize.current = { id, scene: current, size };
-      setResizeId(id);
-      return size;
-    },
-    update(id: string, size: Size) {
-      if (activeResize.current?.id !== id || !latest.current) return;
-      activeResize.current = { ...activeResize.current, size };
-      reconcile(latest.current);
-    },
-    finish(id: string, size?: Size) {
-      if (activeResize.current?.id !== id || !latest.current) return;
-      const gesture = releaseResize()!;
-      const board = gesture.scene.artboards.find((item) => item.id === id)!;
-      if (size && (size.width !== board.width || size.height !== board.height)) {
-        setNodes((current) =>
-          current.map((node) =>
-            node.id === id ? { ...node, ...size, data: { ...node.data, ...size } } : node,
-          ),
-        );
-        void arrange(id, size, gesture.scene);
-      } else {
-        reconcile(latest.current);
-      }
+      if (!current || choosing || drag.current || savingGeneration.current !== null) return;
+      return (patch: DesktopArtboardPatch) => void arrange(id, patch, current);
     },
   };
 
-  async function choose(mode: "create" | "open") {
+  async function navigate(action: () => Promise<void>) {
     setChoosing(true);
     setMessage("");
     try {
-      await window.easyProto.chooseProject(mode);
+      await action();
     } catch (error) {
       const detail = error instanceof Error ? error.message.split("Error: ").at(-1) : undefined;
       setMessage(detail || "The project could not be selected.");
@@ -463,114 +289,160 @@ function App() {
     }
   }
 
+  async function renameProject(from: Scene, name: string) {
+    if (latest.current?.generation !== from.generation || savingGeneration.current !== null) return;
+    savingGeneration.current = from.generation;
+    setSaving(true);
+    setMessage("");
+    try {
+      await window.easyProto.renameProject(from.generation, from.name, name);
+    } catch (error) {
+      if (latest.current?.generation === from.generation) {
+        const detail = error instanceof Error ? error.message.split("Error: ").at(-1) : undefined;
+        setMessage(detail || "The project name could not be saved.");
+      }
+    } finally {
+      if (latest.current?.generation === from.generation) {
+        savingGeneration.current = null;
+        setSaving(false);
+      }
+    }
+  }
+
+  const busy = !desktop || choosing || saving;
+  const choose = (mode: "create" | "open") =>
+    void navigate(() => window.easyProto.chooseProject(mode));
   const selected = nodes.find((node) => node.selected);
   return (
-    <main className="workspace">
+    <main className={scene ? "workspace" : "workspace home-view"}>
       <header>
         <div className="brand">
           <span className="brand-icon" aria-hidden="true" />
           Easy Proto
         </div>
-        <span className="divider" />
-        <strong className="folder">{scene?.folderName ?? "Opening project…"}</strong>
-        <div className="save-status" role="status">
-          {choosing
-            ? "Selecting project…"
-            : saving
-              ? "Saving…"
-              : scene
-                ? `Saved · Revision ${scene.revision}`
-                : ""}
-        </div>
-        <div className="project-actions">
-          <button
-            disabled={!scene || choosing || saving || resizing}
-            onClick={() => void choose("create")}
-          >
-            New Project
-          </button>
-          <button
-            disabled={!scene || choosing || saving || resizing}
-            onClick={() => void choose("open")}
-          >
-            Open Project
-          </button>
-          <select
-            aria-label="Appearance"
-            value={theme}
-            onChange={(event) => {
-              const value = event.currentTarget.value;
-              if (value === "system" || value === "light" || value === "dark") setTheme(value);
-            }}
-          >
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </div>
-      </header>
-      <section className="canvas" aria-label="Artboard canvas" onKeyDownCapture={moveWithKeyboard}>
         {scene && (
-          <ResizeControl.Provider value={resize}>
-            <ReactFlow
-              key={scene.generation}
-              colorMode={colorMode}
-              nodes={nodes}
-              edges={[]}
-              nodeTypes={nodeTypes}
-              fitView
-              fitViewOptions={{ padding: 0.4, maxZoom: 1 }}
-              minZoom={0.08}
-              maxZoom={3}
-              nodesDraggable={!saving && !choosing && !resizing}
-              nodesConnectable={false}
-              elementsSelectable
-              zoomOnScroll={!resizing}
-              zoomOnPinch={!resizing}
-              zoomOnDoubleClick={!resizing}
-              panOnDrag={!resizing}
-              autoPanOnNodeFocus={!resizing}
-              disableKeyboardA11y={false}
-              deleteKeyCode={null}
-              selectionKeyCode={null}
-              multiSelectionKeyCode={null}
-              onNodesChange={(changes) => {
-                const accepted = changes.filter((change) => {
-                  if (
-                    change.type === "select" &&
-                    (activeResize.current || savingGeneration.current !== null)
-                  )
-                    return false;
-                  return change.type !== "position" || Boolean(drag.current);
-                });
-                setNodes((current) => applyNodeChanges(accepted, current));
-              }}
-              onNodeDragStart={(_, node) => {
-                if (latest.current) drag.current = { id: node.id, scene: latest.current };
-              }}
-              onNodeDragStop={(_, node) => endDrag(node)}
+          <>
+            <span className="divider" />
+            <div className="folder">
+              <EditableName
+                key={scene.generation}
+                kind="project"
+                name={scene.name}
+                disabled={busy}
+                begin={() => {
+                  const current = latest.current;
+                  return current ? (name) => void renameProject(current, name) : undefined;
+                }}
+              />
+            </div>
+          </>
+        )}
+        <Settings
+          theme={theme}
+          changeTheme={setTheme}
+          busy={busy}
+          choose={choose}
+          goHome={scene ? () => void navigate(() => window.easyProto.goHome()) : undefined}
+        />
+      </header>
+      {desktop?.view === "home" && (
+        <section className="home" aria-labelledby="projects-title">
+          <div className="home-heading">
+            <h1 id="projects-title">Projects</h1>
+            <button
+              type="button"
+              className="create-project"
+              disabled={busy}
+              onClick={() => choose("create")}
             >
-              <Background gap={24} size={1.25} color="var(--grid)" />
-              <CameraControls resizing={resizing} />
-            </ReactFlow>
-          </ResizeControl.Provider>
-        )}
-        {message && (
-          <div className="error" role="alert">
-            {message} <button onClick={() => setMessage("")}>Dismiss</button>
+              Create project
+            </button>
           </div>
-        )}
-      </section>
-      <footer>
-        <span>
-          {scene?.artboards.length ?? 0} {scene?.artboards.length === 1 ? "artboard" : "artboards"}
-        </span>
-        <span id="canvas-instructions">
-          {selected
-            ? `${selected.data.name} · ${selected.data.width} × ${selected.data.height} · ${resizeFocused ? "Arrow keys resize · Shift for larger steps" : "Drag the corner to resize"}`
-            : "Drag an artboard to arrange it"}
-        </span>
-      </footer>
+          {desktop.projects.length === 0 ? (
+            <p>No projects yet</p>
+          ) : (
+            <ul>
+              {desktop.projects.map((project) => (
+                <li key={project.id}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      void navigate(() => window.easyProto.openRecentProject(project.id))
+                    }
+                  >
+                    <span>{project.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+      {scene && (
+        <>
+          <section
+            className="canvas"
+            aria-label="Artboard canvas"
+            onKeyDownCapture={moveWithKeyboard}
+          >
+            {scene && (
+              <ArtboardEditing.Provider value={editing}>
+                <ReactFlow
+                  key={scene.generation}
+                  colorMode={colorMode}
+                  nodes={nodes}
+                  edges={[]}
+                  nodeTypes={nodeTypes}
+                  fitView
+                  fitViewOptions={{ padding: 0.4, maxZoom: 1 }}
+                  minZoom={0.08}
+                  maxZoom={3}
+                  nodesDraggable={!saving && !choosing}
+                  nodesConnectable={false}
+                  elementsSelectable
+                  proOptions={{ hideAttribution: true }}
+                  disableKeyboardA11y={false}
+                  deleteKeyCode={null}
+                  selectionKeyCode={null}
+                  multiSelectionKeyCode={null}
+                  onNodesChange={(changes) => {
+                    const accepted = changes.filter((change) => {
+                      if (change.type === "select" && savingGeneration.current !== null)
+                        return false;
+                      return change.type !== "position" || Boolean(drag.current);
+                    });
+                    setNodes((current) => applyNodeChanges(accepted, current));
+                  }}
+                  onNodeDragStart={(_, node) => {
+                    if (latest.current) drag.current = { id: node.id, scene: latest.current };
+                  }}
+                  onNodeDragStop={(_, node) => endDrag(node)}
+                >
+                  <Background gap={24} size={1.25} color="var(--grid)" />
+                  <FitShortcut />
+                </ReactFlow>
+              </ArtboardEditing.Provider>
+            )}
+          </section>
+          <footer>
+            <span>
+              {scene?.artboards.length ?? 0}{" "}
+              {scene?.artboards.length === 1 ? "artboard" : "artboards"}
+            </span>
+            <span title="Shift+0 fits all artboards">
+              {selected
+                ? `${selected.data.name} · ${selected.data.width} × ${selected.data.height}`
+                : "Drag to arrange · Shift+0 to fit"}
+            </span>
+          </footer>
+        </>
+      )}
+      {message && (
+        <div className="error" role="alert">
+          {message} <button onClick={() => setMessage("")}>Dismiss</button>
+        </div>
+      )}
     </main>
   );
 }

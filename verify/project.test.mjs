@@ -138,3 +138,24 @@ test("portable assets are snapshotted per open and symbolic or hard links are re
   await link(managedSource, join(root, "hard-linked-source.html"));
   await assert.rejects(Project.open(folder), /single-link project file/);
 });
+
+test("project rename preserves the last published name when replacement fails", async (t) => {
+  const { project, folder } = await fixture(t);
+  await project.rename("Project", "  Current name  ");
+  assert.equal(project.name, "Current name");
+  await assert.rejects(project.rename("Project", "Stale name"), { code: "NAME_CHANGED" });
+  const pointer = await readFile(join(folder, "project.json"), "utf8");
+  const name = join(folder, ".easy-proto", "name.json");
+  const backup = name + ".backup";
+  await rename(name, backup);
+  await mkdir(name);
+  try {
+    await assert.rejects(project.rename("Current name", "Failed name"), { code: "SAVE_FAILED" });
+    assert.equal(project.name, "Current name");
+    assert.equal(await readFile(join(folder, "project.json"), "utf8"), pointer);
+  } finally {
+    await rm(name, { recursive: true });
+    await rename(backup, name);
+  }
+  assert.equal((await Project.open(folder)).name, "Current name");
+});

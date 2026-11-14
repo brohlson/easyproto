@@ -54,6 +54,30 @@ The desktop uses locally bundled Inter and neutral semantic tokens for Light and
 
 The focused reports verify closure of the design, gesture, revision and geometry findings. Frontend and Architecture and Reliability passed on `826196b`, including normal wheel zoom after Space is released during a resize. Design verified the focus and theme behavior on `4366f4f`. Security verified the geometry-only bridge and preview font isolation on `3dc3203`. Infrastructure passed the font packaging and guidance review on `1e7f0df`. The later revisions preserved those reviewed code paths. [Frontend](../evidence/826196be9785bf8e1b3579e6f6253d9f6c6e534f/frontend-report.md) · [Architecture and Reliability](../evidence/826196be9785bf8e1b3579e6f6253d9f6c6e534f/architecture-reliability-report.md) · [Design](../evidence/4366f4f027d7a55277918bcb89f1f27b20e10713/design-report.md) · [Security](../evidence/3dc3203017174d244af98bea838ba30a12566e71/security-report.md) · [Infrastructure](../evidence/1e7f0df7a5390ab9f598c14c1478d4af23a95cc3/infrastructure-report.md)
 
+## Minimal Home design and artboard activity
+
+EasyProtoMocks contains two Home states and a canvas activity mockup. The [design handoff](dogfooding.md) records their MCP capture revisions. The running desktop shows a steady **Agent working** label with three animated dots while the affected preview fades from full opacity to 80% and back over three seconds. The [MCP workflow](../readme.md#connect-codex) explains how an agent signals drafting between calls.
+
+The macOS verification used a real SDK connection. It observed the opacity cycle on only the active preview, staggered dots, reduced-motion behavior, overlapping and expiring activity, in-flight capture, and activity removal when another project opens. The artboard document stayed mounted, and explicitly setting activity kept the same saved pointer. The pinned capture retained its expected revision and pixels. The Light and Dark checks cover both the toolbar and the rendered canvas background. [Verification log](../evidence/artboard-opacity/verify.log) · [Observed stages](../evidence/artboard-opacity/desktop-stages.json) · [Light canvas](../evidence/artboard-opacity/artboard-activity.png) · [Dark canvas](../evidence/artboard-opacity/artboard-activity-dark.png)
+
+Architecture/Security and Design/Frontend reviewers inspected the earlier activity implementation in source export with SHA-256 `d691c01ddbe983fdb1ae76f159814c73207ccafafe789b4ffa5406ad4a11d0bd` against `c6d8157` and reported no blocking findings. The native reviewers inspected a read-only copy within the shared runner. A missing-board update can publish redundant scene events without displaying an indicator. The opacity, dots and theme changes received a self-review using live Light and Dark captures at the default window size. Extreme zoom and VoiceOver with the live indicator remain unchecked.
+
+## Home and workspace controls
+
+The desktop opens Home with a Create project action and a list of locally opened projects. A project row reopens its folder. Settings contains Home, Create project, Open project, and Appearance. The project and artboard names support inline editing. The project display name travels with the folder, and editing it leaves the folder path intact. The canvas keeps title, dimensions, and activity text at fixed screen sizes. Labels can overlap in dense layouts at low zoom, and selected or focused boards have stacking priority.
+
+The macOS checks use disposable projects and a real MCP SDK connection. They cover the empty Home, creation from the picker, renaming and cancellation, stable iframe size and identity across zoom, persisted names on relaunch, and recovery after moving a folder. Returning Home revokes the old MCP activation and live preview URL. The [project selection decision](decisions/0004-project-selection.md) describes compatibility and recovery.
+
+[Verification log](../evidence/home-workspace/verify.log) · [Empty Home](../evidence/home-workspace/home-empty.png) · [Project list](../evidence/home-workspace/home-projects.png) · [Settings](../evidence/home-workspace/workspace-settings.png)
+
+Architecture/Security and Design/Frontend inspected frozen export `b74f571450d47baf56a26cb051992e04bb08debe619ff79ce0129e726091a903` against base `c6d8157`. No blocking findings were reported. The coordinator added malformed-name recovery guidance and selected-label priority in response to advisory findings. Visual evidence for the new Home covers Light at the default window size.
+
+## Device presets and settings
+
+Click the dimensions above an artboard to choose a preset. The phone and tablet sizes follow the [Chromium DevTools device list](https://github.com/ChromeDevTools/devtools-frontend/blob/main/front_end/models/emulation/EmulatedDevices.ts). Desktop sizes are fixed design viewports. The existing document command saves width and height, so a preset affects the preview and capture at the same CSS dimensions. Existing custom dimensions still open as saved and can be updated through MCP.
+
+The canvas uses scroll or pinch to zoom and Shift+0 to fit. Settings uses a borderless Lucide cog and shows the three appearance choices directly, with a checkmark for the active choice. All five macOS checks passed. They verified keyboard selection and focus restoration, the selected-size checkmark, an unchanged iframe across size updates, media-query switching, stale edit rejection, and matching capture and reopened dimensions. Both menus were inspected in Light and Dark, and preset popup bounds were checked at 660 × 480. [Verification log](../evidence/device-presets/verify.log) · [Preset picker](../evidence/device-presets/device-presets-dark-minimum.png) · [Settings](../evidence/device-presets/settings-dark.png)
+
 ## Next bounded task
 
-Add an artboard duplication action. Verify the copy gets a new stable ID, independently editable source, and a position offset through a single saved command.
+Add artboard duplication through a single saved command, with a new stable ID, independently editable source, and an offset position.

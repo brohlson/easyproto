@@ -14,6 +14,8 @@ Use Design, Frontend, Security, Infrastructure, and Architecture/Reliability rol
 
 Start with manual routing and independent reviewer sessions. Automate selection, report validation, evidence provenance, and gate enforcement after exercising the workflow on real changes. Keep durable decisions and findings in the repository; keep bulky logs as linked artifacts.
 
+During a working session, the implementer runs focused checks and shares the result. Independent specialists review the batch in parallel when it is ready to commit or when the user requests review. Consult a specialist early for decisions that would be expensive to reverse. The [Codex review workflow](../../agents/codex-review.md) freezes the proposed tree before the branch advances.
+
 ## Consequences
 
 The fifth role explicitly owns data integrity and long-term contracts. Infrastructure focuses on builds, packaging, dependencies, CI, and future publishing. The user retains final product and risk decisions. Several role prompts using the same model may share blind spots, so behavioral fixtures and deterministic checks are required to evaluate usefulness.

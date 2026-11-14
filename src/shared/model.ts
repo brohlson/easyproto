@@ -17,6 +17,14 @@ export const geometryPatch = layout
   .partial()
   .refine((patch) => Object.keys(patch).length > 0);
 export type GeometryPatch = z.infer<typeof geometryPatch>;
+export const projectName = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .regex(/^[^\p{Cc}\uD800-\uDFFF]+$/u);
+export const desktopArtboardPatch = z.union([geometryPatch, z.strictObject({ name: projectName })]);
+export type DesktopArtboardPatch = z.infer<typeof desktopArtboardPatch>;
 const utf8 = (value: string) => !/[\uD800-\uDFFF]/u.test(value);
 export const source = z.strictObject({
   html: z.string().max(256_000).refine(utf8, "HTML must be valid Unicode."),
@@ -68,17 +76,27 @@ export type Source = z.infer<typeof source>;
 export type Commit = z.infer<typeof commitSchema>;
 export type Manifest = z.infer<typeof manifestSchema>;
 export type Scene = {
+  view: "project";
+  sceneVersion: number;
   generation: number;
   projectId: string;
   revision: number;
-  folderName: string;
-  artboards: (Artboard & { previewUrl: string })[];
+  name: string;
+  projects: RecentProject[];
+  artboards: (Artboard & { previewUrl: string; agentWorking: boolean })[];
 };
+export type RecentProject = { id: string; name: string };
+export type DesktopState =
+  | Scene
+  | { view: "home"; sceneVersion: number; projects: RecentProject[] };
 export type DesktopBridge = {
-  getScene(): Promise<Scene>;
-  onScene(listener: (scene: Scene) => void): () => void;
+  getScene(): Promise<DesktopState>;
+  onScene(listener: (scene: DesktopState) => void): () => void;
   arrangeArtboard(generation: number, command: Command): Promise<Commit>;
   chooseProject(mode: "create" | "open"): Promise<void>;
+  openRecentProject(id: string): Promise<void>;
+  goHome(): Promise<void>;
+  renameProject(generation: number, previous: string, name: string): Promise<void>;
 };
 
 export const ipc = {
@@ -86,4 +104,7 @@ export const ipc = {
   changed: "project:changed",
   arrange: "project:arrange",
   choose: "project:choose",
+  recent: "project:open-recent",
+  home: "project:home",
+  rename: "project:rename",
 } as const;
