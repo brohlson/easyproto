@@ -604,12 +604,54 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
     await desktop.screenshot({ path: join(evidence, "project-picker-canvas.png"), animations: "disabled" });
   }
 
+  const currentScene = await desktop.evaluate(() => window.easyProto.getScene());
+  const layoutAttempt = {
+    projectId, commandId: randomUUID(), expectedRevision: 9, operation: "update_artboard",
+    arguments: { artboardId, patch: { width: 380 } },
+  };
+  await assert.rejects(desktop.evaluate(({ generation, command }) => window.easyProto.arrangeArtboard(generation, command), {
+    generation: currentScene.generation,
+    command: { ...layoutAttempt, arguments: { artboardId, patch: { width: 380, html: "<p>Disallowed</p>" } } },
+  }), /only change artboard position and size/);
+  const unauthorized = await app.evaluate(async ({ BrowserWindow }, { generation, command }) => {
+    const trusted = BrowserWindow.getAllWindows().find((window) => window.isVisible());
+    const { join } = process.getBuiltinModule("node:path");
+    const testWindow = new BrowserWindow({ show: false, webPreferences: {
+      preload: join(process.cwd(), "dist", "preload.cjs"),
+      nodeIntegration: false, contextIsolation: true, sandbox: true, session: trusted.webContents.session,
+    } });
+    const diagnostics = [];
+    testWindow.webContents.on("console-message", (details) => diagnostics.push(details.message));
+    try {
+      await testWindow.loadURL("easy-proto://ui/index.html");
+      return await testWindow.webContents.executeJavaScript(
+        `Promise.resolve().then(() => window.easyProto.arrangeArtboard(${generation}, ${JSON.stringify(command)})).then(() => "", error => error.message)`,
+      );
+    } catch (error) {
+      throw new Error(error.message + " " + diagnostics.join(" | "));
+    } finally {
+      testWindow.destroy();
+    }
+  }, { generation: currentScene.generation, command: layoutAttempt });
+  assert.match(unauthorized, /only the application window/i);
+  assert.equal((await data("get_context")).revision, 9);
+  const chromeFont = await desktop.evaluate(() => {
+    for (const sheet of document.styleSheets) {
+      for (const rule of sheet.cssRules) {
+        if (!(rule instanceof CSSFontFaceRule) || rule.style.fontFamily !== "Inter") continue;
+        const path = /url\(["']?([^"')]+)["']?\)/.exec(rule.style.src)?.[1];
+        if (path) return new URL(path, sheet.href ?? location.href).href;
+      }
+    }
+    throw new Error("Bundled Inter source not found.");
+  });
+
   const responsive = {
     projectId, activationId: reopenedCopy.activationId, commandId: randomUUID(), expectedRevision: 9,
     arguments: { artboardId, patch: {
       width: 320, height: 240,
       html: '<main><h1>Responsive fixture</h1><p class="compact">Compact layout</p><p class="wide">Wide layout</p></main>',
-      css: 'body{margin:0;background:white;color:#171717;font:16px system-ui}main{padding:24px}.wide{display:none}@media(min-width:400px){.wide{display:block}.compact{display:none}}',
+      css: `@font-face{font-family:ChromeOnly;src:url("${chromeFont}")}body{margin:0;background:white;color:#171717;font:16px ChromeOnly,system-ui}main{padding:24px}.wide{display:none}@media(min-width:400px){.wide{display:block}.compact{display:none}}`,
     } },
   };
   const responsiveCommit = await data("update_artboard", responsive);
@@ -621,6 +663,10 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   const frameUrl = inside.url();
   const iframe = desktop.locator('iframe[title="Agent mockup"]');
   assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [320, 240]);
+  assert.equal(await inside.evaluate(async () => {
+    await document.fonts.ready;
+    return [...document.fonts].find((font) => font.family === "ChromeOnly")?.status;
+  }), "error");
   const beforeZoomBox = await iframe.boundingBox();
   const beforeResizeZoom = await canvasTransform();
   await desktop.getByRole("button", { name: /zoom in/i }).click();
@@ -650,12 +696,25 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   const hx = handleBox.x + handleBox.width / 2;
   const hy = handleBox.y + handleBox.height / 2;
   await desktop.mouse.move(hx, hy);
+  await desktop.keyboard.down("Meta");
   await desktop.mouse.down();
   await desktop.mouse.move(hx + 128 * turnZoom, hy + 45 * turnZoom, { steps: 7 });
   await responsiveFrame.getByText("Wide layout").waitFor({ timeout: 5000 });
+  const other = desktop.locator(".react-flow__node").filter({ hasText: "Field notes" });
+  await other.press("Enter");
+  assert.equal(await handle.count(), 1);
   assert.ok(await desktop.getByRole("button", { name: /zoom in/i }).isDisabled());
   assert.ok(await desktop.getByRole("button", { name: /zoom out/i }).isDisabled());
   assert.ok(await desktop.getByRole("button", { name: /fit view/i }).isDisabled());
+  const activeCamera = await canvasTransform();
+  await desktop.mouse.wheel(0, -200);
+  await desktop.keyboard.up("Meta");
+  await desktop.keyboard.down("Space");
+  await desktop.mouse.wheel(70, 90);
+  await desktop.mouse.move(hx + 125 * turnZoom, hy + 42 * turnZoom, { steps: 2 });
+  await desktop.mouse.move(hx + 128 * turnZoom, hy + 45 * turnZoom, { steps: 2 });
+  await desktop.keyboard.up("Space");
+  assert.equal(await canvasTransform(), activeCamera);
   const draft = await inside.evaluate(() => [innerWidth, innerHeight]);
   assert.ok(Math.abs(draft[0] - 448) <= 1 && Math.abs(draft[1] - 285) <= 1, String(draft));
   assert.equal((await data("get_context")).revision, 10);
@@ -669,7 +728,8 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   assert.equal(inside.url(), frameUrl);
   statuses.push({ resize: { before: [320, 240], during: draft, after: [resized.artboard.width, resized.artboard.height], zoom: turnZoom,
     zoomedDisplayWidth: afterZoomBox.width, initialDisplayWidth: beforeZoomBox.width, committedRevision: 11,
-    mediaQuery: "compact before and after zoom, wide during and after resize" } });
+    mediaQuery: "compact before and after zoom, wide during and after resize",
+    cameraStableDuringModifierWheel: true, handleRetainedDuringSelectionAttempt: true } });
 
   await handle.press("Shift+ArrowLeft");
   await desktop.getByText("Saved · Revision 12", { exact: true }).waitFor({ timeout: 5000 });
@@ -685,10 +745,12 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   await desktop.mouse.up();
   await desktop.waitForFunction((width) =>
     document.querySelector('iframe[title="Agent mockup"]').width === String(width), keyboardWidth, { timeout: 5000 });
+  await inside.waitForFunction((width) => innerWidth === width, keyboardWidth, { timeout: 5000 });
   assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [keyboardWidth, draft[1]]);
   assert.equal((await data("get_context")).revision, 12);
 
-  const conflictBox = await handle.boundingBox();
+  await responsiveNode.click({ position: { x: 28, y: 30 } });
+  const conflictBox = await handle.boundingBox({ timeout: 5000 });
   const conflictX = conflictBox.x + conflictBox.width / 2;
   const conflictY = conflictBox.y + conflictBox.height / 2;
   await desktop.mouse.move(conflictX, conflictY);
@@ -700,7 +762,7 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   });
   await desktop.mouse.up();
   const resizeError = desktop.getByRole("alert");
-  assert.match(await resizeError.innerText({ timeout: 5000 }), /refresh the project revision/i);
+  assert.match(await resizeError.innerText({ timeout: 5000 }), /try the change again/i);
   await resizeError.getByRole("button", { name: "Dismiss" }).click();
   await responsiveFrame.getByText("Compact layout").waitFor();
   assert.deepEqual(await inside.evaluate(() => [innerWidth, innerHeight]), [380, draft[1]]);
@@ -717,7 +779,9 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   await responsiveFrame.getByText("Compact layout").waitFor();
   const reopenedFrame = desktop.frames().find((frame) => frame.url().includes(artboardId));
   assert.deepEqual(await reopenedFrame.evaluate(() => [innerWidth, innerHeight]), [380, draft[1]]);
+  assert.ok(sizeCapture.structuredContent.unresolved.some((issue) => issue.includes("Font could not load: ChromeOnly")));
   statuses.push("Capture and folder reopen matched the committed resized viewport.");
+  statuses.push("Arrange IPC refused a different sender and a mixed HTML/geometry patch; the bundled chrome font failed to load in both live and captured previews.");
 
   const appearance = desktop.getByRole("combobox", { name: "Appearance" });
   const themeInfo = () => desktop.evaluate(async () => {
@@ -747,6 +811,7 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
     undefined, { timeout: 5000 });
   await handle.press("Tab");
   await desktop.keyboard.press("Shift+Tab");
+  await desktop.getByText(/Arrow keys resize/).waitFor({ timeout: 5000 });
   await desktop.waitForFunction(() => {
     const button = document.activeElement;
     if (!button?.classList.contains("resize-handle")) return false;
@@ -755,6 +820,9 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
     return bounds.left >= canvas.left && bounds.top >= canvas.top && bounds.right <= canvas.right && bounds.bottom <= canvas.bottom;
   }, undefined, { timeout: 5000 });
   await desktop.getByRole("button", { name: /fit view/i }).click();
+  await desktop.frameLocator('iframe[title="Field notes"]').getByRole("heading", { name: "Make room for ideas." }).waitFor();
+  await responsiveFrame.getByRole("heading", { name: "Responsive fixture" }).waitFor();
+  await desktop.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   if (evidence) await desktop.screenshot({ path: join(evidence, "artboard-resize-dark-minimum.png"), animations: "disabled" });
   await appearance.selectOption("light");
   await desktop.waitForFunction(() => document.documentElement.dataset.theme === "light");

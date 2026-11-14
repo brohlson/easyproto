@@ -21,6 +21,8 @@ type Size = Pick<Board, "width" | "height">;
 type BoardNode = Node<Board, "artboard">;
 const ResizeControl = createContext<{
   disabled: boolean;
+  activeId: string | null;
+  focused(focused: boolean): void;
   begin(id: string): Size | undefined;
   update(id: string, size: Size): void;
   finish(id: string, size?: Size): void;
@@ -36,6 +38,14 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
   const { getZoom, screenToFlowPosition, setCenter } = useReactFlow();
   const zoom = useStore((state) => selected ? state.transform[2] : 1);
   const pointer = useRef<{ pointerId: number; x: number; y: number; zoom: number; size: Size }>(null);
+  const handle = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (resize.activeId === id || !pointer.current) return;
+    const { pointerId } = pointer.current;
+    pointer.current = null;
+    const button = handle.current;
+    if (button?.hasPointerCapture(pointerId)) button.releasePointerCapture(pointerId);
+  }, [id, resize.activeId]);
 
   function pointerSize(event: PointerEvent<HTMLButtonElement>) {
     const start = pointer.current;
@@ -60,13 +70,17 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
         title={data.name} src={data.previewUrl} sandbox="" tabIndex={-1}
         width={data.width} height={data.height}
       />
-      {selected && (
+      {(selected || resize.activeId === id) && (
         <button
+          ref={handle}
           type="button" className="resize-handle nodrag nopan" aria-label={`Resize ${data.name}`}
           title="Drag or use arrow keys to resize" aria-disabled={resize.disabled}
+          aria-describedby="canvas-instructions"
           style={{ "--resize-inverse-zoom": 1 / zoom } as CSSProperties}
+          onBlur={() => resize.focused(false)}
           onFocus={(event) => {
             const button = event.currentTarget;
+            if (button.matches(":focus-visible")) resize.focused(true);
             const bounds = button.getBoundingClientRect();
             const canvas = button.closest(".canvas")?.getBoundingClientRect();
             if (!canvas || pointer.current || !button.matches(":focus-visible")) return;
@@ -134,11 +148,21 @@ function App() {
   const [theme, setTheme] = useState<"system" | "light" | "dark">("system");
   const [systemDark, setSystemDark] = useState(() => matchMedia("(prefers-color-scheme: dark)").matches);
   const colorMode = theme === "system" ? (systemDark ? "dark" : "light") : theme;
-  const [resizing, setResizing] = useState(false);
+  const [resizeId, setResizeId] = useState<string | null>(null);
+  const resizing = resizeId !== null;
+  const [resizeFocused, setResizeFocused] = useState(false);
   const activeResize = useRef<{ id: string; scene: Scene; size: Size }>(null);
   const savingGeneration = useRef<number>(null);
   const latest = useRef<Scene>(null);
   const drag = useRef<{ id: string; scene: Scene }>(null);
+
+  function releaseResize() {
+    const current = activeResize.current;
+    if (!current) return;
+    activeResize.current = null;
+    setResizeId(null);
+    return current;
+  }
 
   function reconcile(currentScene: Scene, reset = false) {
     const draft = activeResize.current;
@@ -166,7 +190,8 @@ function App() {
         drag.current = null;
         activeResize.current = null;
         savingGeneration.current = null;
-        setResizing(false);
+        setResizeId(null);
+        setResizeFocused(false);
         setSaving(false);
         setMessage("");
       }
@@ -195,12 +220,20 @@ function App() {
       if (event.key !== "Escape" || !activeResize.current || !latest.current) return;
       event.preventDefault();
       event.stopPropagation();
-      activeResize.current = null;
-      setResizing(false);
+      releaseResize();
       reconcile(latest.current);
     }
+    function holdCamera(event: WheelEvent) {
+      if (!activeResize.current) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
     window.addEventListener("keydown", cancelResize, true);
-    return () => window.removeEventListener("keydown", cancelResize, true);
+    window.addEventListener("wheel", holdCamera, { capture: true, passive: false });
+    return () => {
+      window.removeEventListener("keydown", cancelResize, true);
+      window.removeEventListener("wheel", holdCamera, true);
+    };
   }, []);
 
   async function arrange(artboardId: string, patch: GeometryPatch, from: Scene) {
@@ -215,7 +248,11 @@ function App() {
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message.split("Error: ").at(-1) : undefined;
-      if (latest.current?.generation === from.generation) setMessage(detail || "The artboard layout could not be saved.");
+      if (latest.current?.generation === from.generation) {
+        setMessage(detail?.includes("Refresh the project revision")
+          ? "The project was updated while you were editing. Try the change again."
+          : detail || "The artboard layout could not be saved.");
+      }
     } finally {
       if (latest.current?.generation === from.generation) {
         savingGeneration.current = null;
@@ -250,13 +287,15 @@ function App() {
 
   const resize = {
     disabled: saving || choosing,
+    activeId: resizeId,
+    focused: setResizeFocused,
     begin(id: string) {
       const current = latest.current;
       const board = current?.artboards.find((item) => item.id === id);
       if (!current || !board || choosing || savingGeneration.current !== null || drag.current || activeResize.current) return;
       const size = { width: board.width, height: board.height };
       activeResize.current = { id, scene: current, size };
-      setResizing(true);
+      setResizeId(id);
       return size;
     },
     update(id: string, size: Size) {
@@ -265,10 +304,8 @@ function App() {
       reconcile(latest.current);
     },
     finish(id: string, size?: Size) {
-      const gesture = activeResize.current;
-      if (gesture?.id !== id || !latest.current) return;
-      activeResize.current = null;
-      setResizing(false);
+      if (activeResize.current?.id !== id || !latest.current) return;
+      const gesture = releaseResize()!;
       const board = gesture.scene.artboards.find((item) => item.id === id)!;
       if (size && (size.width !== board.width || size.height !== board.height)) {
         setNodes((current) => current.map((node) =>
@@ -326,11 +363,16 @@ function App() {
               minZoom={0.08} maxZoom={3}
               nodesDraggable={!saving && !choosing && !resizing} nodesConnectable={false} elementsSelectable
               zoomOnScroll={!resizing} zoomOnPinch={!resizing} zoomOnDoubleClick={!resizing}
-              zoomActivationKeyCode={resizing ? null : "Meta"} panOnDrag={!resizing} autoPanOnNodeFocus={!resizing}
+              zoomActivationKeyCode={resizing ? null : "Meta"} panActivationKeyCode={resizing ? null : "Space"}
+              panOnDrag={!resizing} autoPanOnNodeFocus={!resizing}
               disableKeyboardA11y={false} deleteKeyCode={null} selectionKeyCode={null} multiSelectionKeyCode={null}
-              onNodesChange={(changes) => setNodes((current) => applyNodeChanges(
-                changes.filter((change) => change.type !== "position" || Boolean(drag.current)), current,
-              ))}
+              onNodesChange={(changes) => {
+                const accepted = changes.filter((change) => {
+                  if (change.type === "select" && (activeResize.current || savingGeneration.current !== null)) return false;
+                  return change.type !== "position" || Boolean(drag.current);
+                });
+                setNodes((current) => applyNodeChanges(accepted, current));
+              }}
               onNodeDragStart={(_, node) => {
                 if (latest.current) drag.current = { id: node.id, scene: latest.current };
               }}
@@ -345,7 +387,9 @@ function App() {
       </section>
       <footer>
         <span>{scene?.artboards.length ?? 0} {scene?.artboards.length === 1 ? "artboard" : "artboards"}</span>
-        <span>{selected ? `${selected.data.name} · ${selected.data.width} × ${selected.data.height} · Drag the corner to resize` : "Drag an artboard to arrange it"}</span>
+        <span id="canvas-instructions">{selected
+          ? `${selected.data.name} · ${selected.data.width} × ${selected.data.height} · ${resizeFocused ? "Arrow keys resize · Shift for larger steps" : "Drag the corner to resize"}`
+          : "Drag an artboard to arrange it"}</span>
       </footer>
     </main>
   );
