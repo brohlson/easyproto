@@ -217,10 +217,38 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   assert.equal(await desktop.evaluate(() => typeof window.easyProto.getScene), "function");
   statuses.push("Updated HTML/CSS and local asset rendered; preview privilege probes and loopback traps stayed blocked");
 
+  await app.evaluate(({ app }) => {
+    app.once("browser-window-created", (_event, window) => {
+      const debug = window.webContents.debugger;
+      const send = debug.sendCommand.bind(debug);
+      debug.sendCommand = (command, params, ...args) => command === "Runtime.evaluate"
+        ? send(command, {
+            ...params,
+            expression: `(async () => ({
+              ...await (${params.expression}),
+              captureBridge: typeof window.easyProto,
+              captureRequire: typeof window.require,
+              captureProcess: typeof window.process,
+              captureOrigin: window.origin
+            }))()`,
+          }, ...args).then((report) => {
+            globalThis.easyProtoCaptureProbe = {
+              bridge: report.result.value.captureBridge,
+              require: report.result.value.captureRequire,
+              process: report.result.value.captureProcess,
+              origin: report.result.value.captureOrigin,
+            };
+            return report;
+          })
+        : send(command, params, ...args);
+    });
+  });
   const captureArgs = { projectId, artboardId, revision: 4 };
   const capture = await client.callTool({ name: "capture_artboard", arguments: captureArgs });
   assert.equal(capture.isError, undefined, JSON.stringify(capture.content));
   const { structuredContent: details } = capture;
+  const captureIsolation = await app.evaluate(() => globalThis.easyProtoCaptureProbe);
+  assert.deepEqual(captureIsolation, { bridge: "undefined", require: "undefined", process: "undefined", origin: "null" });
   assert.deepEqual([details.status, details.revision, details.sourceRevision, details.width, details.height], ["captured", 4, 4, 320, 240]);
   assert.equal(details.sourceDigest, commit.artboard.sourceDigest);
   assert.equal(details.media["prefers-reduced-motion"], await live.evaluate(() =>
@@ -240,12 +268,13 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   const sample = await app.evaluate(({ nativeImage }, encoded) => {
     const image = nativeImage.createFromBuffer(Buffer.from(encoded, "base64"));
     const pixels = image.toBitmap();
-    return [...pixels.subarray(-4)];
+    const center = (120 * 320 + 160) * 4;
+    return [...pixels.subarray(center, center + 4)];
   }, png.toString("base64"));
   assert.ok(sample.every((value, index) => Math.abs(value - [46, 62, 21, 255][index]) <= 2), String(sample));
   assert.equal(connections, 0);
   await failure("capture_artboard", { ...captureArgs, revision: 2 }, "REVISION_CONFLICT");
-  statuses.push({ capture: details, pngSampleBGRA: sample });
+  statuses.push({ capture: details, captureIsolation, pngSampleBGRA: sample });
   if (evidence) {
     await mkdir(evidence, { recursive: true });
     await desktop.getByRole("button", { name: /fit view/i }).click();
@@ -333,8 +362,11 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   assert.equal(pinned.structuredContent.revision, 4);
   assert.equal(pinned.structuredContent.sourceDigest, commit.artboard.sourceDigest);
   const pinnedPng = pinned.content.find(({ type }) => type === "image").data;
-  const pinnedPixel = await app.evaluate(({ nativeImage }, encoded) =>
-    [...nativeImage.createFromBuffer(Buffer.from(encoded, "base64")).toBitmap().subarray(-4)], pinnedPng);
+  const pinnedPixel = await app.evaluate(({ nativeImage }, encoded) => {
+    const pixels = nativeImage.createFromBuffer(Buffer.from(encoded, "base64")).toBitmap();
+    const center = (120 * 320 + 160) * 4;
+    return [...pixels.subarray(center, center + 4)];
+  }, pinnedPng);
   assert.ok(pinnedPixel.every((value, index) => Math.abs(value - sample[index]) <= 2), String(pinnedPixel));
   statuses.push("An actual capture paused before pixel read; concurrent MCP update committed revision 5 while the image retained revision 4 and its pixels.");
 

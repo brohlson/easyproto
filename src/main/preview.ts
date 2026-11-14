@@ -9,7 +9,6 @@ import { Project, ProjectError, type Snapshot } from "./project";
 export const chromeUrl = "easy-proto://ui/index.html";
 const chromeOrigin = "easy-proto://ui";
 const artOrigin = "easy-art://preview";
-const renderOrigin = "easy-proto://capture";
 const schemeOptions = { standard: true, secure: true, supportFetchAPI: true };
 protocol.registerSchemesAsPrivileged([
   { scheme: "easy-proto", privileges: schemeOptions },
@@ -129,22 +128,15 @@ type Readiness = { viewport: number[]; problems: string[]; media: Record<string,
 
 async function inspect(contents: WebContents, url: string): Promise<Readiness> {
   const debuggerClient = contents.debugger;
-  const { targetInfos } = await debuggerClient.sendCommand("Target.getTargets");
-  const target = targetInfos.find((candidate: { type: string; url: string }) =>
-    candidate.type === "iframe" && candidate.url === url);
-  const sessionId = target
-    ? (await debuggerClient.sendCommand("Target.attachToTarget", { targetId: target.targetId, flatten: true })).sessionId
-    : undefined;
-  const { frameTree } = await debuggerClient.sendCommand("Page.getFrameTree", {}, sessionId);
-  const frameId = frameTree.frame.url === url ? frameTree.frame.id
-    : frameTree.childFrames?.find((child: { frame: { url: string } }) => child.frame.url === url)?.frame.id;
-  if (!frameId) throw new ProjectError("RENDER_FAILED", "Chromium could not inspect the loaded artboard frame.");
+  const { frameTree } = await debuggerClient.sendCommand("Page.getFrameTree");
+  if (frameTree.frame.url !== url) throw new ProjectError("RENDER_FAILED", "Chromium could not inspect the loaded artboard.");
+  const frameId = frameTree.frame.id;
   const { executionContextId } = await debuggerClient.sendCommand("Page.createIsolatedWorld", {
     frameId, worldName: "Easy Proto capture readiness",
-  }, sessionId);
+  });
   const evaluated = await debuggerClient.sendCommand("Runtime.evaluate", {
     expression: inspectFrame, contextId: executionContextId, awaitPromise: true, returnByValue: true,
-  }, sessionId);
+  });
   if (evaluated.exceptionDetails || !evaluated.result.value) {
     throw new ProjectError("RENDER_FAILED", "Chromium could not verify font and image readiness.");
   }
@@ -173,13 +165,6 @@ export class Preview {
         const file = chromeFiles.get(url.pathname);
         if (file) return reply(new Uint8Array(file.bytes), file.mime,
           `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src ${artOrigin}; img-src 'self' data:; base-uri 'none'; form-action 'none'`);
-      }
-      if (url.host === "capture") {
-        const key = url.pathname.slice(1);
-        if (this.#captures.has(key)) {
-          return reply(`<!doctype html><style>html,body{margin:0;overflow:hidden}iframe{display:block;width:100vw;height:100vh;border:0}</style><iframe sandbox="" src="${artOrigin}/${key}/index.html"></iframe>`,
-            "text/html; charset=utf-8", `default-src 'none'; style-src 'unsafe-inline'; frame-src ${artOrigin}; base-uri 'none'`);
-        }
       }
       return new Response(null, { status: 404 });
     });
@@ -224,24 +209,23 @@ export class Preview {
     this.session.on("will-download", (event) => event.preventDefault());
     this.session.webRequest.onBeforeRequest((details, callback) => {
       const { url } = details;
-      const permitted = url.startsWith(chromeOrigin + "/") || url.startsWith(renderOrigin + "/") ||
-        url.startsWith(artOrigin + "/") || url.startsWith("data:image/");
+      const permitted = url.startsWith(chromeOrigin + "/") || url.startsWith(artOrigin + "/") || url.startsWith("data:image/");
       callback({ cancel: !permitted });
     });
   }
 
-  protect(contents: WebContents, captureUrl?: string) {
+  protect(contents: WebContents, capturing = false) {
     contents.setWindowOpenHandler(() => ({ action: "deny" }));
     contents.on("will-attach-webview", (event) => event.preventDefault());
     contents.on("will-redirect", (event) => event.preventDefault());
     contents.on("will-frame-navigate", (event) => {
       const { url, isMainFrame, frame } = event;
-      if (isMainFrame || frame?.parent !== contents.mainFrame) {
+      if (capturing || isMainFrame || frame?.parent !== contents.mainFrame) {
         event.preventDefault();
         return;
       }
       const key = /^easy-art:\/\/preview\/([a-zA-Z0-9-]+)\/index\.html$/.exec(url)?.[1];
-      const allowed = key && (captureUrl ? captureUrl === renderOrigin + "/" + key : this.#live.has(key));
+      const allowed = key && this.#live.has(key);
       if (!allowed) event.preventDefault();
     });
   }
@@ -273,7 +257,6 @@ export class Preview {
     const { width, height } = board;
     const surface = { project, board, source: snapshot.sources.get(board.id)!, missing: new Set<string>() };
     this.#captures.set(key, surface);
-    const renderUrl = `${renderOrigin}/${key}`;
     const boardUrl = `${artOrigin}/${key}/index.html`;
     const window = new BrowserWindow({
       width, height, useContentSize: true, frame: false, show: false, enableLargerThanScreen: true,
@@ -284,11 +267,11 @@ export class Preview {
     webContents.on("console-message", (details) => {
       if (/content security policy/i.test(details.message)) blockedResources.add("A resource was blocked by preview policy.");
     });
-    this.protect(webContents, renderUrl);
+    this.protect(webContents, true);
     try {
-      await timeout(window.loadURL(renderUrl), 5000, "The artboard did not load within 5 seconds.");
-      const frame = webContents.mainFrame.frames.find((candidate) => candidate.url === boardUrl);
-      if (!frame) throw new ProjectError("RENDER_FAILED", "The requested artboard frame did not load.");
+      await timeout(window.loadURL(boardUrl), 5000, "The artboard did not load within 5 seconds.");
+      const frame = webContents.mainFrame;
+      if (frame.url !== boardUrl) throw new ProjectError("RENDER_FAILED", "The requested artboard did not load.");
       webContents.debugger.attach("1.3");
       const report = await timeout(
         inspect(webContents, boardUrl), 5000, "Fonts, images or paint did not settle within 5 seconds.");
