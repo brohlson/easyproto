@@ -181,7 +181,7 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
     projectId, commandId: randomUUID(), expectedRevision: 3,
     arguments: { artboardId, patch: {
       html: `<!-- <head> --><html><head data-test="yes"></head><body><h1>Prototype two</h1><img id="local" loading="lazy" src="assets/local.png"><img id="outside" src="file://${outside}"><img id="traversal" src="assets/%2e%2e/%2e%2e/outside.png"><img src="${blocked}/network"><a href="${blocked}/navigate" target="_blank">Link</a><script>document.documentElement.dataset.executed='yes';</script><button onclick="document.documentElement.dataset.clicked='yes'">Test</button><link rel="preconnect" href="${blocked}"><link rel="dns-prefetch" href="${blocked}"><iframe src="${blocked}"></iframe><meta http-equiv="refresh" content="0;url=${blocked}"></body></html>`,
-      css: `@font-face{font-family:Fixture;src:url(assets/invalid.woff2)}body{background:rgb(21,62,46);color:white}body:has(img[loading=eager]){background:#f00}h1{font:28px Fixture,system-ui}body::after{content:'';display:block;width:20px;height:20px;background:url(assets/missing.png)}body::before{content:'';display:block;width:20px;height:20px;background:url(assets/invalid.png)}`,
+      css: `@font-face{font-family:Fixture;src:url(assets/invalid.woff2)}body{background:rgb(21,62,46);color:white}body:has(img[loading=eager]){background:#f00}h1{font:28px Fixture,system-ui}body::after{content:'';display:block;width:20px;height:20px;background:url(assets/missing.png)}body::before{content:'';display:block;width:20px;height:20px;background:url(assets/invalid.png)}html{background-image:url(assets/query-only.png?v=1)}`,
     } },
   };
   const commit = await data("update_artboard", updated);
@@ -210,7 +210,9 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   assert.equal(connections, 0);
   const originalUrl = live.url();
   await live.evaluate(() => document.querySelector("a").click());
+  await title.waitFor();
   assert.equal(live.url(), originalUrl);
+  assert.equal(await frame.getByText("Link", { exact: true }).getAttribute("href"), null);
   assert.equal(app.windows().length, 1);
   assert.equal(await desktop.evaluate(() => typeof window.easyProto.getScene), "function");
   statuses.push("Updated HTML/CSS and local asset rendered; preview privilege probes and loopback traps stayed blocked");
@@ -221,8 +223,12 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   const { structuredContent: details } = capture;
   assert.deepEqual([details.status, details.revision, details.sourceRevision, details.width, details.height], ["captured", 4, 4, 320, 240]);
   assert.equal(details.sourceDigest, commit.artboard.sourceDigest);
+  assert.equal(details.media["prefers-reduced-motion"], await live.evaluate(() =>
+    matchMedia("(prefers-reduced-motion: reduce)").matches ? "reduce" : "no-preference"));
+  assert.ok(details.devicePixelRatio >= 1);
   assert.ok(details.unresolved.includes("Missing asset: missing.png"), JSON.stringify(details));
-  assert.ok(details.unresolved.includes("CSS image failed to decode"), JSON.stringify(details));
+  assert.ok(details.unresolved.includes("CSS image failed to decode: invalid.png"), JSON.stringify(details));
+  assert.ok(details.unresolved.includes("CSS image failed to decode: query-only.png?v=1"), JSON.stringify(details));
   assert.ok(details.unresolved.some((item) => item.includes("Font could not load: Fixture")), JSON.stringify(details));
   assert.ok(details.unresolved.some((item) => item.includes("resource was blocked")), JSON.stringify(details));
   const png = Buffer.from(capture.content.find(({ type }) => type === "image").data, "base64");
@@ -250,6 +256,7 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
         return bounds.top >= canvas.top && bounds.right <= canvas.right;
       });
     });
+    await title.waitFor();
     await desktop.screenshot({ path: join(evidence, "canvas.png"), animations: "disabled" });
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((window) => window.isVisible()).setSize(660, 480));
     await desktop.waitForFunction(() => innerWidth === 660);
@@ -261,6 +268,7 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
         return bounds.top >= canvas.top && bounds.left >= canvas.left && bounds.right <= canvas.right;
       });
     });
+    await title.waitFor();
     await desktop.screenshot({ path: join(evidence, "canvas-minimum.png"), animations: "disabled" });
   }
 

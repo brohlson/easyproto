@@ -38,7 +38,9 @@ function previewHtml(html: string) {
     parent.childNodes = parent.childNodes.filter((child) => {
       if (!("tagName" in child)) return true;
       if (depth >= 128 || removedTags.has(child.tagName)) return false;
-      child.attrs = child.attrs.filter(({ name }) => !name.startsWith("on") && !removedAttributes.has(name));
+      child.attrs = child.attrs.filter(({ name }) =>
+        !name.startsWith("on") && !removedAttributes.has(name) &&
+        !((child.tagName === "a" || child.tagName === "area") && name === "href"));
       pending.push({ parent: child, depth: depth + 1 });
       return true;
     });
@@ -98,7 +100,11 @@ const inspectFrame = `(async () => {
   const cssImages = [...styleUrls].map(url => {
     const image = new Image();
     image.src = url;
-    return image.decode().catch(() => problems.add("CSS image failed to decode"));
+    return image.decode().catch(() => {
+      const assetPrefix = new URL("./assets/", document.URL).href;
+      const path = url.startsWith(assetPrefix) ? url.slice(assetPrefix.length) : "";
+      problems.add(path ? "CSS image failed to decode: " + path : "CSS image failed to decode");
+    });
   });
   const htmlImages = images.map(image => image.decode().catch(() => problems.add("Image failed to decode")));
   await Promise.all([document.fonts.ready, ...htmlImages, ...cssImages]);
@@ -106,10 +112,20 @@ const inspectFrame = `(async () => {
     if (font.status === "error") problems.add("Font could not load: " + font.family);
   }
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  return { viewport: [innerWidth, innerHeight], problems: [...problems] };
+  const media = {};
+  for (const [name, values] of Object.entries({
+    "prefers-color-scheme": ["dark", "light"],
+    "prefers-reduced-motion": ["reduce", "no-preference"],
+    "prefers-contrast": ["more", "less", "custom", "no-preference"],
+    "prefers-reduced-transparency": ["reduce", "no-preference"],
+    "forced-colors": ["active", "none"],
+  })) {
+    media[name] = values.find(value => matchMedia("(" + name + ": " + value + ")").matches) ?? "unavailable";
+  }
+  return { viewport: [innerWidth, innerHeight], problems: [...problems], media, devicePixelRatio };
 })()`;
 
-type Readiness = { viewport: number[]; problems: string[] };
+type Readiness = { viewport: number[]; problems: string[]; media: Record<string, string>; devicePixelRatio: number };
 
 async function inspect(contents: WebContents, url: string): Promise<Readiness> {
   const debuggerClient = contents.debugger;
@@ -301,6 +317,7 @@ export class Preview {
           revision: snapshot.manifest.revision, artboardId: board.id, sourceRevision: board.sourceRevision,
           sourceDigest: board.sourceDigest, assetDigest: project.assetDigest, chromium: process.versions.chrome,
           width, height, pixelWidth, pixelHeight, nativeWidth, nativeHeight,
+          media: report.media, devicePixelRatio: report.devicePixelRatio,
           unresolved: [...report.problems, ...blockedResources, ...[...surface.missing].map((name) => `Missing asset: ${name}`)],
         },
       };
