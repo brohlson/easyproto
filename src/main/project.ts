@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, realpath, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import {
@@ -197,18 +197,23 @@ export class Project {
     this.assetDigest = digest(canonical([...assets].map(([path, asset]) => [path, digest(asset.bytes)])));
   }
 
-  static async open(path: string, onPhase?: (phase: CommitPhase) => void) {
-    await mkdir(path, { recursive: true });
+  static async open(path: string, onPhase?: (phase: CommitPhase) => void, mode: "open" | "create" | "either" = "either") {
+    if (mode === "either") await mkdir(path, { recursive: true });
     const root = await realpath(path);
     try {
       await lstat(join(root, "project.json"));
     } catch (error) {
-      if (!missing(error)) throw error;
+      if (!missing(error) || mode === "open") throw error;
       const entries = await readdir(root);
+      if (mode === "create" && entries.some((entry) => entry !== ".DS_Store")) {
+        throw new Error("Choose an empty folder for the new project.");
+      }
       const unrelated = entries.filter((entry) => !["assets", managed, ".DS_Store"].includes(entry) &&
         !/^\.project-[0-9a-f-]{36}\.tmp$/.test(entry));
       if (unrelated.length) throw new Error("Choose an existing project or an empty project folder.");
-      if (entries.includes(managed)) {
+      const assets = await readAssets(root);
+      const hasManagedFolder = entries.includes(managed);
+      if (hasManagedFolder) {
         await requireDirectory(join(root, managed));
         if ((await readdir(join(root, managed))).length > 0) {
           throw new Error("The project pointer is missing but revision data remains.");
@@ -217,15 +222,24 @@ export class Project {
         await mkdir(join(root, managed));
       }
       const snapshot = starter();
-      const assets = await readAssets(root);
-      await publish(root, snapshot);
+      try {
+        await publish(root, snapshot);
+      } catch (error) {
+        if (!hasManagedFolder) await rmdir(join(root, managed)).catch(() => undefined);
+        throw error;
+      }
       return new Project(root, snapshot, assets, onPhase);
     }
+    if (mode === "create") throw new Error("This folder already contains a project.");
     return new Project(root, await load(root), await readAssets(root), onPhase);
   }
 
   get snapshot() {
     return this.#snapshot;
+  }
+
+  whenIdle() {
+    return this.#tail;
   }
 
   authorize(projectId: string) {

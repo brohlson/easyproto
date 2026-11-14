@@ -53,6 +53,7 @@ export type Source = z.infer<typeof source>;
 export type Commit = z.infer<typeof commitSchema>;
 export type Manifest = z.infer<typeof manifestSchema>;
 export type Scene = {
+  generation: number;
   projectId: string;
   revision: number;
   folderName: string;
@@ -61,7 +62,10 @@ export type Scene = {
 export type DesktopBridge = {
   getScene(): Promise<Scene>;
   onScene(listener: (scene: Scene) => void): () => void;
-  moveArtboard(command: Command): Promise<Commit>;
+  moveArtboard(generation: number, command: Command): Promise<Commit>;
+  chooseProject(mode: "create" | "open"): Promise<void>;
 };
 
-export const ipc = { scene: "project:scene", changed: "project:changed", move: "project:move" } as const;
+export const ipc = {
+  scene: "project:scene", changed: "project:changed", move: "project:move", choose: "project:choose",
+} as const;

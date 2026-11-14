@@ -17,7 +17,9 @@ pnpm dev
 
 The runtime installer comes from the pinned Electron npm package and fetches the matching official Electron release. `pnpm dev` builds and launches the development app. Rebuild or rerun it after source changes. For a build already on disk, use `pnpm start`.
 
-Launch with a chosen folder using `pnpm start "--project=$PWD/My prototype"` after building. Choose a new empty folder or an existing project. Without a path, the app reopens its default Untitled project in Electron's local app-data folder. Every successful move or MCP mutation saves automatically. Quit and reopen with the same path. Copy the entire folder, including `.easy-proto` and `assets`, to move the project.
+Choose **New Project** in the toolbar, then create a folder in the macOS picker or select an existing empty folder. Choose **Open Project** and select a folder containing an Easy Proto project to reopen it. The toolbar shows the current folder and saved revision.
+
+You can also launch with a chosen folder using `pnpm start "--project=$PWD/My prototype"` after building. Choose a new empty folder or an existing project. Without a path, the app reopens its default Untitled project in Electron's local app-data folder. Every successful move or MCP mutation saves automatically. Quit and reopen with the same path. Copy the entire folder, including `.easy-proto` and `assets`, to move the project.
 
 ## Connect Codex
 
@@ -35,7 +37,7 @@ The app must be running before Codex connects. Restart the client if it was alre
 
 Ask Codex to get the Easy Proto context, create a 480 × 320 artboard next to the starter at canvas coordinates (620, 0), then capture it. Ask it to change the title and background and capture the new revision. Use **Fit View** to bring both boards into view. Drag a board and confirm the header shows the new saved revision. Quit and reopen using the same folder.
 
-- `get_context` returns the authorized project ID, current revision and layouts.
+- `get_context` returns the current project ID, activation ID, revision and layouts. Include both `projectId` and `activationId` in every other tool call. Call `get_context` again after a project switch, reopen or restart. The same MCP connection can discover the newly selected project.
 - `get_artboard` takes `projectId` and `artboardId` and returns source plus metadata.
 - `create_artboard` takes `projectId`, a new UUID `commandId`, `expectedRevision` and `arguments` containing `name`, `x`, `y`, `width`, `height`, `html` and `css`.
 - `update_artboard` takes the same envelope with `arguments: { artboardId, patch }`. Supply any subset of the layout and source fields.
@@ -49,4 +51,4 @@ Place PNG, JPEG, GIF, WebP, AVIF, WOFF or WOFF2 files under the project's `asset
 EASY_PROTO_EVIDENCE="$PWD/evidence" pnpm verify
 ```
 
-The check launches Electron and a real SDK Streamable HTTP client on disposable local ports. Existing projects are outside the test scope. The command also checks process interruption at both sides of the storage commit point. See the [handoff](docs/handoff.md) and [review workflow](agents/codex-review.md).
+The check launches Electron and a real SDK Streamable HTTP client on disposable local ports. Existing projects are outside the test scope. The command also checks interrupted saves and that switching projects revokes access through the old MCP activation, including across folder copies that share a project ID. See the [handoff](docs/handoff.md) and [review workflow](agents/codex-review.md).

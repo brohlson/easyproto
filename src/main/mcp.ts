@@ -10,19 +10,46 @@ import type { Preview } from "./preview";
 
 const host = "127.0.0.1";
 const maxBody = 3 * 1024 * 1024;
+const projectScope = { projectId: id, activationId: id };
+
+export type ActiveProject = {
+  project: Project;
+  activationId: string;
+  signal: AbortSignal;
+};
 
 function result(data: Record<string, unknown>) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data) }], structuredContent: data };
 }
 
-function tools(project: Project, preview: Preview, changed: () => void) {
+function tools(current: () => ActiveProject, preview: Preview, changed: () => void, checkWritable: () => void) {
   const server = new McpServer({ name: "easy-proto", version: "0.1.0" });
-  const scoped = { projectId: id, artboardId: id };
-  function getArtboard(projectId: string, artboardId: string) {
-    const snapshot = project.authorize(projectId);
+  const scoped = { ...projectScope, artboardId: id };
+  function active(projectId: string, activationId: string) {
+    const scope = current();
+    if (scope.activationId !== activationId || scope.project.snapshot.manifest.projectId !== projectId) {
+      throw new ProjectError("PROJECT_SCOPE", "The project selection changed. Call get_context for the open project.");
+    }
+    return scope;
+  }
+
+  function getArtboard(projectId: string, activationId: string, artboardId: string) {
+    const scope = active(projectId, activationId);
+    const snapshot = scope.project.snapshot;
     const board = snapshot.manifest.artboards.find((item) => item.id === artboardId);
     if (!board) throw new ProjectError("ARTBOARD_NOT_FOUND", "The artboard does not exist.");
-    return { snapshot, board };
+    return { scope, snapshot, board };
+  }
+
+  async function commit(
+    operation: "create_artboard" | "update_artboard",
+    { activationId, ...request }: { activationId: string } & z.infer<typeof envelope> & { arguments: unknown },
+  ) {
+    const { project } = active(request.projectId, activationId);
+    checkWritable();
+    const saved = await project.execute({ ...request, operation });
+    if (current().project === project) changed();
+    return result(saved);
   }
 
   async function call<T extends CallToolResult>(
@@ -42,44 +69,39 @@ function tools(project: Project, preview: Preview, changed: () => void) {
   server.registerTool("get_context", {
     description: "Discover the only authorized open project, its current committed revision and artboards.", inputSchema: {},
   }, () => call(() => {
+    const { project, activationId } = current();
     const { schemaVersion, projectId, revision, artboards } = project.snapshot.manifest;
-    return result({ schemaVersion, projectId, revision, assetDigest: project.assetDigest, artboards });
+    return result({ schemaVersion, projectId, activationId, revision, assetDigest: project.assetDigest, artboards });
   }));
 
   server.registerTool("get_artboard", {
     description: "Read the current committed HTML, CSS and layout for an artboard.", inputSchema: scoped,
-  }, ({ projectId, artboardId }) => call(() => {
-    const { snapshot, board } = getArtboard(projectId, artboardId);
+  }, ({ projectId, activationId, artboardId }) => call(() => {
+    const { snapshot, board } = getArtboard(projectId, activationId, artboardId);
     return result({ projectId, revision: snapshot.manifest.revision, artboard: board, ...snapshot.sources.get(board.id) });
   }));
 
   server.registerTool("create_artboard", {
     description: "Commit a new HTML/CSS artboard. Reuse the same command ID and arguments only when retrying.",
-    inputSchema: envelope.extend({ arguments: boardInput }),
-  }, (request) => call(async () => {
-    const commit = await project.execute({ ...request, operation: "create_artboard" });
-    changed();
-    return result(commit);
-  }));
+    inputSchema: envelope.extend({ activationId: id, arguments: boardInput }),
+  }, (request) => call(() => commit("create_artboard", request)));
 
   server.registerTool("update_artboard", {
     description: "Commit a patch to HTML, CSS or layout at the expected project revision.",
-    inputSchema: envelope.extend({ arguments: z.strictObject({ artboardId: id, patch: boardPatch }) }),
-  }, (request) => call(async () => {
-    const commit = await project.execute({ ...request, operation: "update_artboard" });
-    changed();
-    return result(commit);
-  }));
+    inputSchema: envelope.extend({ activationId: id, arguments: z.strictObject({ artboardId: id, patch: boardPatch }) }),
+  }, (request) => call(() => commit("update_artboard", request)));
 
   server.registerTool("capture_artboard", {
     description: "Capture a PNG of the requested current project revision at the artboard CSS viewport. Reports unresolved render dependencies.",
     inputSchema: { ...scoped, revision },
   }, (request) => call(async () => {
-    const { snapshot, board } = getArtboard(request.projectId, request.artboardId);
+    const { scope, snapshot, board } = getArtboard(request.projectId, request.activationId, request.artboardId);
     if (snapshot.manifest.revision !== request.revision) {
       throw new ProjectError("REVISION_CONFLICT", "Capture requires the current committed revision.", snapshot.manifest.revision);
     }
-    const { details, png } = await preview.capture(project, snapshot, board);
+    const { details, png } = await preview.capture(scope.project, snapshot, board, scope.signal).finally(() => {
+      active(request.projectId, request.activationId);
+    });
     return {
       structuredContent: details,
       content: [
@@ -107,7 +129,10 @@ async function readBody(request: IncomingMessage) {
   return JSON.parse(Buffer.concat(chunks).toString()) as unknown;
 }
 
-export async function listen(project: Project, preview: Preview, changed: () => void, port: number, token: string) {
+export async function listen(
+  current: () => ActiveProject, preview: Preview, changed: () => void,
+  checkWritable: () => void, port: number, token: string,
+) {
   const expectedAuth = Buffer.from("Bearer " + token);
   let authority = "";
   const http = createServer({ maxHeaderSize: 16 * 1024, requestTimeout: 10_000, headersTimeout: 5000 }, (request, response) => {
@@ -152,7 +177,7 @@ export async function listen(project: Project, preview: Preview, changed: () => 
       return;
     }
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-    const server = tools(project, preview, changed);
+    const server = tools(current, preview, changed, checkWritable);
     response.on("close", () => { void server.close().catch(() => undefined); });
     await server.connect(transport);
     await transport.handleRequest(request, response, body);

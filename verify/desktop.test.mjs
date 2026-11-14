@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, request } from "node:http";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -37,7 +37,7 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   const port = reserve.address().port;
   await new Promise((resolve) => reserve.close(resolve));
   const endpoint = `http://127.0.0.1:${port}/mcp`;
-  let app, client, desktop;
+  let app, client, desktop, activationId;
   const logs = [];
   const statuses = [];
   t.after(async () => {
@@ -69,16 +69,20 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
     await client.connect(new StreamableHTTPClientTransport(new URL(endpoint), {
       requestInit: { headers: { Authorization: "Bearer " + token } },
     }));
+    const context = await client.callTool({ name: "get_context", arguments: {} });
+    activationId = context.structuredContent.activationId;
+    assert.match(activationId, /^[0-9a-f-]{36}$/);
     return endpoint;
   }
 
+  const scope = (name, args) => name === "get_context" ? args : { activationId, ...args };
   const data = async (name, args = {}) => {
-    const response = await client.callTool({ name, arguments: args });
+    const response = await client.callTool({ name, arguments: scope(name, args) });
     assert.equal(response.isError, undefined, JSON.stringify(response.content));
     return response.structuredContent;
   };
   const failure = async (name, args, code) => {
-    const response = await client.callTool({ name, arguments: args });
+    const response = await client.callTool({ name, arguments: scope(name, args) });
     assert.equal(response.isError, true, JSON.stringify(response.content));
     assert.equal(response.structuredContent.code, code);
     return response.structuredContent;
@@ -244,7 +248,7 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
     });
   });
   const captureArgs = { projectId, artboardId, revision: 4 };
-  const capture = await client.callTool({ name: "capture_artboard", arguments: captureArgs });
+  const capture = await client.callTool({ name: "capture_artboard", arguments: scope("capture_artboard", captureArgs) });
   assert.equal(capture.isError, undefined, JSON.stringify(capture.content));
   const { structuredContent: details } = capture;
   const captureIsolation = await app.evaluate(() => globalThis.easyProtoCaptureProbe);
@@ -335,7 +339,7 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
       };
     });
   });
-  const capturing = client.callTool({ name: "capture_artboard", arguments: captureArgs });
+  const capturing = client.callTool({ name: "capture_artboard", arguments: scope("capture_artboard", captureArgs) });
   let overlap = false;
   for (let attempt = 0; attempt < 100; attempt++) {
     if (await app.evaluate(() => typeof globalThis.releaseEasyProtoCapture === "function")) {
@@ -380,7 +384,7 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   assert.equal(await deepFrame.locator("#deep-marker").count(), 0);
   assert.equal(deep.revision, 6);
   assert.equal((await data("get_artboard", { projectId, artboardId })).html, '<h1>Deep preview</h1>' + nested);
-  const deepCapture = await client.callTool({ name: "capture_artboard", arguments: { projectId, artboardId, revision: 6 } });
+  const deepCapture = await client.callTool({ name: "capture_artboard", arguments: scope("capture_artboard", { projectId, artboardId, revision: 6 }) });
   assert.equal(deepCapture.isError, undefined, JSON.stringify(deepCapture.content));
   assert.equal(deepCapture.structuredContent.sourceDigest, deep.artboard.sourceDigest);
   await app.evaluate(({ app }) => {
@@ -416,7 +420,7 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
       throw new Error("Synthetic lost MCP reply");
     },
   }));
-  await assert.rejects(cutoff.callTool({ name: "create_artboard", arguments: lost }, undefined, { signal: aborted.signal }));
+  await assert.rejects(cutoff.callTool({ name: "create_artboard", arguments: scope("create_artboard", lost) }, undefined, { signal: aborted.signal }));
   await cutoff.close();
   assert.equal((await data("get_context")).revision, 7);
   await close();
@@ -426,4 +430,177 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   assert.equal((await data("get_context")).artboards.filter((board) => board.name === "Lost reply mockup").length, 1);
   await desktop.frameLocator('iframe[title="Lost reply mockup"]').getByRole("heading", { name: "Prototype one" }).waitFor();
   statuses.push("A second MCP-created board's reply was discarded at the SDK transport. Restart and retry recovered the original board and revision.");
+
+  const original = await data("get_context");
+  const originalScene = await desktop.evaluate(() => window.easyProto.getScene());
+  const another = join(root, "Fresh project");
+  const invalid = join(root, "Invalid project");
+  const copy = join(root, "Project copy");
+  await mkdir(another);
+  await mkdir(invalid);
+  await cp(project, copy, { recursive: true });
+
+  // Supply disposable choices at Electron's native dialog boundary while clicking the actual desktop buttons.
+  async function choose(action, folder, error) {
+    await app.evaluate(({ dialog }, folder) => {
+      dialog.showOpenDialog = async (parent, options) => {
+        globalThis.easyProtoPicker = { parent: parent.isVisible(), options };
+        return folder ? { canceled: false, filePaths: [folder] } : { canceled: true, filePaths: [] };
+      };
+    }, folder);
+    const control = desktop.getByRole("button", { name: action, exact: true });
+    await control.click();
+    await desktop.waitForFunction(() => [...document.querySelectorAll(".project-actions button")].every((button) => !button.disabled));
+    const picker = await app.evaluate(() => globalThis.easyProtoPicker);
+    assert.equal(picker.parent, true);
+    assert.equal(picker.options.title, action);
+    assert.ok(picker.options.properties.includes("openDirectory"));
+    assert.equal(picker.options.properties.includes("createDirectory"), action === "New Project");
+    if (error) {
+      const alert = desktop.getByRole("alert");
+      assert.match(await alert.innerText(), error);
+      await alert.getByRole("button", { name: "Dismiss" }).click();
+    }
+    return data("get_context");
+  }
+
+  assert.deepEqual(await choose("Open Project", null), original);
+  assert.deepEqual(await choose("Open Project", invalid, /Could not open/), original);
+  await assert.rejects(readFile(join(invalid, "project.json")), { code: "ENOENT" });
+  assert.deepEqual(await choose("New Project", project, /Could not create/), original);
+  assert.equal((await desktop.evaluate(() => window.easyProto.getScene())).generation, originalScene.generation);
+  statuses.push("Cancel and invalid choices retained the current canvas and MCP scope. Open did not initialize an empty folder; New refused an existing project.");
+
+  const fresh = await choose("New Project", another);
+  assert.notEqual(fresh.projectId, projectId);
+  assert.notEqual(fresh.activationId, original.activationId);
+  assert.equal(fresh.revision, 0);
+  await desktop.getByText("Fresh project", { exact: true }).waitFor();
+  await desktop.getByText("Saved · Revision 0", { exact: true }).waitFor();
+  await desktop.frameLocator('iframe[title="Field notes"]').getByRole("heading", { name: "Make room for ideas." }).waitFor();
+  assert.equal(JSON.parse(await readFile(join(another, "project.json"), "utf8")).projectId, fresh.projectId);
+  assert.equal(await desktop.locator('iframe[title="Agent mockup"]').count(), 0);
+  await failure("get_artboard", { projectId, activationId: original.activationId, artboardId }, "PROJECT_SCOPE");
+
+  const branch = await choose("Open Project", copy);
+  assert.equal(branch.projectId, projectId);
+  assert.notEqual(branch.activationId, original.activationId);
+  assert.equal(branch.revision, 7);
+  const branchEdit = {
+    projectId, activationId: branch.activationId, expectedRevision: 7, commandId: randomUUID(),
+    arguments: { artboardId, patch: { html: "<h1>Copy only</h1>" } },
+  };
+  await data("update_artboard", branchEdit);
+  await desktop.frameLocator('iframe[title="Agent mockup"]').getByRole("heading", { name: "Copy only" }).waitFor();
+
+  const returned = await choose("Open Project", project);
+  assert.equal(returned.revision, 7);
+  assert.notEqual(returned.activationId, original.activationId);
+  await data("update_artboard", {
+    ...branchEdit, activationId: returned.activationId, commandId: randomUUID(),
+    arguments: { artboardId, patch: { html: "<h1>Original only</h1>" } },
+  });
+  await desktop.frameLocator('iframe[title="Agent mockup"]').getByRole("heading", { name: "Original only" }).waitFor();
+  const beforeSwitch = await desktop.evaluate(() => window.easyProto.getScene());
+  const previousUrl = beforeSwitch.artboards.find((board) => board.id === artboardId).previewUrl;
+
+  await app.evaluate(({ app }) => {
+    app.once("browser-window-created", (_event, window) => {
+      const debug = window.webContents.debugger;
+      const send = debug.sendCommand.bind(debug);
+      debug.sendCommand = (command, ...args) => {
+        if (command !== "Page.captureScreenshot") return send(command, ...args);
+        globalThis.pickerCaptureStarted = true;
+        return new Promise((_resolve, reject) => window.once("closed", () => reject(new Error("Capture window closed"))));
+      };
+    });
+  });
+  const oldScope = { projectId, artboardId, activationId: returned.activationId };
+  const pending = client.callTool({ name: "capture_artboard", arguments: { ...oldScope, revision: 8 } });
+  for (let attempt = 0; attempt < 150 && !await app.evaluate(() => globalThis.pickerCaptureStarted); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 15));
+  }
+  assert.equal(await app.evaluate(() => globalThis.pickerCaptureStarted), true);
+  const switched = await choose("Open Project", copy);
+  assert.equal(switched.projectId, projectId);
+  assert.equal(switched.revision, 8);
+  assert.notEqual(switched.activationId, returned.activationId);
+  assert.equal(switched.assetDigest, branch.assetDigest);
+  await desktop.frameLocator('iframe[title="Agent mockup"]').getByRole("heading", { name: "Copy only" }).waitFor();
+  const retired = await pending;
+  assert.equal(retired.structuredContent.code, "PROJECT_SCOPE");
+  assert.equal(retired.content.some(({ type }) => type === "image"), false);
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1);
+
+  for (const [tool, args] of [
+    ["get_artboard", oldScope],
+    ["capture_artboard", { ...oldScope, revision: 8 }],
+    ["create_artboard", { projectId, activationId: oldScope.activationId, expectedRevision: 8, commandId: randomUUID(), arguments: created.arguments }],
+    ["update_artboard", { ...branchEdit, activationId: oldScope.activationId, expectedRevision: 8, commandId: randomUUID() }],
+  ]) await failure(tool, args, "PROJECT_SCOPE");
+  const oldStatus = await app.evaluate(({ BrowserWindow }, url) =>
+    BrowserWindow.getAllWindows()[0].webContents.session.fetch(url).then((response) => response.status), previousUrl);
+  assert.equal(oldStatus, 404);
+  await assert.rejects(desktop.evaluate(({ generation, projectId, artboardId, commandId }) =>
+    window.easyProto.moveArtboard(generation, {
+      projectId, commandId, expectedRevision: 8, operation: "update_artboard", arguments: { artboardId, patch: { x: 5 } },
+    }), { generation: beforeSwitch.generation, projectId, artboardId, commandId: randomUUID() }), /project selection changed/i);
+  assert.equal((await data("get_artboard", { ...oldScope, activationId: switched.activationId })).html, "<h1>Copy only</h1>");
+  assert.equal((await data("update_artboard", { ...branchEdit, activationId: switched.activationId })).revision, 8);
+  assert.equal((await data("get_context")).revision, 8);
+  const freshCapture = await client.callTool({
+    name: "capture_artboard", arguments: { ...oldScope, activationId: switched.activationId, revision: 8 },
+  });
+  assert.equal(freshCapture.isError, undefined);
+  assert.ok(freshCapture.content.some(({ type }) => type === "image"));
+  // Pause a real commit at publication, then reopen the same folder while its writer is active.
+  await app.evaluate(() => {
+    const fs = process.getBuiltinModule("node:fs/promises");
+    const { syncBuiltinESMExports } = process.getBuiltinModule("node:module");
+    const rename = fs.rename;
+    fs.rename = async (from, to) => {
+      if (String(to).endsWith("/project.json")) {
+        await new Promise((resolve) => { globalThis.releasePickerCommit = resolve; });
+        fs.rename = rename;
+        syncBuiltinESMExports();
+      }
+      return rename(from, to);
+    };
+    syncBuiltinESMExports();
+  });
+  const pendingEdit = {
+    ...branchEdit, activationId: switched.activationId, expectedRevision: 8, commandId: randomUUID(),
+    arguments: { artboardId, patch: { html: "<h1>Saved before reopen</h1>" } },
+  };
+  const pendingSave = client.callTool({ name: "update_artboard", arguments: pendingEdit });
+  let reopening;
+  try {
+    for (let attempt = 0; attempt < 150 && !await app.evaluate(() => Boolean(globalThis.releasePickerCommit)); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+    assert.equal(await app.evaluate(() => Boolean(globalThis.releasePickerCommit)), true);
+    reopening = choose("Open Project", copy);
+    await desktop.getByText("Selecting project…", { exact: true }).waitFor({ timeout: 5000 });
+    assert.equal((await data("get_context")).activationId, switched.activationId);
+    await failure("update_artboard", { ...branchEdit, activationId: switched.activationId }, "PROJECT_SWITCHING");
+  } finally {
+    await app.evaluate(() => {
+      globalThis.releasePickerCommit?.();
+      delete globalThis.releasePickerCommit;
+    });
+  }
+  const savedBeforeSwitch = await pendingSave;
+  assert.equal(savedBeforeSwitch.structuredContent.revision, 9);
+  const reopenedCopy = await reopening;
+  assert.notEqual(reopenedCopy.activationId, switched.activationId);
+  assert.equal(reopenedCopy.revision, 9);
+  await desktop.frameLocator('iframe[title="Agent mockup"]').getByRole("heading", { name: "Saved before reopen" }).waitFor();
+  assert.equal((await data("update_artboard", { ...pendingEdit, activationId: reopenedCopy.activationId })).revision, 9);
+  statuses.push("A same-folder reopen waited for an admitted MCP save paused at publication, then loaded revision 9 and replayed that command under fresh scope.");
+
+  statuses.push("New started revision zero and Open restored saved work. The same connected SDK client discovered fresh authority for a divergent same-ID copy.");
+  statuses.push("The retired activation could neither read, capture, create nor update. A pending capture returned no image; its old live URL returned 404 and stale renderer moves were rejected. Fresh scope read, captured and replayed a prior commit.");
+  if (evidence) {
+    await desktop.screenshot({ path: join(evidence, "project-picker-canvas.png"), animations: "disabled" });
+  }
 });

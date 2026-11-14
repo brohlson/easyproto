@@ -13,6 +13,11 @@ footer { border-top: 1px solid #e0e3db; justify-content: space-between; color: #
 .divider { width: 1px; height: 20px; background: #dee2d9; }
 .folder { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .save-status { margin-left: auto; color: #496253; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.project-actions { display: flex; gap: 6px; }
+.project-actions button { font: inherit; white-space: nowrap; color: #25483b; background: #fffefa; border: 1px solid #cad4cb; border-radius: 6px; padding: 7px 10px; }
+.project-actions button:hover:enabled { background: #e9f1e9; }
+.project-actions button:focus-visible { outline: 2px solid #276b55; outline-offset: 2px; }
+.project-actions button:disabled { opacity: .55; }
 .canvas { position: relative; min-height: 0; background: #edf0eb; }
 .artboard { position: relative; background: white; outline: 1px solid #9aa59e; box-shadow: 0 6px 20px #172c2318; }
 .react-flow__node.selected .artboard, .react-flow__node:focus-visible .artboard { outline: 2px solid #276b55; }

@@ -1,8 +1,9 @@
-import { basename, join, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import { basename, dirname, join, resolve } from "node:path";
 import { Menu, app, BrowserWindow, dialog, ipcMain, session, type IpcMainInvokeEvent } from "electron";
 import { z } from "zod";
 import { commandSchema, ipc, type Scene } from "../shared/model";
-import { listen } from "./mcp";
+import { listen, type ActiveProject } from "./mcp";
 import { chromeUrl, Preview, securePreferences } from "./preview";
 import { Project, ProjectError } from "./project";
 
@@ -23,6 +24,11 @@ async function start() {
   } catch {
     throw new Error("Easy Proto could not open this folder. Choose a valid project or an empty folder with --project=PATH.");
   }
+  let lifetime = new AbortController();
+  let active: ActiveProject = { project, activationId: randomUUID(), signal: lifetime.signal };
+  let generation = 0;
+  let choosing = false;
+  let switching = false;
   const isolatedSession = session.fromPartition("easy-proto");
   const preview = new Preview(isolatedSession);
   await preview.install(join(app.getAppPath(), "dist", "ui"));
@@ -35,29 +41,76 @@ async function start() {
   });
   preview.protect(window.webContents);
   function scene(): Scene {
-    return { ...preview.scene(project), folderName: basename(project.root) };
+    return { ...preview.scene(active.project, generation), folderName: basename(active.project.root) };
   }
   function changed() {
     if (window.isDestroyed()) return;
+    const next = scene();
     try {
-      window.webContents.send(ipc.changed, scene());
+      window.webContents.send(ipc.changed, next);
     } catch {
       // A renderer that is closing can reload the authoritative scene on next launch.
     }
   }
 
+  function checkWritable() {
+    if (switching) throw new ProjectError("PROJECT_SWITCHING", "The project is switching. Call get_context and try again.");
+  }
+
+  ipcMain.handle(ipc.choose, async (event, ...args: unknown[]) => {
+    allowSender(event, window);
+    const [mode] = args;
+    if (args.length !== 1 || (mode !== "create" && mode !== "open")) throw new Error("Choose New Project or Open Project.");
+    if (choosing) return;
+    choosing = true;
+    try {
+      const creating = mode === "create";
+      const selection = await dialog.showOpenDialog(window, {
+        title: creating ? "New Project" : "Open Project",
+        buttonLabel: creating ? "Create Project" : "Open Project",
+        defaultPath: dirname(active.project.root),
+        message: creating ? "Choose an empty folder or create a new folder." : "Choose the folder that contains your Easy Proto project.",
+        properties: creating ? ["openDirectory", "createDirectory"] : ["openDirectory"],
+      });
+      const [folder] = selection.filePaths;
+      if (selection.canceled || !folder || window.isDestroyed()) return;
+
+      switching = true;
+      await active.project.whenIdle();
+      if (window.isDestroyed()) return;
+      const next = await Project.open(folder, undefined, mode);
+      if (window.isDestroyed()) return;
+
+      const previousLifetime = lifetime;
+      lifetime = new AbortController();
+      active = { project: next, activationId: randomUUID(), signal: lifetime.signal };
+      generation++;
+      previousLifetime.abort();
+      changed();
+    } catch {
+      throw new Error(mode === "create"
+        ? "Could not create the project. Choose a new or empty folder."
+        : "Could not open the project. Choose a folder containing a valid Easy Proto project.");
+    } finally {
+      switching = false;
+      choosing = false;
+    }
+  });
+
   ipcMain.handle(ipc.scene, (event) => {
     allowSender(event, window);
     return scene();
   });
-  ipcMain.handle(ipc.move, async (event, input: unknown) => {
+  ipcMain.handle(ipc.move, async (event, selectedGeneration: unknown, input: unknown) => {
     allowSender(event, window);
     const command = commandSchema.parse(input);
     if (command.operation !== "update_artboard" || !Object.keys(command.arguments.patch).every((key) => key === "x" || key === "y")) {
       throw new Error("This control can only move an artboard.");
     }
     try {
-      const commit = await project.execute(command);
+      if (selectedGeneration !== generation) throw new ProjectError("PROJECT_SCOPE", "The project selection changed.");
+      checkWritable();
+      const commit = await active.project.execute(command);
       changed();
       return commit;
     } catch (error) {
@@ -70,7 +123,7 @@ async function start() {
   if (token) {
     if (!/^[A-Za-z0-9_-]{43,128}$/.test(token)) throw new Error("Set EASY_PROTO_TOKEN to a random URL-safe token of at least 43 characters.");
     const port = z.coerce.number().int().min(0).max(65535).parse(process.env.EASY_PROTO_PORT ?? "38645");
-    const endpoint = await listen(project, preview, changed, port, token);
+    const endpoint = await listen(() => active, preview, changed, checkWritable, port, token);
     console.log("Easy Proto MCP listening at", endpoint.url);
     app.once("will-quit", endpoint.stop);
   }
@@ -80,6 +133,7 @@ async function start() {
     { label: "Edit", submenu: [{ role: "copy" }, { role: "selectAll" }] },
     { role: "windowMenu" },
   ]));
+  window.on("closed", () => lifetime.abort());
   window.once("ready-to-show", () => window.show());
   await window.loadURL(chromeUrl);
 }

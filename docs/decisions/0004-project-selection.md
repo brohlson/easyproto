@@ -1,0 +1,9 @@
+# Bind MCP authority to the desktop project selection
+
+New Project and Open Project use a native, window-modal folder picker. The validated top-level renderer can request a picker mode. The main process receives the selected path directly from Electron. New requires an empty folder and Open loads an existing valid project. A canceled selection or failed load preserves the canvas and its MCP scope.
+
+After the user selects a folder, the app pauses write admission and waits for admitted commands to finish before loading the folder. This preserves acknowledged commits when opening the same folder again. Reads and captures can use the current project while the selection is being prepared. On success, the app publishes the new project, retires the old live preview URLs, and cancels the old capture work. A capture rechecks scope before returning and sends a scope error if the activation was retired. Responses already handed to the transport stay valid for the activation under which they were produced.
+
+The app keeps its authenticated MCP endpoint running. `get_context` returns a fresh `activationId` for every successful selection and every launch. All scoped tools require that ID alongside the durable `projectId`. Requests carrying a previous activation fail with `PROJECT_SCOPE`, even when copies share the same project and artboard IDs and revisions. Authenticated clients can discover the active selection through `get_context`. During a switch, writes to the current selection can fail with `PROJECT_SWITCHING`; refresh context and retry once the picker finishes.
+
+The activation ID stays out of project storage and the durable command fingerprint. A caller that explicitly reopens a project can replay an identical command using the fresh activation ID. The canvas uses an in-memory generation for event ordering and to reset camera, selection, and drag state. Project storage and the launch default keep their existing format and behavior.

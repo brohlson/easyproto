@@ -230,39 +230,49 @@ export class Preview {
     });
   }
 
-  scene(project: Project) {
+  scene(project: Project, generation: number) {
     const { manifest, sources } = project.snapshot;
     const active = new Map<string, Surface>();
     const artboards = manifest.artboards.map((board) => {
-      const key = `${board.id}-${board.sourceRevision}-${project.assetDigest}`;
+      const key = `${generation}-${board.id}-${board.sourceRevision}-${project.assetDigest}`;
       active.set(key, this.#live.get(key) ?? { project, board, source: sources.get(board.id)!, missing: new Set() });
       return { ...board, previewUrl: `${artOrigin}/${key}/index.html` };
     });
     this.#live = active;
-    return { projectId: manifest.projectId, revision: manifest.revision, artboards };
+    return { generation, projectId: manifest.projectId, revision: manifest.revision, artboards };
   }
 
-  capture(project: Project, snapshot: Snapshot, board: Artboard) {
+  async capture(project: Project, snapshot: Snapshot, board: Artboard, signal: AbortSignal) {
     if (this.#pendingCaptures >= 4) throw new ProjectError("CAPTURE_BUSY", "The capture queue is full. Try again shortly.");
     this.#pendingCaptures++;
-    const job = this.#captureQueue.then(() => this.#capture(project, snapshot, board)).finally(() => {
+    const job = this.#captureQueue.then(() => {
+      signal.throwIfAborted();
+      return this.#capture(project, snapshot, board, signal);
+    }).finally(() => {
       this.#pendingCaptures--;
     });
     this.#captureQueue = job.then(() => undefined, () => undefined);
     return job;
   }
 
-  async #capture(project: Project, snapshot: Snapshot, board: Artboard) {
+  async #capture(project: Project, snapshot: Snapshot, board: Artboard, signal: AbortSignal) {
     const key = randomUUID();
     const { width, height } = board;
     const surface = { project, board, source: snapshot.sources.get(board.id)!, missing: new Set<string>() };
-    this.#captures.set(key, surface);
     const boardUrl = `${artOrigin}/${key}/index.html`;
     const window = new BrowserWindow({
       width, height, useContentSize: true, frame: false, show: false, enableLargerThanScreen: true,
       webPreferences: { ...securePreferences, session: this.session },
     });
     const { webContents } = window;
+    const close = () => {
+      this.#captures.delete(key);
+      if (window.isDestroyed()) return;
+      if (webContents.debugger.isAttached()) webContents.debugger.detach();
+      window.destroy();
+    };
+    this.#captures.set(key, surface);
+    signal.addEventListener("abort", close, { once: true });
     const blockedResources = new Set<string>();
     webContents.on("console-message", (details) => {
       if (/content security policy/i.test(details.message)) blockedResources.add("A resource was blocked by preview policy.");
@@ -305,11 +315,8 @@ export class Preview {
         },
       };
     } finally {
-      this.#captures.delete(key);
-      if (!window.isDestroyed()) {
-        if (webContents.debugger.isAttached()) webContents.debugger.detach();
-        window.destroy();
-      }
+      signal.removeEventListener("abort", close);
+      close();
     }
   }
 }
