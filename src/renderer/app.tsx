@@ -1,5 +1,5 @@
 import {
-  createContext, memo, useContext, useEffect, useRef, useState,
+  createContext, memo, useContext, useEffect, useLayoutEffect, useRef, useState,
   type CSSProperties, type KeyboardEvent, type PointerEvent,
 } from "react";
 import { createRoot } from "react-dom/client";
@@ -39,6 +39,25 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
   const zoom = useStore((state) => selected ? state.transform[2] : 1);
   const pointer = useRef<{ pointerId: number; x: number; y: number; zoom: number; size: Size }>(null);
   const handle = useRef<HTMLButtonElement>(null);
+  const keyboardFocus = useRef(false);
+
+  function revealHandle(button: HTMLButtonElement) {
+    const bounds = button.getBoundingClientRect();
+    const canvas = button.closest(".canvas")?.getBoundingClientRect();
+    if (!canvas) return;
+    const inset = 5;
+    if (bounds.left < canvas.left + inset || bounds.top < canvas.top + inset ||
+      bounds.right > canvas.right - inset || bounds.bottom > canvas.bottom - inset) {
+      const center = screenToFlowPosition({ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 });
+      void setCenter(center.x, center.y, { zoom: getZoom() });
+    }
+  }
+
+  useLayoutEffect(() => {
+    const button = handle.current;
+    if (button && keyboardFocus.current && document.activeElement === button && !pointer.current) revealHandle(button);
+  }, [data.width, data.height]);
+
   useEffect(() => {
     if (resize.activeId === id || !pointer.current) return;
     const { pointerId } = pointer.current;
@@ -77,17 +96,16 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
           title="Drag or use arrow keys to resize" aria-disabled={resize.disabled}
           aria-describedby="canvas-instructions"
           style={{ "--resize-inverse-zoom": 1 / zoom } as CSSProperties}
-          onBlur={() => resize.focused(false)}
+          onBlur={() => {
+            keyboardFocus.current = false;
+            resize.focused(false);
+          }}
           onFocus={(event) => {
             const button = event.currentTarget;
-            if (button.matches(":focus-visible")) resize.focused(true);
-            const bounds = button.getBoundingClientRect();
-            const canvas = button.closest(".canvas")?.getBoundingClientRect();
-            if (!canvas || pointer.current || !button.matches(":focus-visible")) return;
-            if (bounds.left < canvas.left || bounds.top < canvas.top || bounds.right > canvas.right || bounds.bottom > canvas.bottom) {
-              const center = screenToFlowPosition({ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 });
-              void setCenter(center.x, center.y, { zoom: getZoom() });
-            }
+            if (pointer.current || !button.matches(":focus-visible")) return;
+            keyboardFocus.current = true;
+            resize.focused(true);
+            revealHandle(button);
           }}
           onPointerDown={(event) => {
             if (!event.isPrimary || event.button !== 0) return;
@@ -112,6 +130,8 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
             if (event.repeat) return;
             const size = resize.begin(id);
             if (!size) return;
+            keyboardFocus.current = true;
+            resize.focused(true);
             const step = event.shiftKey ? 20 : 5;
             resize.finish(id, resizeFrom(size, direction.x * step, direction.y * step));
           }}

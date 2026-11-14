@@ -827,6 +827,28 @@ test("macOS Electron and real MCP client exercise the complete desktop slice", {
   await appearance.selectOption("light");
   await desktop.waitForFunction(() => document.documentElement.dataset.theme === "light");
   if (evidence) await desktop.screenshot({ path: join(evidence, "artboard-resize-light-minimum.png"), animations: "disabled" });
+  // Repeated keyboard growth can push a focused corner beyond the window at this zoom.
+  await handle.press("Tab");
+  await desktop.keyboard.press("Shift+Tab");
+  await desktop.getByText(/Arrow keys resize/).waitFor({ timeout: 5000 });
+  const beforeKeyboardPan = await canvasTransform();
+  let keyboardRevealed = false;
+  for (let revision = 14; revision <= 30; revision++) {
+    await desktop.keyboard.press("Shift+ArrowRight");
+    await desktop.getByText(`Saved · Revision ${revision}`, { exact: true }).waitFor({ timeout: 5000 });
+    const visible = await handle.evaluate((button) => {
+      const bounds = button.getBoundingClientRect();
+      const canvas = button.closest(".canvas").getBoundingClientRect();
+      return document.activeElement === button && bounds.right <= canvas.right && bounds.left >= canvas.left;
+    });
+    assert.equal(visible, true);
+    if (await canvasTransform() !== beforeKeyboardPan) {
+      keyboardRevealed = true;
+      break;
+    }
+  }
+  assert.equal(keyboardRevealed, true, "Keyboard growth did not exercise revealing a clipped handle.");
+  statuses.push("Repeated keyboard growth kept the focused handle inside the minimum-size canvas and panned when necessary.");
   await appearance.selectOption("system");
   await desktop.waitForFunction(() => document.documentElement.dataset.theme ===
     (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
