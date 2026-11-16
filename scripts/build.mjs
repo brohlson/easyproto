@@ -20,8 +20,14 @@ await Promise.all([
     external: ["electron"],
   }),
   build({
-    entryPoints: ["src/main/project.ts"],
-    outfile: "dist/project.js",
+    entryPoints: [
+      "src/main/project.ts",
+      "src/main/codex.ts",
+      "src/main/chatgpt.ts",
+      "src/main/agents.ts",
+      "src/main/claude.ts",
+    ],
+    outdir: "dist",
     bundle: true,
     platform: "node",
     target: "node24",

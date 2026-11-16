@@ -1,3 +1,5 @@
+import { Brand } from "@easy-proto/ui";
+import { Folder, MessageSquare, Plus } from "lucide-react";
 import {
   createContext,
   memo,
@@ -23,19 +25,28 @@ import {
   useStore,
   type Node,
   type NodeProps,
+  type Viewport,
 } from "@xyflow/react";
 import type {
   DesktopArtboardCommand,
   DesktopArtboardPatch,
   DesktopBridge,
   DesktopState,
+  Page,
   Scene,
 } from "../shared/model";
 import "@xyflow/react/dist/style.css";
+import "virtual:desktop-design-tokens.css";
 import "./styles.css";
+import type { AgentProfilesState } from "../shared/agents";
+import { AgentSettings } from "./agent-settings";
+import { ChatDock } from "./chat";
 import { DevicePresets } from "./device-presets";
 import { EditableName } from "./editable-name";
+import { MoveToPage, PagePicker } from "./pages";
 import { Settings, type Theme } from "./settings";
+import { TokenManager } from "./tokens";
+import { ToastProvider } from "./toast";
 
 declare global {
   interface Window {
@@ -155,7 +166,18 @@ const arrows = new Map([
 ]);
 
 function FitShortcut() {
-  const { fitView } = useReactFlow();
+  const { fitView, getViewport, setViewport } = useReactFlow();
+  const width = useStore((state) => state.width);
+  const previousWidth = useRef(width);
+
+  useLayoutEffect(() => {
+    const previous = previousWidth.current;
+    previousWidth.current = width;
+    if (!previous || !width || previous === width) return;
+    const viewport = getViewport();
+    void setViewport({ ...viewport, x: viewport.x + (width - previous) / 2 });
+  }, [width, getViewport, setViewport]);
+
   useEffect(() => {
     function onKeyDown(event: globalThis.KeyboardEvent) {
       if (
@@ -165,8 +187,10 @@ function FitShortcut() {
         event.ctrlKey ||
         event.altKey ||
         (event.target instanceof Element &&
-          event.target.closest("input, select, textarea, [contenteditable], [popover]")) ||
-        document.querySelector(":popover-open")
+          event.target.closest(
+            "input, select, textarea, [contenteditable], [popover], .chat-dock",
+          )) ||
+        document.querySelector(":popover-open, dialog[open]")
       )
         return;
       event.preventDefault();
@@ -180,9 +204,44 @@ function FitShortcut() {
 
 function App() {
   const [desktop, setDesktop] = useState<DesktopState>();
+  const [agents, setAgents] = useState<AgentProfilesState>();
+  const focusAgents = useRef(false);
+  useEffect(() => {
+    let current = true;
+    const dispose = window.easyProto.onAgents(setAgents);
+    void window.easyProto.agents({ action: "status" }).then(
+      (value) => {
+        if (current) setAgents(value);
+      },
+      () => {
+        if (current)
+          setAgents({
+            profiles: [],
+            codexInstalled: false,
+            claudeInstalled: false,
+            message: "Could not load agent profiles.",
+          });
+      },
+    );
+    return () => {
+      current = false;
+      dispose();
+    };
+  }, []);
+  useEffect(() => {
+    if (desktop?.view === "home" && focusAgents.current) {
+      focusAgents.current = false;
+      document.getElementById("agents-title")?.focus();
+    }
+  }, [desktop?.view]);
   const scene = desktop?.view === "project" ? desktop : undefined;
+  const [openChatGeneration, setOpenChatGeneration] = useState<number>();
+  const chatTrigger = useRef<HTMLButtonElement>(null);
+  const chatOpen = scene !== undefined && openChatGeneration === scene.generation;
   const [nodes, setNodes] = useNodesState<BoardNode>([]);
   const [message, setMessage] = useState("");
+  const [activePageId, setActivePageId] = useState<string>();
+  const [pageMove, setPageMove] = useState<{ page: Page; count: number }>();
   const [saving, setSaving] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const [theme, setTheme] = useState<Theme>("system");
@@ -193,6 +252,8 @@ function App() {
   const savingGeneration = useRef<number>(null);
   const latest = useRef<Scene>(null);
   const receivedVersion = useRef(-1);
+  const visiblePage = useRef<string>(null);
+  const cameras = useRef(new Map<string, Viewport>());
   const drag = useRef<{ ids: Set<string>; scene: Scene }>(null);
   const pendingSelection = useRef<{ ids: Set<string>; focusId: string }>(null);
   const clipboard = useRef<{ id: string; ready: Promise<boolean> }>(null);
@@ -200,9 +261,10 @@ function App() {
   function reconcile(currentScene: Scene, reset = false) {
     const dragging = drag.current?.ids;
     const selection = pendingSelection.current;
-    const select = selection && currentScene.artboards.some(({ id }) => id === selection.focusId);
+    const boards = currentScene.artboards.filter(({ pageId }) => pageId === visiblePage.current);
+    const select = selection && boards.some(({ id }) => id === selection.focusId);
     setNodes((currentNodes) =>
-      currentScene.artboards.map((board) => {
+      boards.map((board) => {
         const existing = reset ? undefined : currentNodes.find((node) => node.id === board.id);
         const position =
           dragging?.has(board.id) && existing ? existing.position : { x: board.x, y: board.y };
@@ -221,25 +283,43 @@ function App() {
     );
   }
 
-  useEffect(() => {
-    function receive(next: DesktopState) {
-      if (next.sceneVersion <= receivedVersion.current) return;
-      receivedVersion.current = next.sceneVersion;
-      const current = next.view === "project" ? next : null;
-      const reset = current?.generation !== latest.current?.generation;
-      if (reset) {
-        drag.current = null;
-        pendingSelection.current = null;
-        clipboard.current = null;
-        savingGeneration.current = null;
-        setSaving(false);
-        setMessage("");
-      }
-      latest.current = current;
-      setDesktop(next);
-      if (current) reconcile(current, reset);
-      else setNodes([]);
+  function showPage(current: Scene, pageId: string) {
+    visiblePage.current = pageId;
+    pendingSelection.current = null;
+    setActivePageId(pageId);
+    setPageMove(undefined);
+    reconcile(current, true);
+  }
+
+  function receive(next: DesktopState) {
+    if (next.sceneVersion <= receivedVersion.current) return;
+    receivedVersion.current = next.sceneVersion;
+    const current = next.view === "project" ? next : null;
+    const reset = current?.generation !== latest.current?.generation;
+    if (reset) {
+      drag.current = null;
+      pendingSelection.current = null;
+      clipboard.current = null;
+      savingGeneration.current = null;
+      visiblePage.current = null;
+      cameras.current.clear();
+      setSaving(false);
+      setMessage("");
+      setPageMove(undefined);
     }
+    latest.current = current;
+    setDesktop(next);
+    if (current) {
+      if (!current.pages.some(({ id }) => id === visiblePage.current))
+        showPage(current, current.defaultPageId);
+      else reconcile(current);
+    } else {
+      setActivePageId(undefined);
+      setNodes([]);
+    }
+  }
+
+  useEffect(() => {
     const unsubscribe = window.easyProto.onScene(receive);
     window.easyProto
       .getScene()
@@ -259,16 +339,18 @@ function App() {
     document.documentElement.dataset.theme = colorMode;
   }, [colorMode]);
 
-  async function saveArtboard(change: ArtboardChange, from: Scene) {
+  async function saveCommand(change: ArtboardChange, from: Scene) {
     if (
       latest.current?.generation !== from.generation ||
       savingGeneration.current !== null ||
       choosing
     )
-      return;
+      return false;
     savingGeneration.current = from.generation;
     setSaving(true);
     setMessage("");
+    setPageMove(undefined);
+    const originPage = visiblePage.current;
     try {
       const commit = await window.easyProto.arrangeArtboard(from.generation, {
         projectId: from.projectId,
@@ -276,25 +358,53 @@ function App() {
         expectedRevision: from.revision,
         ...change,
       });
-      const previousIds = new Set(from.artboards.map(({ id }) => id));
-      const added = (commit.artboards ?? [commit.artboard]).filter(
-        ({ id }) => !previousIds.has(id),
-      );
-      if (added.length && latest.current?.generation === from.generation) {
-        pendingSelection.current = {
-          ids: new Set(added.map(({ id }) => id)),
-          focusId: added[0].id,
-        };
+      if (latest.current?.generation !== from.generation) return false;
+      if (change.operation === "create_page" && "page" in commit) {
+        const pageId = commit.page.id;
+        if (!latest.current.pages.some(({ id }) => id === pageId)) {
+          try {
+            receive(await window.easyProto.getScene());
+          } catch {
+            if (latest.current?.generation === from.generation)
+              setMessage("The page was saved. Reopen the project to refresh the page list.");
+            return true;
+          }
+        }
+        const current = latest.current;
+        if (
+          current?.generation === from.generation &&
+          current.pages.some(({ id }) => id === pageId)
+        )
+          showPage(current, pageId);
+      } else if (change.operation === "move_artboards_to_page") {
+        const { pageId, artboardIds } = change.arguments;
+        const page = from.pages.find(({ id }) => id === pageId);
+        if (page) setPageMove({ page, count: artboardIds.length });
+      } else if ("artboard" in commit && visiblePage.current === originPage) {
+        const previousIds = new Set(
+          from.artboards.filter(({ pageId }) => pageId === originPage).map(({ id }) => id),
+        );
+        const added = (commit.artboards ?? [commit.artboard]).filter(
+          ({ id, pageId }) => (pageId ?? from.defaultPageId) === originPage && !previousIds.has(id),
+        );
+        if (added.length) {
+          pendingSelection.current = {
+            ids: new Set(added.map(({ id }) => id)),
+            focusId: added[0].id,
+          };
+        }
       }
+      return true;
     } catch (error) {
       const detail = error instanceof Error ? error.message.split("Error: ").at(-1) : undefined;
       if (latest.current?.generation === from.generation) {
         setMessage(
           detail?.includes("Refresh the project revision")
             ? "The project was updated while you were editing. Try the change again."
-            : detail || "The artboard change could not be saved.",
+            : detail || "The change could not be saved.",
         );
       }
+      return false;
     } finally {
       if (latest.current?.generation === from.generation) {
         savingGeneration.current = null;
@@ -305,7 +415,7 @@ function App() {
   }
 
   function arrange(artboardId: string, patch: DesktopArtboardPatch, from: Scene) {
-    return saveArtboard({ operation: "update_artboard", arguments: { artboardId, patch } }, from);
+    return saveCommand({ operation: "update_artboard", arguments: { artboardId, patch } }, from);
   }
 
   const selection = nodes.filter((node) => node.selected);
@@ -316,9 +426,9 @@ function App() {
       savingGeneration.current === null &&
       !(
         target instanceof Element &&
-        target.closest("input, select, textarea, [contenteditable], [popover]")
+        target.closest("input, select, textarea, [contenteditable], [popover], .chat-dock")
       ) &&
-      !document.querySelector(":popover-open")
+      !document.querySelector(":popover-open, dialog[open]")
     );
   }
 
@@ -355,10 +465,12 @@ function App() {
 
   const handlePaste = useEffectEvent(async (event: ClipboardEvent) => {
     const current = latest.current;
+    const pageId = visiblePage.current;
     const copied = clipboard.current;
     if (
       !current ||
       !copied ||
+      !pageId ||
       !canEditCanvas(event.target) ||
       event.clipboardData?.getData(artboardClipboardType) !== copied.id
     )
@@ -366,9 +478,9 @@ function App() {
     event.preventDefault();
     if (await copied.ready) {
       const latestScene = latest.current;
-      if (latestScene?.generation === current.generation)
-        void saveArtboard(
-          { operation: "paste_artboard", arguments: { clipboardId: copied.id } },
+      if (latestScene?.generation === current.generation && visiblePage.current === pageId)
+        void saveCommand(
+          { operation: "paste_artboard", arguments: { clipboardId: copied.id, pageId } },
           latestScene,
         );
     }
@@ -406,13 +518,13 @@ function App() {
       const redo = event.shiftKey;
       if (redo ? !current.canRedo : !current.canUndo) return;
       event.preventDefault();
-      void saveArtboard({ operation: redo ? "redo" : "undo", arguments: {} }, current);
+      void saveCommand({ operation: redo ? "redo" : "undo", arguments: {} }, current);
       return;
     }
     if (!selection.length) return;
     event.preventDefault();
     const artboardIds = selection.map(({ id }) => id);
-    void saveArtboard(
+    void saveCommand(
       {
         operation: remove ? "delete_artboards" : "duplicate_artboards",
         arguments: { artboardIds },
@@ -443,7 +555,7 @@ function App() {
     const dx = first.position.x - origin.x;
     const dy = first.position.y - origin.y;
     if (dx || dy) {
-      void saveArtboard(
+      void saveCommand(
         { operation: "move_artboards", arguments: { artboardIds: [...gesture.ids], dx, dy } },
         gesture.scene,
       );
@@ -469,7 +581,7 @@ function App() {
     event.stopPropagation();
     if (drag.current || event.repeat) return;
     const step = event.shiftKey ? 20 : 5;
-    void saveArtboard(
+    void saveCommand(
       {
         operation: "move_artboards",
         arguments: {
@@ -530,15 +642,48 @@ function App() {
   }
 
   const busy = !desktop || choosing || saving;
+  const page = scene?.pages.find(({ id }) => id === activePageId);
+  const otherPages = scene?.pages.filter(({ id }) => id !== activePageId) ?? [];
+  function navigatePage(pageId: string) {
+    const current = latest.current;
+    if (
+      !current ||
+      choosing ||
+      drag.current ||
+      savingGeneration.current !== null ||
+      pageId === visiblePage.current ||
+      !current.pages.some(({ id }) => id === pageId)
+    )
+      return;
+    showPage(current, pageId);
+  }
+  function closeChat() {
+    setOpenChatGeneration(undefined);
+    chatTrigger.current?.focus();
+  }
+
+  const artboardCount =
+    scene?.artboards.filter(({ pageId }) => pageId === activePageId).length ?? 0;
   const choose = (mode: "create" | "open") =>
     void navigate(() => window.easyProto.chooseProject(mode));
   return (
     <main className={scene ? "workspace" : "workspace home-view"}>
       <header>
-        <div className="brand">
-          <span className="brand-icon" aria-hidden="true" />
-          Easy Proto
-        </div>
+        {scene ? (
+          <button
+            type="button"
+            className="brand brand-home"
+            disabled={busy}
+            aria-label="Easy Proto Home"
+            onClick={() => void navigate(() => window.easyProto.goHome())}
+          >
+            <Brand />
+          </button>
+        ) : (
+          <div className="brand">
+            <Brand />
+          </div>
+        )}
         {scene && (
           <>
             <span className="divider" />
@@ -554,52 +699,89 @@ function App() {
                 }}
               />
             </div>
+            {page && (
+              <>
+                <span className="divider" />
+                <PagePicker
+                  key={scene.generation}
+                  active={page}
+                  pages={scene.pages}
+                  disabled={busy}
+                  onSwitch={navigatePage}
+                  beginRename={(pageId) => {
+                    const current = latest.current;
+                    return current
+                      ? (name) =>
+                          saveCommand(
+                            { operation: "rename_page", arguments: { pageId, name } },
+                            current,
+                          )
+                      : undefined;
+                  }}
+                  onCreate={(name) => {
+                    const current = latest.current;
+                    return current
+                      ? saveCommand({ operation: "create_page", arguments: { name } }, current)
+                      : Promise.resolve(false);
+                  }}
+                />
+              </>
+            )}
           </>
         )}
-        <Settings
-          theme={theme}
-          changeTheme={setTheme}
-          busy={busy}
-          choose={choose}
-          goHome={scene ? () => void navigate(() => window.easyProto.goHome()) : undefined}
-        />
+        {scene && <TokenManager key={scene.generation} scene={scene} disabled={busy} />}
+        {scene && (
+          <button
+            type="button"
+            ref={chatTrigger}
+            className="chat-toggle"
+            aria-controls="chat-dock"
+            aria-expanded={chatOpen}
+            onClick={() => (chatOpen ? closeChat() : setOpenChatGeneration(scene.generation))}
+          >
+            <MessageSquare size={15} aria-hidden="true" /> Chat
+          </button>
+        )}
       </header>
       {desktop?.view === "home" && (
-        <section className="home" aria-labelledby="projects-title">
-          <div className="home-heading">
-            <h1 id="projects-title">Projects</h1>
-            <button
-              type="button"
-              className="create-project"
-              disabled={busy}
-              onClick={() => choose("create")}
-            >
-              Create project
-            </button>
-          </div>
-          {desktop.projects.length === 0 ? (
-            <p>No projects yet</p>
-          ) : (
-            <ul>
-              {desktop.projects.map((project) => (
-                <li key={project.id}>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      void navigate(() => window.easyProto.openRecentProject(project.id))
-                    }
-                  >
-                    <span>{project.name}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <div className="home">
+          <section aria-labelledby="projects-title">
+            <div className="home-heading">
+              <h1 id="projects-title">Projects</h1>
+              <button
+                type="button"
+                className="create-project"
+                disabled={busy}
+                onClick={() => choose("create")}
+              >
+                <Plus size={15} aria-hidden="true" /> Create project
+              </button>
+            </div>
+            {desktop.projects.length === 0 ? (
+              <p>No projects yet</p>
+            ) : (
+              <ul>
+                {desktop.projects.map((project) => (
+                  <li key={project.id}>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void navigate(() => window.easyProto.openRecentProject(project.id))
+                      }
+                    >
+                      <Folder size={15} aria-hidden="true" /> <span>{project.name}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          <AgentSettings state={agents} onChange={setAgents} />
+        </div>
       )}
-      {scene && (
-        <>
+      {scene && activePageId && (
+        <div className="workspace-body" data-chat-open={chatOpen}>
           <section
             className="canvas"
             aria-label="Artboard canvas"
@@ -608,13 +790,21 @@ function App() {
             {scene && (
               <ArtboardEditing.Provider value={editing}>
                 <ReactFlow
-                  key={scene.generation}
+                  key={`${scene.generation}:${activePageId}`}
                   colorMode={colorMode}
                   nodes={nodes}
                   edges={[]}
                   nodeTypes={nodeTypes}
-                  fitView
+                  fitView={!cameras.current.has(activePageId)}
+                  defaultViewport={cameras.current.get(activePageId)}
                   fitViewOptions={{ padding: 0.4, maxZoom: 1 }}
+                  onViewportChange={(viewport) => {
+                    if (
+                      latest.current?.generation === scene.generation &&
+                      visiblePage.current === activePageId
+                    )
+                      cameras.current.set(activePageId, viewport);
+                  }}
                   minZoom={0.08}
                   maxZoom={3}
                   nodesDraggable={!saving && !choosing}
@@ -669,22 +859,91 @@ function App() {
                 </ReactFlow>
               </ArtboardEditing.Provider>
             )}
+            {artboardCount === 0 && <p className="empty-page">No artboards on this page</p>}
+            {pageMove && (
+              <div className="page-move-notice">
+                <span role="status">
+                  Moved {pageMove.count} {pageMove.count === 1 ? "artboard" : "artboards"} to{" "}
+                  <strong>{pageMove.page.name}</strong>
+                </span>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => navigatePage(pageMove.page.id)}
+                >
+                  Go to page
+                </button>
+              </div>
+            )}
           </section>
-          <footer>
+          <ChatDock
+            key={scene.generation}
+            scene={scene}
+            open={chatOpen}
+            selectedId={selection.length === 1 ? selection[0].id : undefined}
+            busy={busy}
+            onClose={closeChat}
+            profiles={agents?.profiles ?? []}
+            onManage={() => {
+              focusAgents.current = true;
+              void navigate(() => window.easyProto.goHome());
+            }}
+            onUndo={() => {
+              const current = latest.current;
+              return current &&
+                current.generation === scene.generation &&
+                current.revision === scene.revision
+                ? saveCommand({ operation: "undo", arguments: {} }, current)
+                : Promise.resolve(false);
+            }}
+          />
+        </div>
+      )}
+      <footer className="workspace-footer">
+        <div className="footer-start">
+          <Settings
+            theme={theme}
+            changeTheme={setTheme}
+            busy={busy}
+            choose={choose}
+            goHome={scene ? () => void navigate(() => window.easyProto.goHome()) : undefined}
+          />
+          {scene && (
             <span>
-              {scene?.artboards.length ?? 0}{" "}
-              {scene?.artboards.length === 1 ? "artboard" : "artboards"}
+              {artboardCount} {artboardCount === 1 ? "artboard" : "artboards"}
             </span>
-            <span title="Shift+0 fits all artboards">
+          )}
+        </div>
+        {scene && (
+          <div className="canvas-actions">
+            <span title="Shift+0 fits the current page">
               {selection.length > 1
                 ? `${selection.length} artboards selected`
                 : selection.length === 1
                   ? `${selection[0].data.name} · ${selection[0].data.width} × ${selection[0].data.height} · Delete to remove`
                   : "Scroll to pan · Pinch to zoom · Shift+0 to fit"}
             </span>
-          </footer>
-        </>
-      )}
+            {selection.length > 0 && otherPages.length > 0 && (
+              <MoveToPage
+                pages={otherPages}
+                count={selection.length}
+                disabled={busy}
+                onMove={(pageId) => {
+                  const current = latest.current;
+                  if (current && !drag.current)
+                    void saveCommand(
+                      {
+                        operation: "move_artboards_to_page",
+                        arguments: { pageId, artboardIds: selection.map(({ id }) => id) },
+                      },
+                      current,
+                    );
+                }}
+              />
+            )}
+          </div>
+        )}
+      </footer>
       {message && (
         <div className="error" role="alert">
           {message} <button onClick={() => setMessage("")}>Dismiss</button>
@@ -694,4 +953,8 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  <ToastProvider>
+    <App />
+  </ToastProvider>,
+);

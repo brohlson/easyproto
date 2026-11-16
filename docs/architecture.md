@@ -51,3 +51,11 @@ The first product supports arranging, resizing, duplicating, and previewing artb
 ## Easy Proto desktop slice
 
 The project now uses the design recorded in [project commits](decisions/0002-project-commits.md) and [preview and MCP isolation](decisions/0003-preview-and-mcp.md). The desktop launches from the Vite build with Electron. Electron Forge packaging stays in Milestone 4. See the [current handoff](handoff.md) for verification and remaining gates.
+
+## Local agent chat
+
+The desktop chat dock exercises the project authority and approval boundaries with a deterministic local provider and an opt-in Codex adapter. The [local agent chat architecture review](chat-architecture.md) records provider choices, review findings, and runtime qualification gates.
+
+## Browser sharing
+
+The [browser sharing architecture](web-sharing-architecture.md) uses immutable read-only snapshots and distinguishes publisher sign-in from guest-link access. The [local prototype](../web/README.md) uses React and TanStack Router. Its Node server retains access control for canvas and individual artboard links, device frames, magic-link sign-in, and revocation. The desktop root, web app, and shared UI package use one pnpm workspace and lockfile.

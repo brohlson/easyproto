@@ -58,7 +58,7 @@ const removedAttributes = new Set([
   "loading",
 ]);
 
-function previewHtml(html: string) {
+function previewHtml(html: string, hasTokens: boolean) {
   const parsed = parse(html, { scriptingEnabled: false });
   const pending: { parent: DefaultTreeAdapterTypes.ParentNode; depth: number }[] = [
     { parent: parsed, depth: 0 },
@@ -90,6 +90,13 @@ function previewHtml(html: string) {
   ]);
   if (head.childNodes.length) defaultTreeAdapter.insertBefore(head, stylesheet, head.childNodes[0]);
   else defaultTreeAdapter.appendChild(head, stylesheet);
+  if (hasTokens) {
+    const tokens = defaultTreeAdapter.createElement("link", head.namespaceURI, [
+      { name: "rel", value: "stylesheet" },
+      { name: "href", value: "./tokens.css" },
+    ]);
+    defaultTreeAdapter.insertBefore(head, tokens, stylesheet);
+  }
   defaultTreeAdapter.setDocumentType(parsed, "html", "", "");
   return serialize(parsed);
 }
@@ -98,6 +105,7 @@ type Surface = {
   project: Project;
   board: Artboard;
   source: Source;
+  tokenCss?: string;
   missing: Set<string>;
 };
 
@@ -117,6 +125,7 @@ const chromeMime = new Map([
   [".js", "text/javascript"],
   [".css", "text/css"],
   [".html", "text/html; charset=utf-8"],
+  [".svg", "image/svg+xml"],
   [".woff2", "font/woff2"],
 ]);
 
@@ -133,7 +142,7 @@ function timeout<T>(
   return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
 }
 
-const inspectFrame = `(async () => {
+const inspectFrame = `(async (hasTokens) => {
   const problems = new Set();
   const images = [...document.images];
   const styleUrls = new Set();
@@ -157,6 +166,10 @@ const inspectFrame = `(async () => {
   });
   const htmlImages = images.map(image => image.decode().catch(() => problems.add("Image failed to decode")));
   await Promise.all([document.fonts.ready, ...htmlImages, ...cssImages]);
+  const tokenUrl = new URL("./tokens.css", document.URL).href;
+  const tokensLoaded = hasTokens
+    ? [...document.querySelectorAll('link[rel="stylesheet"]')].some(link => link.href === tokenUrl && link.sheet)
+    : true;
   for (const font of document.fonts) {
     if (font.status === "error") problems.add("Font could not load: " + font.family);
   }
@@ -171,17 +184,18 @@ const inspectFrame = `(async () => {
   })) {
     media[name] = values.find(value => matchMedia("(" + name + ": " + value + ")").matches) ?? "unavailable";
   }
-  return { viewport: [innerWidth, innerHeight], problems: [...problems], media, devicePixelRatio };
-})()`;
+  return { viewport: [innerWidth, innerHeight], problems: [...problems], tokensLoaded, media, devicePixelRatio };
+})`;
 
 type Readiness = {
   viewport: number[];
   problems: string[];
+  tokensLoaded: boolean;
   media: Record<string, string>;
   devicePixelRatio: number;
 };
 
-async function inspect(contents: WebContents, url: string): Promise<Readiness> {
+async function inspect(contents: WebContents, url: string, hasTokens: boolean): Promise<Readiness> {
   const debuggerClient = contents.debugger;
   const { frameTree } = await debuggerClient.sendCommand("Page.getFrameTree");
   if (frameTree.frame.url !== url)
@@ -192,7 +206,7 @@ async function inspect(contents: WebContents, url: string): Promise<Readiness> {
     worldName: "Easy Proto capture readiness",
   });
   const evaluated = await debuggerClient.sendCommand("Runtime.evaluate", {
-    expression: inspectFrame,
+    expression: `${inspectFrame}(${hasTokens})`,
     contextId: executionContextId,
     awaitPromise: true,
     returnByValue: true,
@@ -245,14 +259,17 @@ export class Preview {
       }
       if (!parts.length && resource === "index.html") {
         const base = `${artOrigin}/${key}/`;
+        const tokenPolicy = preview.tokenCss ? ` ${base}tokens.css` : "";
         return reply(
-          previewHtml(preview.source.html),
+          previewHtml(preview.source.html, Boolean(preview.tokenCss)),
           "text/html; charset=utf-8",
-          `sandbox; default-src 'none'; style-src 'unsafe-inline' ${base}board.css; img-src ${base}assets/ data:; font-src ${base}assets/; frame-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'`,
+          `sandbox; default-src 'none'; style-src 'unsafe-inline' ${base}board.css${tokenPolicy}; img-src ${base}assets/ data:; font-src ${base}assets/; frame-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'`,
         );
       }
       if (!parts.length && resource === "board.css")
         return reply(preview.source.css, "text/css; charset=utf-8");
+      if (!parts.length && resource === "tokens.css" && preview.tokenCss)
+        return reply(preview.tokenCss, "text/css; charset=utf-8");
       if (resource === "assets") {
         let assetPath: string;
         try {
@@ -312,16 +329,18 @@ export class Preview {
   }
 
   scene(project: Project, generation: number) {
-    const { manifest, sources } = project.snapshot;
+    const { manifest, sources, tokens } = project.snapshot;
+    const tokenKey = tokens?.css ? `-${tokens.stamp.cssDigest}` : "";
     const active = new Map<string, Surface>();
     const artboards = manifest.artboards.map((board) => {
-      const key = `${generation}-${board.id}-${board.sourceRevision}-${project.assetDigest}`;
+      const key = `${generation}-${board.id}-${board.sourceRevision}-${project.assetDigest}${tokenKey}`;
       active.set(
         key,
         this.#live.get(key) ?? {
           project,
           board,
           source: sources.get(board.id)!,
+          tokenCss: tokens?.css,
           missing: new Set(),
         },
       );
@@ -361,6 +380,7 @@ export class Preview {
       project,
       board,
       source: snapshot.sources.get(board.id)!,
+      tokenCss: snapshot.tokens?.css,
       missing: new Set<string>(),
     };
     const boardUrl = `${artOrigin}/${key}/index.html`;
@@ -395,10 +415,15 @@ export class Preview {
         throw new ProjectError("RENDER_FAILED", "The requested artboard did not load.");
       webContents.debugger.attach("1.3");
       const report = await timeout(
-        inspect(webContents, boardUrl),
+        inspect(webContents, boardUrl, Boolean(surface.tokenCss)),
         5000,
         "Fonts, images or paint did not settle within 5 seconds.",
       );
+      if (!report.tokensLoaded)
+        throw new ProjectError(
+          "RENDER_FAILED",
+          "Chromium did not load the committed token stylesheet.",
+        );
       if (frame.url !== boardUrl || report.viewport[0] !== width || report.viewport[1] !== height) {
         throw new ProjectError(
           "RENDER_MISMATCH",
@@ -443,6 +468,7 @@ export class Preview {
           artboardId: board.id,
           sourceRevision: board.sourceRevision,
           sourceDigest: board.sourceDigest,
+          ...(snapshot.tokens ? { tokens: snapshot.tokens.stamp } : {}),
           assetDigest: project.assetDigest,
           chromium: process.versions.chrome,
           width,

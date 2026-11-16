@@ -188,6 +188,8 @@ test(
       "create_artboard",
       "get_artboard",
       "get_context",
+      "get_tokens",
+      "replace_project_tokens",
       "set_artboard_activity",
       "update_artboard",
     ]);
@@ -984,6 +986,17 @@ test(
 
     for (const [tool, args] of [
       ["get_artboard", oldScope],
+      ["get_tokens", { projectId, activationId: oldScope.activationId }],
+      [
+        "replace_project_tokens",
+        {
+          projectId,
+          activationId: oldScope.activationId,
+          expectedRevision: 8,
+          commandId: randomUUID(),
+          document: "{}",
+        },
+      ],
       ["capture_artboard", { ...oldScope, revision: 8 }],
       ["set_artboard_activity", oldActivity],
       [
@@ -1367,6 +1380,9 @@ test(
           background: getComputedStyle(document.querySelector("header")).backgroundColor,
           canvas: getComputedStyle(document.querySelector(".react-flow__background"))
             .backgroundColor,
+          headerHeight: getComputedStyle(document.querySelector("header")).height,
+          interfaceSize: getComputedStyle(document.documentElement).fontSize,
+          labelSize: getComputedStyle(document.querySelector(".artboard-label")).fontSize,
           inter: inter?.status,
         };
       });
@@ -1377,6 +1393,9 @@ test(
       scheme: "light",
       background: "rgb(255, 255, 255)",
       canvas: "rgb(245, 245, 245)",
+      headerHeight: "58px",
+      interfaceSize: "13px",
+      labelSize: "12px",
       inter: "loaded",
     });
     const appArtboardColor = await reopenedFrame.evaluate(
@@ -1397,6 +1416,9 @@ test(
       scheme: "dark",
       background: "rgb(44, 44, 44)",
       canvas: "rgb(30, 30, 30)",
+      headerHeight: "58px",
+      interfaceSize: "13px",
+      labelSize: "12px",
       inter: "loaded",
     });
     assert.equal(
@@ -1472,12 +1494,35 @@ test(
         authoredArtboardBackground: appArtboardColor,
       },
     });
+    await data("replace_project_tokens", {
+      projectId,
+      activationId: afterResizeReopen.activationId,
+      commandId: randomUUID(),
+      expectedRevision: afterResizeReopen.revision,
+      document: JSON.stringify({
+        desktop: {
+          light: {
+            background: { $type: "color", $value: { colorSpace: "srgb", components: [1, 0, 0] } },
+          },
+          dark: {
+            background: { $type: "color", $value: { colorSpace: "srgb", components: [0, 1, 0] } },
+          },
+          layout: { header: { $type: "dimension", $value: { value: 1, unit: "px" } } },
+        },
+      }),
+    });
+    await waitForDesktopRevision(afterResizeReopen.revision + 1);
+    await setAppearance("light");
+    assert.deepEqual(await themeInfo(), light);
+    await setAppearance("dark");
+    assert.deepEqual(await themeInfo(), dark);
+    statuses.push("Project token names that match desktop tokens leave desktop chrome unchanged.");
   },
 );
 
 test(
-  "Home reopens projects and the desktop saves artboard copies, deletion, undo and redo",
-  { timeout: 50_000 },
+  "Home reopens and the desktop saves artboards, pages and project-wide tokens",
+  { timeout: 85_000 },
   async (t) => {
     const root = await mkdtemp(join(tmpdir(), "easy-proto-home-"));
     const project = join(root, "Project folder");
@@ -2264,5 +2309,843 @@ test(
       movedGroup.artboards.map(({ id, x, y }) => [id, x, y]),
     );
     assert.equal(await selectedNodes.count(), 0);
+
+    const picker = (name) =>
+      desktop.getByRole("button", { name: `Pages, current page ${name}`, exact: true });
+    const pageMenu = () => desktop.getByRole("group", { name: "Pages", exact: true });
+    const emptyPage = desktop.getByText("No artboards on this page", { exact: true });
+    async function switchPage(from, to) {
+      await picker(from).click();
+      await pageMenu().getByRole("button", { name: to, exact: true }).click();
+      await picker(to).waitFor();
+      await pageMenu().waitFor({ state: "hidden" });
+    }
+    async function addPage(from, name) {
+      await picker(from).click();
+      await pageMenu().getByRole("button", { name: "Add page", exact: true }).click();
+      const field = pageMenu().getByRole("textbox", { name: "Page name" });
+      assert.ok(await field.evaluate((element) => element === document.activeElement));
+      await field.fill(name);
+      await field.press("Enter");
+      await picker(name).waitFor();
+      await pageMenu().waitFor({ state: "hidden" });
+    }
+
+    await picker("Page 1").waitFor();
+    const legacy = await snapshot();
+    assert.deepEqual(legacy.pages, [{ id: legacy.defaultPageId, name: "Page 1" }]);
+    const activeBefore = await call("get_context");
+    const camera = () => desktop.locator(".react-flow__viewport").getAttribute("style");
+    const beforePagePan = await camera();
+    const area = await desktop.locator(".canvas").boundingBox();
+    await desktop.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
+    await desktop.mouse.wheel(26, 18);
+    await desktop.waitForFunction(
+      (before) => document.querySelector(".react-flow__viewport").getAttribute("style") !== before,
+      beforePagePan,
+    );
+    const firstPageCamera = await camera();
+
+    await addPage("Page 1", "Exploration");
+    await emptyPage.waitFor();
+    assert.equal(await desktop.locator(".react-flow__node").count(), 0);
+    const createdPage = await waitForRevision(desktop, legacy.revision + 1);
+    const target = createdPage.pages.find(({ name }) => name === "Exploration");
+    assert.ok(target.id);
+    assert.equal((await call("get_context")).activationId, activeBefore.activationId);
+
+    const activeScopeForPages = { projectId, activationId: activeBefore.activationId };
+    const fromMcp = (name) => ({
+      name,
+      width: 160,
+      height: 150,
+      x: 1400,
+      y: 0,
+      html: `<main>${name}</main>`,
+      css: "body { background: var(--ep-color-action, #000); }",
+    });
+    const onDefault = await call("create_artboard", {
+      ...activeScopeForPages,
+      commandId: randomUUID(),
+      expectedRevision: createdPage.revision,
+      arguments: fromMcp("Default page board"),
+    });
+    assert.equal(onDefault.artboard.pageId, legacy.defaultPageId);
+    assert.equal(await desktop.locator('iframe[title="Default page board"]').count(), 0);
+    const onTarget = await call("create_artboard", {
+      ...activeScopeForPages,
+      commandId: randomUUID(),
+      expectedRevision: onDefault.revision,
+      arguments: { ...fromMcp("Destination board"), pageId: target.id },
+    });
+    assert.equal(onTarget.artboard.pageId, target.id);
+    await desktop
+      .frameLocator('iframe[title="Destination board"]')
+      .getByText("Destination board")
+      .waitFor();
+
+    await switchPage("Exploration", "Page 1");
+    await desktop.waitForFunction(
+      (expected) =>
+        document.querySelector(".react-flow__viewport")?.getAttribute("style") === expected,
+      firstPageCamera,
+      { timeout: 5000 },
+    );
+    assert.equal((await snapshot()).revision, onTarget.revision);
+    assert.equal(await desktop.locator('iframe[title="Destination board"]').count(), 0);
+    await picker("Page 1").press("Enter");
+    await pageMenu().waitFor();
+    assert.equal(
+      await pageMenu()
+        .getByRole("button", { name: "Page 1", exact: true })
+        .getAttribute("aria-current"),
+      "page",
+    );
+    const exploration = pageMenu().getByRole("button", { name: "Exploration", exact: true });
+    const renameExploration = pageMenu().getByRole("button", { name: "Rename page Exploration" });
+    const renameOpacity = () =>
+      renameExploration.evaluate((button) => getComputedStyle(button).opacity);
+    await desktop.mouse.move(2, 2);
+    assert.equal(await renameOpacity(), "0");
+    if (evidence) {
+      await desktop.emulateMedia({ colorScheme: "dark" });
+      await desktop.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+      await desktop.screenshot({ path: join(evidence, "pages-picker.png") });
+    }
+    await exploration.hover();
+    assert.equal(await renameOpacity(), "1");
+    assert.equal((await renameExploration.boundingBox()).width, 24);
+    if (evidence) {
+      await desktop.emulateMedia({ colorScheme: "light" });
+      await desktop.waitForFunction(() => document.documentElement.dataset.theme === "light");
+      await desktop.screenshot({ path: join(evidence, "pages-picker-light-hover.png") });
+      await desktop.emulateMedia({ colorScheme: null });
+    }
+    await desktop.mouse.move(2, 2);
+    await exploration.press("Tab");
+    assert.equal(
+      await renameExploration.evaluate((button) => button === document.activeElement),
+      true,
+    );
+    assert.equal(await renameOpacity(), "1");
+    await desktop.keyboard.press("Escape");
+    await pageMenu().waitFor({ state: "hidden" });
+
+    await left.click({ position: { x: 25, y: 25 } });
+    await right.click({ position: { x: 25, y: 25 }, modifiers: ["Shift"] });
+    await selectionCount.waitFor();
+    const beforePageMove = await snapshot();
+    const moveButton = desktop.getByRole("button", { name: "Move to page", exact: true });
+    const menuForMove = desktop.getByRole("group", { name: "Move 2 artboards to" });
+    await moveButton.press("Enter");
+    await menuForMove.waitFor();
+    assert.equal(await menuForMove.getByRole("button", { name: "Page 1", exact: true }).count(), 0);
+    if (evidence) await desktop.screenshot({ path: join(evidence, "move-to-page.png") });
+    await desktop.keyboard.press("Escape");
+    await menuForMove.waitFor({ state: "hidden" });
+    await moveButton.click();
+    await menuForMove.getByRole("button", { name: "Exploration", exact: true }).click();
+    const committedMove = await waitForRevision(desktop, beforePageMove.revision + 1);
+    await left.waitFor({ state: "detached" });
+    await right.waitFor({ state: "detached" });
+    await picker("Page 1").waitFor();
+    const boardsOnTarget = committedMove.artboards.filter(({ id }) => groupIds.includes(id));
+    assert.deepEqual(
+      boardsOnTarget,
+      beforePageMove.artboards
+        .filter(({ id }) => groupIds.includes(id))
+        .map((board) => ({ ...board, pageId: target.id })),
+    );
+    if (evidence) await desktop.screenshot({ path: join(evidence, "page-move-confirmation.png") });
+    await desktop.getByRole("button", { name: "Go to page", exact: true }).click();
+    await picker("Exploration").waitFor();
+    await right.waitFor();
+    assert.equal(await desktop.locator(".react-flow__node").count(), 3);
+
+    await desktop.keyboard.press("Meta+z");
+    const undone = await waitForRevision(desktop, committedMove.revision + 1);
+    await right.waitFor({ state: "detached" });
+    assert.deepEqual(undone.artboards, beforePageMove.artboards);
+    await switchPage("Exploration", "Page 1");
+    await right.waitFor();
+
+    await desktop.keyboard.press("Meta+Shift+z");
+    const redone = await waitForRevision(desktop, undone.revision + 1);
+    await right.waitFor({ state: "detached" });
+    assert.deepEqual(redone.artboards, committedMove.artboards);
+    await switchPage("Page 1", "Exploration");
+    await right.waitFor();
+
+    await addPage("Exploration", "Scratch");
+    const scratch = await waitForRevision(desktop, redone.revision + 1);
+    await desktop.keyboard.press("Meta+z");
+    await picker("Page 1").waitFor();
+    assert.equal((await waitForRevision(desktop, scratch.revision + 1)).pages.length, 2);
+    await desktop.keyboard.press("Meta+Shift+z");
+    const restoredPage = await waitForRevision(desktop, scratch.revision + 2);
+    assert.deepEqual(restoredPage.pages, scratch.pages);
+
+    await picker("Page 1").click();
+    const renameScratch = pageMenu().getByRole("button", { name: "Rename page Scratch" });
+    const renameField = pageMenu().getByRole("textbox", { name: "Rename page", exact: true });
+    await renameScratch.press("Enter");
+    assert.equal(await renameField.evaluate((input) => input === document.activeElement), true);
+    assert.equal(await renameField.inputValue(), "Scratch");
+    await renameField.fill("Discarded");
+    await renameField.press("Escape");
+    await pageMenu().waitFor();
+    await desktop.waitForFunction(
+      () => document.activeElement?.getAttribute("aria-label") === "Rename page Scratch",
+    );
+    assert.equal((await snapshot()).revision, restoredPage.revision);
+    await renameScratch.click();
+    await renameField.fill("Notes");
+    if (evidence) await desktop.screenshot({ path: join(evidence, "page-rename.png") });
+    await renameField.press("Enter");
+    await pageMenu().getByRole("button", { name: "Notes", exact: true }).waitFor();
+    await picker("Page 1").waitFor();
+    const renamedPage = await waitForRevision(desktop, restoredPage.revision + 1);
+    const notes = renamedPage.pages.find(({ name }) => name === "Notes");
+    assert.equal(notes.id, restoredPage.pages.find(({ name }) => name === "Scratch").id);
+    assert.deepEqual(renamedPage.artboards, restoredPage.artboards);
+    await desktop.keyboard.press("Escape");
+    await pageMenu().waitFor({ state: "hidden" });
+    await desktop.keyboard.press("Meta+z");
+    const undoRename = await waitForRevision(desktop, renamedPage.revision + 1);
+    assert.deepEqual(undoRename.pages, restoredPage.pages);
+    await desktop.keyboard.press("Meta+Shift+z");
+    const redoRename = await waitForRevision(desktop, undoRename.revision + 1);
+    assert.deepEqual(redoRename.pages, renamedPage.pages);
+
+    const seeded = await call("replace_project_tokens", {
+      ...activeScopeForPages,
+      commandId: randomUUID(),
+      expectedRevision: redoRename.revision,
+      document: JSON.stringify({
+        color: {
+          $type: "color",
+          blue: { $value: { colorSpace: "srgb", components: [0, 0, 1] } },
+          action: { $value: "{color.blue}" },
+        },
+      }),
+    });
+    assert.equal(seeded.status, "committed");
+    const colorFor = async (name, color) => {
+      const element = desktop.frameLocator(`iframe[title="${name}"]`).locator("body");
+      const deadline = Date.now() + 5000;
+      let actual;
+      do {
+        actual = await element.evaluate((body) => getComputedStyle(body).backgroundColor);
+        if (actual === color) return actual;
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      } while (Date.now() < deadline);
+      assert.equal(actual, color);
+    };
+    await switchPage("Page 1", "Exploration");
+    await colorFor("Destination board", "rgb(0, 0, 255)");
+    await switchPage("Exploration", "Page 1");
+    await colorFor("Default page board", "rgb(0, 0, 255)");
+
+    const tokens = desktop.getByRole("dialog", { name: "Project tokens" });
+    await desktop.getByRole("button", { name: "Tokens", exact: true }).click();
+    const insets = () =>
+      tokens.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return [bounds.left, innerWidth - bounds.right, bounds.top, innerHeight - bounds.bottom];
+      });
+    assert.deepEqual(await insets(), [20, 20, 20, 20]);
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((window) => window.isVisible())
+        .setSize(1180, 770),
+    );
+    await desktop.waitForFunction(() => innerWidth === 1180);
+    assert.deepEqual(await insets(), [20, 20, 20, 20]);
+    const search = tokens.getByRole("searchbox", { name: "Search tokens" });
+    await tokens.locator(".token-search svg").waitFor();
+    await search.fill("blue");
+    assert.equal(
+      await tokens.getByRole("button", { name: "color.action", exact: true }).count(),
+      0,
+    );
+    await search.clear();
+    await tokens.getByRole("button", { name: "color.blue", exact: true }).click();
+    const editRow = tokens.getByRole("form", { name: "Edit color.blue" });
+    const value = editRow.getByRole("textbox", { name: "Value" });
+    assert.equal(
+      await value.evaluate(
+        (input) => input === document.activeElement && !!input.closest("tbody tr"),
+      ),
+      true,
+    );
+    assert.equal(
+      await tokens.getByRole("button", { name: "color.action", exact: true }).isVisible(),
+      true,
+    );
+    const typePicker = editRow.getByRole("combobox", { name: "Type" });
+    assert.equal(
+      await editRow
+        .locator(".token-row-actions")
+        .evaluate(
+          (actions) =>
+            new Set([...actions.children].map((button) => button.getBoundingClientRect().top)).size,
+        ),
+      1,
+    );
+    assert.equal(
+      await typePicker.evaluate((select) => getComputedStyle(select).appearance),
+      "base-select",
+    );
+    await typePicker.press("Space");
+    await desktop.waitForFunction(
+      () => document.querySelector(".ep-select")?.matches(":open"),
+      undefined,
+      { timeout: 5000 },
+    );
+    if (evidence) await desktop.screenshot({ path: join(evidence, "token-type-picker.png") });
+    await desktop.keyboard.press("Escape");
+    await desktop.waitForFunction(
+      () => document.querySelector(".ep-select")?.matches(":open") === false,
+      undefined,
+      { timeout: 5000 },
+    );
+    assert.equal(await typePicker.inputValue(), "color");
+    await typePicker.press("Space");
+    await desktop.keyboard.press("ArrowDown");
+    await desktop.keyboard.press("Enter");
+    assert.equal(await typePicker.inputValue(), "dimension");
+    await typePicker.selectOption("color");
+    await value.fill("#ff0000");
+    await editRow.getByRole("button", { name: "Save token", exact: true }).click();
+    await tokens.locator(".toast").getByText("Tokens saved.").waitFor();
+    const savedTokens = await call("get_tokens", activeScopeForPages);
+    assert.equal(savedTokens.revision, seeded.revision + 1);
+    assert.match(savedTokens.css, /--ep-color-action: var\(--ep-color-blue\);/);
+    if (evidence) await desktop.screenshot({ path: join(evidence, "token-manager.png") });
+    await tokens.getByRole("button", { name: "Copy CSS for color.action" }).click();
+    await tokens.locator(".toast").getByText("CSS copied", { exact: true }).waitFor();
+    assert.equal(
+      await app.evaluate(({ clipboard }) => clipboard.readText()),
+      "var(--ep-color-action)",
+    );
+    if (evidence) await desktop.screenshot({ path: join(evidence, "token-copy-toast.png") });
+    await tokens.getByRole("button", { name: "Dismiss notification" }).click();
+    await tokens.locator(".toast").waitFor({ state: "hidden" });
+
+    const imported = join(root, "import.tokens.json");
+    const exportedJson = join(root, "export.tokens.json");
+    const exportedCss = join(root, "export.css");
+    await writeFile(imported, '{"number":{"$type":"number","$value":42}}');
+    await app.evaluate(
+      ({ dialog }, files) => {
+        dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [files.imported] });
+        dialog.showSaveDialog = async (_window, { defaultPath }) => ({
+          canceled: false,
+          filePath: defaultPath === "tokens.css" ? files.exportedCss : files.exportedJson,
+        });
+      },
+      { imported, exportedJson, exportedCss },
+    );
+    await tokens.getByRole("button", { name: "JSON…", exact: true }).click();
+    await tokens.getByRole("button", { name: "Import JSON…" }).click();
+    const text = tokens.getByLabel("Design tokens JSON");
+    await desktop.waitForFunction(() =>
+      document.querySelector(".tokens-dialog textarea")?.value.includes("42"),
+    );
+    assert.equal(await text.inputValue(), await readFile(imported, "utf8"));
+    await tokens.getByRole("button", { name: "Export saved JSON…" }).click();
+    await tokens.getByRole("button", { name: "Export CSS…" }).click();
+    await tokens.getByRole("button", { name: "Cancel", exact: true }).click();
+    assert.equal(await readFile(exportedJson, "utf8"), savedTokens.document);
+    assert.equal(await readFile(exportedCss, "utf8"), savedTokens.css);
+    assert.equal((await call("get_tokens", activeScopeForPages)).revision, savedTokens.revision);
+    await tokens.getByRole("button", { name: "Close tokens" }).click();
+    const defaultColor = await colorFor("Default page board", "rgb(255, 0, 0)");
+    await switchPage("Page 1", "Exploration");
+    const destinationColor = await colorFor("Destination board", "rgb(255, 0, 0)");
+    const capture = await client.callTool({
+      name: "capture_artboard",
+      arguments: {
+        ...activeScopeForPages,
+        artboardId: onTarget.artboard.id,
+        revision: savedTokens.revision,
+      },
+    });
+    assert.equal(capture.isError, undefined, JSON.stringify(capture.content));
+    const details = capture.structuredContent;
+    assert.deepEqual(details.tokens, savedTokens.stamp);
+    assert.equal(details.sourceRevision, onTarget.artboard.sourceRevision);
+    assert.deepEqual(details.unresolved, []);
+    const image = capture.content.find(({ type }) => type === "image");
+    const pixel = await app.evaluate(({ nativeImage }, data) => {
+      const png = nativeImage.createFromBuffer(Buffer.from(data, "base64"));
+      const size = png.getSize();
+      const offset = ((size.height - 1) * size.width + size.width - 1) * 4;
+      return { ...size, bgra: [...png.toBitmap().subarray(offset, offset + 4)] };
+    }, image.data);
+    assert.deepEqual(pixel, { width: 160, height: 150, bgra: [0, 0, 255, 255] });
+    if (evidence) {
+      await writeFile(join(evidence, "token-artboard.png"), Buffer.from(image.data, "base64"));
+      await writeFile(
+        join(evidence, "token-render.json"),
+        JSON.stringify({ defaultColor, destinationColor, pixel, ...details }, null, 2),
+      );
+    }
+
+    await desktop.keyboard.press("Meta+z");
+    await waitForRevision(desktop, savedTokens.revision + 1);
+    await colorFor("Destination board", "rgb(0, 0, 255)");
+    await desktop.keyboard.press("Meta+Shift+z");
+    await waitForRevision(desktop, savedTokens.revision + 2);
+    await colorFor("Destination board", "rgb(255, 0, 0)");
+
+    await client.close();
+    client = undefined;
+    await app.close();
+    app = undefined;
+    await launch();
+    await row("Studio project").click();
+    await picker("Page 1").waitFor();
+    await switchPage("Page 1", "Exploration");
+    await boardNode(groupIds[1]).waitFor();
+    const afterRestart = await snapshot();
+    assert.deepEqual(afterRestart.pages, redoRename.pages);
+    assert.deepEqual(
+      afterRestart.artboards.map(({ id, pageId, sourceRevision }) => [id, pageId, sourceRevision]),
+      redone.artboards.map(({ id, pageId, sourceRevision }) => [id, pageId, sourceRevision]),
+    );
+    assert.equal(afterRestart.canUndo, false);
+    assert.equal(afterRestart.tokenDigest, savedTokens.stamp.documentDigest);
+    await colorFor("Destination board", "rgb(255, 0, 0)");
+    await switchPage("Exploration", "Page 1");
+    await colorFor("Default page board", "rgb(255, 0, 0)");
+    await desktop.getByRole("button", { name: "Tokens", exact: true }).click();
+    const reopenedTokens = desktop.getByRole("dialog", { name: "Project tokens" });
+    await reopenedTokens.getByRole("button", { name: "Add token", exact: true }).click();
+    await reopenedTokens.getByLabel("Name", { exact: true }).fill("space.gutter");
+    await reopenedTokens.getByLabel("Type", { exact: true }).selectOption("dimension");
+    await reopenedTokens.getByLabel("Value", { exact: true }).fill("1.5rem");
+    await reopenedTokens.getByRole("button", { name: "Save token", exact: true }).click();
+    const gutter = reopenedTokens.getByRole("button", { name: "space.gutter", exact: true });
+    await gutter.click();
+    await reopenedTokens.getByRole("button", { name: "Delete token", exact: true }).click();
+    await gutter.waitFor({ state: "detached" });
+    await reopenedTokens.locator(".toast").waitFor();
+    await reopenedTokens.locator(".toast").waitFor({ state: "hidden", timeout: 6500 });
+  },
+);
+
+test(
+  "the desktop chat reviews one real project edit and retires it on Home",
+  { timeout: 55_000 },
+  async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "easy-proto-chat-"));
+    const folder = join(root, "Original");
+    const copy = join(root, "Copy");
+    const token = randomBytes(32).toString("base64url");
+    const reserve = createServer();
+    await new Promise((resolve) => reserve.listen(0, "127.0.0.1", resolve));
+    const port = reserve.address().port;
+    await new Promise((resolve) => reserve.close(resolve));
+    const app = await electron.launch({
+      args: [process.cwd(), "--project=" + folder],
+      env: {
+        ...process.env,
+        EASY_PROTO_PROFILE: join(root, "profile"),
+        EASY_PROTO_CHAT_DEMO: "1",
+        EASY_PROTO_TOKEN: token,
+        EASY_PROTO_PORT: String(port),
+      },
+    });
+    const client = new Client({ name: "chat-desktop-verification", version: "1.0.0" });
+    t.after(async () => {
+      await client.close();
+      await app.close();
+      await rm(root, { recursive: true, force: true });
+    });
+    const page = await app.firstWindow();
+    page.setDefaultTimeout(6500);
+    const button = (name) => page.getByRole("button", { name, exact: true });
+    const dock = page.getByRole("region", { name: "Chat", exact: true });
+    const field = dock.getByRole("textbox", { name: "Message" });
+    const scene = () => page.evaluate(() => window.easyProto.getScene());
+    const heading = page.frameLocator('iframe[title="Field notes"]').getByRole("heading");
+    await heading.waitFor();
+    const original = await heading.textContent();
+    const originalLabel = (await heading.innerText()).replace(/\s+/g, " ").trim();
+    const initial = await scene();
+    const board = initial.artboards.find(({ name }) => name === "Field notes");
+    const initialCamera = await page.evaluate(() => {
+      const viewport = new DOMMatrix(
+        getComputedStyle(document.querySelector(".react-flow__viewport")).transform,
+      );
+      return {
+        width: document.querySelector(".canvas").clientWidth,
+        x: viewport.e,
+        zoom: viewport.a,
+      };
+    });
+    await button("Chat").click();
+    assert.equal(await button("Chat").getAttribute("aria-expanded"), "true");
+    await page.waitForFunction(({ width, x, zoom }) => {
+      const currentWidth = document.querySelector(".canvas").clientWidth;
+      const viewport = new DOMMatrix(
+        getComputedStyle(document.querySelector(".react-flow__viewport")).transform,
+      );
+      return (
+        currentWidth < width &&
+        viewport.a === zoom &&
+        Math.abs(viewport.e - (x + (currentWidth - width) / 2)) < 0.5
+      );
+    }, initialCamera);
+    assert.equal(await field.evaluate((element) => document.activeElement === element), true);
+    assert.equal(await dock.getByRole("button", { name: "Send" }).isDisabled(), true);
+    const send = async (replacement) => {
+      await page
+        .locator(".react-flow__node")
+        .filter({ has: button("Rename artboard Field notes") })
+        .click({ position: { x: 32, y: 32 } });
+      await dock.getByRole("button", { name: "Attach Field notes", exact: true }).click();
+      await field.fill(`Change the headline to “${replacement}”`);
+      await field.press("Meta+Enter");
+      await dock.getByRole("button", { name: "Stop", exact: true }).waitFor();
+    };
+
+    await send("Cancelled edit");
+    await dock.getByRole("button", { name: "Stop", exact: true }).click();
+    await dock.getByText("Stopped. The artboard is unchanged.", { exact: true }).waitFor();
+    assert.equal((await scene()).revision, initial.revision);
+    assert.equal(await heading.textContent(), original);
+
+    await send("Stop at proposal");
+    await dock.getByRole("button", { name: "Apply edit", exact: true }).waitFor();
+    const stopped = await page.evaluate(async (generation) => {
+      const { turn } = await window.easyProto.getChat(generation);
+      await window.easyProto.decideChat(generation, turn.id, "stop");
+      return window.easyProto.decideChat(generation, turn.id, "apply");
+    }, initial.generation);
+    assert.equal(stopped.turn.phase, "stopped");
+    assert.equal((await scene()).revision, initial.revision);
+    assert.equal(await heading.textContent(), original);
+
+    await send("<b>Time for focus</b>");
+    await dock.getByRole("button", { name: "Close chat" }).click();
+    assert.equal(await button("Chat").getAttribute("aria-expanded"), "false");
+    assert.equal(
+      await button("Chat").evaluate((element) => document.activeElement === element),
+      true,
+    );
+    await button("Chat").click();
+    const apply = dock.getByRole("button", { name: "Apply edit", exact: true });
+    await apply.waitFor();
+    assert.equal((await scene()).revision, initial.revision);
+    assert.equal(await heading.textContent(), original);
+    const turn = await page.evaluate(async () => {
+      const state = await window.easyProto.getScene();
+      return (await window.easyProto.getChat(state.generation)).turn;
+    });
+    assert.deepEqual(turn.proposal, { before: originalLabel, after: "<b>Time for focus</b>" });
+    assert.equal(
+      await dock
+        .getByRole("form", { name: "Chat composer" })
+        .evaluate(
+          (form) =>
+            form.getBoundingClientRect().bottom ===
+            form.closest(".chat-dock").getBoundingClientRect().bottom,
+        ),
+      true,
+    );
+    if (evidence) await page.screenshot({ path: join(evidence, "desktop-chat-review.png") });
+    await apply.click();
+    const applied = await waitForRevision(page, initial.revision + 1);
+    await heading.filter({ hasText: "<b>Time for focus</b>" }).waitFor();
+    assert.equal(await heading.locator("b").count(), 0);
+    await page.evaluate(
+      ({ generation, turnId }) => window.easyProto.decideChat(generation, turnId, "apply"),
+      { generation: applied.generation, turnId: turn.id },
+    );
+    assert.equal((await scene()).revision, applied.revision);
+    await dock.getByRole("button", { name: "Undo edit", exact: true }).click();
+    await waitForRevision(page, applied.revision + 1);
+    await heading.filter({ hasText: original }).waitFor();
+
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
+        requestInit: { headers: { Authorization: "Bearer " + token } },
+      }),
+    );
+    const context = (await client.callTool({ name: "get_context" })).structuredContent;
+    await send("Stale edit");
+    await apply.waitFor();
+    const change = await client.callTool({
+      name: "update_artboard",
+      arguments: {
+        projectId: context.projectId,
+        activationId: context.activationId,
+        commandId: randomUUID(),
+        expectedRevision: context.revision,
+        arguments: { artboardId: board.id, patch: { x: board.x + 20 } },
+      },
+    });
+    assert.equal(change.isError, undefined, JSON.stringify(change.content));
+    await waitForRevision(page, context.revision + 1);
+    await dock
+      .getByText("The project changed. Discard this proposal and send a new turn.", { exact: true })
+      .waitFor();
+    assert.equal(await apply.isDisabled(), true);
+    const stale = await page.evaluate(async () => {
+      const state = await window.easyProto.getScene();
+      const { turn } = await window.easyProto.getChat(state.generation);
+      return window.easyProto.decideChat(state.generation, turn.id, "apply");
+    });
+    assert.equal(stale.turn.phase, "stale");
+    assert.equal(await heading.textContent(), original);
+
+    await cp(folder, copy, { recursive: true });
+    await send("Retired edit");
+    const retiring = await page.evaluate(
+      async (generation) => (await window.easyProto.getChat(generation)).turn.id,
+      initial.generation,
+    );
+    await button("Easy Proto Home").click();
+    await page.getByRole("heading", { name: "Projects" }).waitFor();
+    assert.equal((await scene()).view, "home");
+    assert.equal(await button("Chat").count(), 0);
+    await assert.rejects(
+      page.evaluate(
+        ({ generation, retiring }) => window.easyProto.decideChat(generation, retiring, "apply"),
+        { generation: initial.generation, retiring },
+      ),
+      /project selection changed/,
+    );
+
+    await app.evaluate(({ dialog }, copy) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [copy] });
+    }, copy);
+    const settings = button("Settings");
+    const footer = page.locator("main > footer");
+    assert.equal(await settings.evaluate((control) => control.closest("footer") !== null), true);
+    assert.ok((await settings.boundingBox()).x < 40);
+    await settings.click();
+    const menu = page.getByRole("group", { name: "Settings" });
+    await menu.waitFor();
+    assert.ok((await menu.boundingBox()).y < (await footer.boundingBox()).y);
+    await menu.getByRole("button", { name: "Open project…", exact: true }).click();
+    await heading.filter({ hasText: original }).waitFor();
+    await button("Chat").click();
+    await dock.getByText("Select and attach an artboard to try a headline edit.").waitFor();
+    const copied = await scene();
+    assert.equal(copied.projectId, initial.projectId);
+    assert.equal(copied.revision, context.revision + 1);
+    assert.notEqual(copied.generation, initial.generation);
+
+    const { projectId, activationId } = (await client.callTool({ name: "get_context" }))
+      .structuredContent;
+    let currentRevision = copied.revision;
+    for (const html of [
+      '<h1><a href="#details"><em>Keep this link</em></a></h1>',
+      "<h1>Keep </span>this markup</h1>",
+      "<h1>Keep this heading<h2>Second heading</h2>",
+    ]) {
+      const update = await client.callTool({
+        name: "update_artboard",
+        arguments: {
+          projectId,
+          activationId,
+          commandId: randomUUID(),
+          expectedRevision: currentRevision,
+          arguments: { artboardId: board.id, patch: { html } },
+        },
+      });
+      assert.equal(update.isError, undefined, JSON.stringify(update.content));
+      currentRevision = update.structuredContent.revision;
+      await assert.rejects(
+        page.evaluate(
+          ({ generation, artboardId, expectedRevision }) =>
+            window.easyProto.startChat(generation, {
+              artboardId,
+              expectedRevision,
+              prompt: "Change the headline to New",
+            }),
+          {
+            generation: copied.generation,
+            artboardId: board.id,
+            expectedRevision: currentRevision,
+          },
+        ),
+        /plain text and line breaks only/,
+      );
+      const stored = await client.callTool({
+        name: "get_artboard",
+        arguments: { projectId, activationId, artboardId: board.id },
+      });
+      assert.equal(stored.structuredContent.html, html);
+      assert.equal(stored.structuredContent.revision, currentRevision);
+    }
+  },
+);
+
+test(
+  "Home manages agent profiles and the chat composer scopes selection and history by project",
+  { timeout: 35_000 },
+  async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "easy-proto-agent-home-"));
+    const profile = join(root, "profile");
+    const folder = join(root, "Writing");
+    const copy = join(root, "Other");
+    const env = {
+      ...process.env,
+      EASY_PROTO_PROFILE: profile,
+      EASY_PROTO_PORT: "0",
+      EASY_PROTO_CHAT_DEMO: "1",
+      EASY_PROTO_CLAUDE_BIN: process.execPath,
+    };
+    const codex = randomUUID();
+    const claude = randomUUID();
+    let app;
+    t.after(async () => {
+      await app?.close();
+      await rm(root, { recursive: true, force: true });
+    });
+    app = await electron.launch({ args: [process.cwd(), "--project=" + folder], env });
+    await (
+      await app.firstWindow()
+    )
+      .getByRole("button", { name: "Rename project Writing" })
+      .waitFor();
+    await cp(folder, copy, { recursive: true });
+    await app.evaluate(
+      ({ safeStorage }, { file, codex, claude }) => {
+        const host = "50d39975-854b-4f2f-9b00-23d3bd074c21";
+        const record = JSON.stringify({
+          version: 1,
+          host,
+          profiles: [
+            { id: codex, name: "Codex fixture", kind: "codex", record: JSON.stringify({ host }) },
+            {
+              id: claude,
+              name: "Claude fixture",
+              kind: "claude",
+              model: "claude-fixture",
+              key: "fixture-only",
+            },
+          ],
+        });
+        process
+          .getBuiltinModule("fs")
+          .writeFileSync(file, safeStorage.encryptString(record), { mode: 0o600 });
+      },
+      { file: join(profile, "agent-profiles.bin"), codex, claude },
+    );
+    await app.close();
+
+    app = await electron.launch({ args: [process.cwd()], env });
+    const page = await app.firstWindow();
+    page.setDefaultTimeout(5500);
+    const button = (name) => page.getByRole("button", { name, exact: true });
+    const dialog = page.getByRole("dialog");
+    await page.getByRole("heading", { name: "Agents", exact: true }).waitFor();
+    await button("Add agent").click();
+    await dialog.getByRole("button", { name: /Codex OpenAI/ }).click();
+    await dialog.getByRole("button", { name: "Continue with ChatGPT" }).waitFor();
+    await dialog.getByRole("button", { name: "Back" }).click();
+    await dialog.getByRole("button", { name: /Claude Anthropic/ }).click();
+    assert.equal(await dialog.getByLabel("Anthropic API key").getAttribute("type"), "password");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("button", { name: /Claude fixture Claude Connected/ }).click();
+    await dialog.getByRole("textbox", { name: "Name" }).fill("Claude writing");
+    await dialog.getByRole("button", { name: "Save changes" }).click();
+    await page.getByRole("button", { name: /Claude writing Claude Connected/ }).waitFor();
+    if (evidence) await page.screenshot({ path: join(evidence, "agents-home.png") });
+
+    await button("Writing").click();
+    const board = page.frameLocator('iframe[title="Field notes"]').getByRole("heading");
+    await board.waitFor();
+    await assert.rejects(
+      page.evaluate((id) => window.easyProto.agents({ action: "disconnect", id }), claude),
+      /from Home/,
+    );
+    await button("Chat").click();
+    const agentTrigger = button("Agent: Local demo");
+    assert.equal(await agentTrigger.innerText(), "Local demo");
+    assert.equal(await agentTrigger.locator("svg").count(), 1);
+    assert.equal(
+      await agentTrigger.evaluate((trigger) => getComputedStyle(trigger).borderWidth),
+      "0px",
+    );
+    await agentTrigger.click();
+    const picker = page.getByRole("menu", { name: "Agents" });
+    await picker.waitFor();
+    assert.equal(
+      await picker
+        .getByRole("group", { name: "Codex" })
+        .getByRole("menuitemradio", { name: /Codex fixture/ })
+        .isDisabled(),
+      true,
+    );
+    assert.equal(
+      await picker
+        .getByRole("group", { name: "Claude" })
+        .getByRole("menuitemradio", { name: "Claude writing" })
+        .isEnabled(),
+      true,
+    );
+    assert.ok(
+      (await picker.boundingBox()).y + (await picker.boundingBox()).height <=
+        (await button("Agent: Local demo").boundingBox()).y,
+    );
+    assert.ok(
+      (await button("Agent: Local demo").boundingBox()).x <
+        (await button("Attach artboard").boundingBox()).x,
+    );
+    assert.equal(await button("Attach artboard").innerText(), "");
+    if (evidence) await page.screenshot({ path: join(evidence, "chat-agent-picker.png") });
+    await page.keyboard.press("Escape");
+    await picker.waitFor({ state: "hidden" });
+
+    await page
+      .locator(".react-flow__node")
+      .filter({ has: button("Rename artboard Field notes") })
+      .click({ position: { x: 32, y: 32 } });
+    await button("Attach Field notes").click();
+    const prompt = "Change the headline to Local draft";
+    await page.getByRole("textbox", { name: "Message" }).fill(prompt);
+    await button("Send").click();
+    await button("Apply edit").waitFor();
+    assert.equal(await button("Agent: Local demo").isDisabled(), true);
+    await button("Apply edit").click();
+    await board.filter({ hasText: "Local draft" }).waitFor();
+
+    await button("Agent: Local demo").click();
+    await picker.getByRole("menuitemradio", { name: "Claude writing" }).click();
+    await button("Agent: Claude writing").waitFor();
+    assert.equal(await page.getByText(prompt, { exact: true }).count(), 0);
+    await button("Agent: Claude writing").click();
+    await picker.getByRole("menuitemradio", { name: "Local demo" }).click();
+    await page.getByText(prompt, { exact: true }).waitFor();
+
+    await button("Agent: Local demo").click();
+    await picker.getByRole("menuitemradio", { name: "Claude writing" }).click();
+    await button("Agent: Claude writing").click();
+    await picker.getByRole("menuitem", { name: "Manage agents" }).click();
+    await page.waitForFunction(() => document.activeElement?.id === "agents-title");
+
+    await app.evaluate(({ dialog }, folder) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
+    }, copy);
+    await button("Settings").click();
+    await button("Open project…").click();
+    await page.getByRole("button", { name: "Rename project Other" }).waitFor();
+    await button("Chat").click();
+    await button("Agent: Local demo").waitFor();
+    assert.equal(await page.getByText(prompt, { exact: true }).count(), 0);
+    await button("Easy Proto Home").click();
+    await button("Writing").click();
+    await button("Chat").click();
+    await button("Agent: Claude writing").waitFor();
+    assert.equal(await page.getByText(prompt, { exact: true }).count(), 0);
+    await button("Agent: Claude writing").click();
+    await picker.getByRole("menuitemradio", { name: "Local demo" }).click();
+    await page.getByText(prompt, { exact: true }).waitFor();
   },
 );

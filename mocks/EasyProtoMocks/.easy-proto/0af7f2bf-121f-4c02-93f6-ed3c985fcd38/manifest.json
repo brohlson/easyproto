@@ -1,0 +1,400 @@
+{
+  "schemaVersion": 5,
+  "projectId": "7b0e9c81-1d0c-4c89-afe9-67751a5298a5",
+  "revision": 369,
+  "pageLayout": {
+    "defaultPageId": "455820b5-06fd-8619-85c7-5ca32301e99c",
+    "pages": [
+      {
+        "id": "455820b5-06fd-8619-85c7-5ca32301e99c",
+        "name": "Home & settings"
+      },
+      {
+        "id": "33ed4b23-1f89-411a-b1ce-88742f2a80fa",
+        "name": "Eggs"
+      },
+      {
+        "id": "17c2b51f-16c0-4e8d-84df-a8f188eef4fb",
+        "name": "Chat dock"
+      },
+      {
+        "id": "8e56ec24-4700-401b-8838-2f55533c0732",
+        "name": "Canvas"
+      },
+      {
+        "id": "694304f4-e022-4d8a-b012-08f95bd630ba",
+        "name": "Pages"
+      },
+      {
+        "id": "49a3320a-feaa-4669-8877-ca7a98d76843",
+        "name": "Design system"
+      },
+      {
+        "id": "630bd64a-388e-4a2d-bce3-eeb4968bbb9a",
+        "name": "Archive"
+      },
+      {
+        "id": "e6bc7b4c-c8de-4e5d-8259-fee8c6425784",
+        "name": "Agents"
+      }
+    ]
+  },
+  "tokens": {
+    "documentDigest": "1ce0f50e8bcaed4f4de0c76c7d7e73c6cc83673f7e77dd131684302595682c35",
+    "cssDigest": "43a4d4b88eec58e89c7102910f2d44f6d05dce9661aaf45e5fb25ac7ee601c2d"
+  },
+  "artboards": [
+    {
+      "name": "Home",
+      "x": 0,
+      "y": 0,
+      "width": 960,
+      "height": 600,
+      "id": "d0dac226-a4d6-4d83-b243-5eef065e6808",
+      "pageId": "455820b5-06fd-8619-85c7-5ca32301e99c",
+      "sourceRevision": 57,
+      "sourceDigest": "3ccf106fc07155106c3cfe6ae71ae10e9f4a2f5e49de6e40b68329f49a17c85b",
+      "htmlRef": "d0dac226-a4d6-4d83-b243-5eef065e6808.html",
+      "cssRef": "d0dac226-a4d6-4d83-b243-5eef065e6808.css"
+    },
+    {
+      "name": "Home · Projects",
+      "x": 1056,
+      "y": 0,
+      "width": 960,
+      "height": 600,
+      "id": "2b8dba4a-f517-4df4-93f0-672a06e3bb61",
+      "pageId": "455820b5-06fd-8619-85c7-5ca32301e99c",
+      "sourceRevision": 58,
+      "sourceDigest": "b6d62028ef851c2d2b63209ff09c7c349996ea7d0009a60f605772f6a828d071",
+      "htmlRef": "2b8dba4a-f517-4df4-93f0-672a06e3bb61.html",
+      "cssRef": "2b8dba4a-f517-4df4-93f0-672a06e3bb61.css"
+    },
+    {
+      "name": "Artboard · Agent working",
+      "x": 0,
+      "y": 0,
+      "width": 1032,
+      "height": 1376,
+      "id": "0d480115-755b-4ec1-87da-01c0b4a08b1a",
+      "pageId": "8e56ec24-4700-401b-8838-2f55533c0732",
+      "sourceRevision": 56,
+      "sourceDigest": "0d230abd080867739965501b887a0fe0f0322d31ac001e47d3f29bbb222b4fb0",
+      "htmlRef": "0d480115-755b-4ec1-87da-01c0b4a08b1a.html",
+      "cssRef": "0d480115-755b-4ec1-87da-01c0b4a08b1a.css"
+    },
+    {
+      "name": "Workspace · Edit and settings",
+      "x": 0,
+      "y": 704,
+      "width": 960,
+      "height": 600,
+      "id": "ca1091a8-5d74-46b6-a3fd-a5c122f4edb4",
+      "pageId": "455820b5-06fd-8619-85c7-5ca32301e99c",
+      "sourceRevision": 256,
+      "sourceDigest": "b87655220f19c0808317e862b343aeb2475fa57b00ac41550bc2f18c052d89ad",
+      "htmlRef": "ca1091a8-5d74-46b6-a3fd-a5c122f4edb4.html",
+      "cssRef": "ca1091a8-5d74-46b6-a3fd-a5c122f4edb4.css"
+    },
+    {
+      "name": "Workspace · Duplicate artboard",
+      "x": 1128,
+      "y": 0,
+      "width": 1440,
+      "height": 900,
+      "id": "22967346-3e4e-4adc-aaa1-89bcb07af0ff",
+      "pageId": "8e56ec24-4700-401b-8838-2f55533c0732",
+      "sourceRevision": 183,
+      "sourceDigest": "a3131b676ddbcf50b1f3bd68a22b3eb5bf65a7c179df9346ec564fa8fbec30e3",
+      "htmlRef": "22967346-3e4e-4adc-aaa1-89bcb07af0ff.html",
+      "cssRef": "22967346-3e4e-4adc-aaa1-89bcb07af0ff.css"
+    },
+    {
+      "name": "Workspace · Edit and settings copy",
+      "x": 0,
+      "y": 0,
+      "width": 960,
+      "height": 600,
+      "id": "f32d84cf-8215-487c-8b55-17d9f8d9a2a6",
+      "pageId": "630bd64a-388e-4a2d-bce3-eeb4968bbb9a",
+      "sourceRevision": 256,
+      "sourceDigest": "b87655220f19c0808317e862b343aeb2475fa57b00ac41550bc2f18c052d89ad",
+      "htmlRef": "f32d84cf-8215-487c-8b55-17d9f8d9a2a6.html",
+      "cssRef": "f32d84cf-8215-487c-8b55-17d9f8d9a2a6.css"
+    },
+    {
+      "name": "Workspace · Multi-select",
+      "x": 1128,
+      "y": 1004,
+      "width": 670,
+      "height": 265,
+      "id": "2b8e3761-0a45-4980-8e31-96423220ac0c",
+      "pageId": "8e56ec24-4700-401b-8838-2f55533c0732",
+      "sourceRevision": 252,
+      "sourceDigest": "318a544cd154b3fb2cf791e1c6bf47eb76fbc8b5ced19f4ca3fa0edde8810f3e",
+      "htmlRef": "2b8e3761-0a45-4980-8e31-96423220ac0c.html",
+      "cssRef": "2b8e3761-0a45-4980-8e31-96423220ac0c.css"
+    },
+    {
+      "name": "Workspace · Pages picker",
+      "x": 0,
+      "y": 834,
+      "width": 820,
+      "height": 310,
+      "id": "7522b9ff-4e34-4fce-a73f-d96fff5ce0ad",
+      "pageId": "694304f4-e022-4d8a-b012-08f95bd630ba",
+      "sourceRevision": 281,
+      "sourceDigest": "8d8c376772c4ff18fccb60698ec90b42933e0e4cf019111caffd86802b2343d4",
+      "htmlRef": "7522b9ff-4e34-4fce-a73f-d96fff5ce0ad.html",
+      "cssRef": "7522b9ff-4e34-4fce-a73f-d96fff5ce0ad.css"
+    },
+    {
+      "name": "Workspace · Move to page",
+      "x": 0,
+      "y": 0,
+      "width": 1180,
+      "height": 738,
+      "id": "00923311-c83c-40f3-b4b5-4703bbebee21",
+      "pageId": "694304f4-e022-4d8a-b012-08f95bd630ba",
+      "sourceRevision": 260,
+      "sourceDigest": "94be67bb78d2b08b1605d4ec35361c7413bf2a9e46ccf74c62fb9c546ce1ea8c",
+      "htmlRef": "00923311-c83c-40f3-b4b5-4703bbebee21.html",
+      "cssRef": "00923311-c83c-40f3-b4b5-4703bbebee21.css"
+    },
+    {
+      "name": "Workspace · Page move confirmation",
+      "x": 1276,
+      "y": 0,
+      "width": 1180,
+      "height": 738,
+      "id": "cfad006d-f3e2-497e-bb86-bff6cba9a7e7",
+      "pageId": "694304f4-e022-4d8a-b012-08f95bd630ba",
+      "sourceRevision": 261,
+      "sourceDigest": "6251759f80c3f968e5c5c201b7a236bc2d0704aa483a45b7b72f4ba07beae0af",
+      "htmlRef": "cfad006d-f3e2-497e-bb86-bff6cba9a7e7.html",
+      "cssRef": "cfad006d-f3e2-497e-bb86-bff6cba9a7e7.css"
+    },
+    {
+      "name": "Workspace · Pages picker (compact)",
+      "x": 916,
+      "y": 834,
+      "width": 660,
+      "height": 448,
+      "id": "d91429a2-a801-4759-b2ad-56d628d70c0b",
+      "pageId": "694304f4-e022-4d8a-b012-08f95bd630ba",
+      "sourceRevision": 262,
+      "sourceDigest": "a21df17e66ee8b5d9dfc8ca585a6fb9c5e167bf58e644f9b7c8c11b7bea22e22",
+      "htmlRef": "d91429a2-a801-4759-b2ad-56d628d70c0b.html",
+      "cssRef": "d91429a2-a801-4759-b2ad-56d628d70c0b.css"
+    },
+    {
+      "name": "Workspace · Move to page (compact)",
+      "x": 1672,
+      "y": 834,
+      "width": 660,
+      "height": 448,
+      "id": "c3b4e61c-b004-4340-8982-51b96c387835",
+      "pageId": "694304f4-e022-4d8a-b012-08f95bd630ba",
+      "sourceRevision": 263,
+      "sourceDigest": "94be67bb78d2b08b1605d4ec35361c7413bf2a9e46ccf74c62fb9c546ce1ea8c",
+      "htmlRef": "c3b4e61c-b004-4340-8982-51b96c387835.html",
+      "cssRef": "c3b4e61c-b004-4340-8982-51b96c387835.css"
+    },
+    {
+      "name": "Workspace · Project tokens",
+      "x": 0,
+      "y": 561,
+      "width": 1040,
+      "height": 600,
+      "id": "05f04f6c-131f-4d47-968e-b448e78bd04e",
+      "pageId": "49a3320a-feaa-4669-8877-ca7a98d76843",
+      "sourceRevision": 280,
+      "sourceDigest": "74cb7fe71496d9a1dae7bc9b46805fd33abc99a73028af7038da771e35a231cd",
+      "htmlRef": "05f04f6c-131f-4d47-968e-b448e78bd04e.html",
+      "cssRef": "05f04f6c-131f-4d47-968e-b448e78bd04e.css"
+    },
+    {
+      "name": "Design system · Desktop tokens",
+      "x": 0,
+      "y": 0,
+      "width": 860,
+      "height": 465,
+      "id": "570d4f7c-c350-45e3-abbc-4166c601eede",
+      "pageId": "49a3320a-feaa-4669-8877-ca7a98d76843",
+      "sourceRevision": 269,
+      "sourceDigest": "ecbf81c4c72ab5746ff6b64cb49ffbe7238304ba551451f8ce75daff76120059",
+      "htmlRef": "570d4f7c-c350-45e3-abbc-4166c601eede.html",
+      "cssRef": "570d4f7c-c350-45e3-abbc-4166c601eede.css"
+    },
+    {
+      "name": "Chat dock · 1 Attach",
+      "x": 0,
+      "y": 0,
+      "width": 1180,
+      "height": 738,
+      "id": "d46893c9-2101-4719-83fa-fd7a81b1dab7",
+      "pageId": "17c2b51f-16c0-4e8d-84df-a8f188eef4fb",
+      "sourceRevision": 353,
+      "sourceDigest": "c6782dd55392cc484520810a272b9431dd3d22550fba61f1f074119c59800604",
+      "htmlRef": "d46893c9-2101-4719-83fa-fd7a81b1dab7.html",
+      "cssRef": "d46893c9-2101-4719-83fa-fd7a81b1dab7.css"
+    },
+    {
+      "name": "Chat dock · 2 Review",
+      "x": 1250,
+      "y": 0,
+      "width": 1180,
+      "height": 738,
+      "id": "fd58e5dc-af8b-470c-8c2a-d2c45e9228a9",
+      "pageId": "17c2b51f-16c0-4e8d-84df-a8f188eef4fb",
+      "sourceRevision": 354,
+      "sourceDigest": "751a791ef938a28396e6164d49867cd6e67b719d02a9a95e093b4a2305bc9894",
+      "htmlRef": "fd58e5dc-af8b-470c-8c2a-d2c45e9228a9.html",
+      "cssRef": "fd58e5dc-af8b-470c-8c2a-d2c45e9228a9.css"
+    },
+    {
+      "name": "Chat dock · 3 Apply and undo",
+      "x": 0,
+      "y": 810,
+      "width": 1180,
+      "height": 738,
+      "id": "51b3e789-239e-4251-b9d9-31b1cff695fc",
+      "pageId": "17c2b51f-16c0-4e8d-84df-a8f188eef4fb",
+      "sourceRevision": 355,
+      "sourceDigest": "263625f8aa81d7a1e20f87a58b410d5a137e6fd8048f6f3a1df49e195f5e45c2",
+      "htmlRef": "51b3e789-239e-4251-b9d9-31b1cff695fc.html",
+      "cssRef": "51b3e789-239e-4251-b9d9-31b1cff695fc.css"
+    },
+    {
+      "name": "Chat dock · Compact conflict",
+      "x": 1250,
+      "y": 810,
+      "width": 660,
+      "height": 448,
+      "id": "0d60beae-d99a-4b1e-92b8-ce13ebc64a70",
+      "pageId": "17c2b51f-16c0-4e8d-84df-a8f188eef4fb",
+      "sourceRevision": 356,
+      "sourceDigest": "c440b871961d16feaee0665aa5835ecb4d69d2b5f47435d6095235247de7eb65",
+      "htmlRef": "0d60beae-d99a-4b1e-92b8-ce13ebc64a70.html",
+      "cssRef": "0d60beae-d99a-4b1e-92b8-ce13ebc64a70.css"
+    },
+    {
+      "name": "Design system · Select",
+      "x": 956,
+      "y": 0,
+      "width": 700,
+      "height": 310,
+      "id": "433a4b59-46f7-4fbb-a698-aea7dc396b3b",
+      "pageId": "49a3320a-feaa-4669-8877-ca7a98d76843",
+      "sourceRevision": 296,
+      "sourceDigest": "f262790e347434d79e6f1329a04cb47f6123ee7038ca2cf5961411fa977d7cd3",
+      "htmlRef": "433a4b59-46f7-4fbb-a698-aea7dc396b3b.html",
+      "cssRef": "433a4b59-46f7-4fbb-a698-aea7dc396b3b.css"
+    },
+    {
+      "name": "Home · Projects and agents",
+      "x": 0,
+      "y": 0,
+      "width": 1180,
+      "height": 738,
+      "id": "5ff8b18a-b0d4-46c4-a5a3-c0a937382898",
+      "pageId": "e6bc7b4c-c8de-4e5d-8259-fee8c6425784",
+      "sourceRevision": 358,
+      "sourceDigest": "2d0f04b4915f8edf750c0b12587f3572f4968c8e6e9fe44b6b4ebc2e74978ba7",
+      "htmlRef": "5ff8b18a-b0d4-46c4-a5a3-c0a937382898.html",
+      "cssRef": "5ff8b18a-b0d4-46c4-a5a3-c0a937382898.css"
+    },
+    {
+      "name": "Home · Empty lists",
+      "x": 1240,
+      "y": 0,
+      "width": 660,
+      "height": 480,
+      "id": "40cc4f2c-e89d-4e30-9239-6bdb8cad5f13",
+      "pageId": "e6bc7b4c-c8de-4e5d-8259-fee8c6425784",
+      "sourceRevision": 359,
+      "sourceDigest": "2f031bfaaedd5a1c06ace0604768d4deb9f2847670f86c6092e73381b984545a",
+      "htmlRef": "40cc4f2c-e89d-4e30-9239-6bdb8cad5f13.html",
+      "cssRef": "40cc4f2c-e89d-4e30-9239-6bdb8cad5f13.css"
+    },
+    {
+      "name": "Agents · Add provider",
+      "x": 0,
+      "y": 800,
+      "width": 1180,
+      "height": 738,
+      "id": "46894f5a-67fb-4398-8c5d-1bde2218cfcd",
+      "pageId": "e6bc7b4c-c8de-4e5d-8259-fee8c6425784",
+      "sourceRevision": 360,
+      "sourceDigest": "a8c4065c99bed823101b1bd86026aa0de4165455f3de9d53f338ca7a0bdbafb6",
+      "htmlRef": "46894f5a-67fb-4398-8c5d-1bde2218cfcd.html",
+      "cssRef": "46894f5a-67fb-4398-8c5d-1bde2218cfcd.css"
+    },
+    {
+      "name": "Agents · Connect Codex",
+      "x": 1240,
+      "y": 800,
+      "width": 1180,
+      "height": 738,
+      "id": "b0545e93-c868-4454-96c5-082a5092405f",
+      "pageId": "e6bc7b4c-c8de-4e5d-8259-fee8c6425784",
+      "sourceRevision": 361,
+      "sourceDigest": "23c7937e301f6cf8d1a5ee583d7f886beeb97b4429f84e201950146e9e0f89cc",
+      "htmlRef": "b0545e93-c868-4454-96c5-082a5092405f.html",
+      "cssRef": "b0545e93-c868-4454-96c5-082a5092405f.css"
+    },
+    {
+      "name": "Agents · Connect Claude",
+      "x": 0,
+      "y": 1600,
+      "width": 1180,
+      "height": 738,
+      "id": "cde86751-247f-41bf-a2a4-c03428ac4c90",
+      "pageId": "e6bc7b4c-c8de-4e5d-8259-fee8c6425784",
+      "sourceRevision": 362,
+      "sourceDigest": "6f36f0cd59838980d8d0877dbe722089e3e80b2d0e88e5b41dae366424e681df",
+      "htmlRef": "cde86751-247f-41bf-a2a4-c03428ac4c90.html",
+      "cssRef": "cde86751-247f-41bf-a2a4-c03428ac4c90.css"
+    },
+    {
+      "name": "Agents · Edit profile",
+      "x": 1240,
+      "y": 1600,
+      "width": 1180,
+      "height": 738,
+      "id": "fd008117-8e97-44a8-98a8-28cd056519f2",
+      "pageId": "e6bc7b4c-c8de-4e5d-8259-fee8c6425784",
+      "sourceRevision": 363,
+      "sourceDigest": "e5733551ce544b94b193fec0453345a8bee96ecaf44cb12890d6154c9912242c",
+      "htmlRef": "fd008117-8e97-44a8-98a8-28cd056519f2.html",
+      "cssRef": "fd008117-8e97-44a8-98a8-28cd056519f2.css"
+    },
+    {
+      "name": "Chat · Agent picker",
+      "x": 0,
+      "y": 2400,
+      "width": 1180,
+      "height": 738,
+      "id": "77d55f7b-0fb0-4668-95a1-d7f9baccadc6",
+      "pageId": "e6bc7b4c-c8de-4e5d-8259-fee8c6425784",
+      "sourceRevision": 368,
+      "sourceDigest": "e7ac67aa6954c17f3f3d66fe17d36879d95b43361b5cc62fc434848b25c8c719",
+      "htmlRef": "77d55f7b-0fb0-4668-95a1-d7f9baccadc6.html",
+      "cssRef": "77d55f7b-0fb0-4668-95a1-d7f9baccadc6.css"
+    },
+    {
+      "name": "Chat · No agents",
+      "x": 1240,
+      "y": 2400,
+      "width": 660,
+      "height": 480,
+      "id": "a619dc52-a3dd-4366-8bfa-0f5819cfb151",
+      "pageId": "e6bc7b4c-c8de-4e5d-8259-fee8c6425784",
+      "sourceRevision": 369,
+      "sourceDigest": "c7c1edc256c2dd41862c8ef14131f193fb69847232add124ba24f525419e947b",
+      "htmlRef": "a619dc52-a3dd-4366-8bfa-0f5819cfb151.html",
+      "cssRef": "a619dc52-a3dd-4366-8bfa-0f5819cfb151.css"
+    }
+  ],
+  "commands": []
+}

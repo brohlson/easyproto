@@ -58,7 +58,7 @@ test("simultaneous edits, failed save and unsupported schema preserve the author
   assert.deepEqual(await reopened.execute(first), saved.value);
   const pointerPath = join(folder, "project.json");
   const pointer = JSON.parse(await readFile(pointerPath, "utf8"));
-  const unsupported = JSON.stringify({ ...pointer, schemaVersion: 4 });
+  const unsupported = JSON.stringify({ ...pointer, schemaVersion: 6 });
   await writeFile(pointerPath, unsupported);
   await assert.rejects(Project.open(folder));
   assert.equal(await readFile(pointerPath, "utf8"), unsupported);
@@ -453,4 +453,261 @@ test("group duplication finds a smaller offset when a canvas edge blocks the pre
     assert.ok(offset > 0 && offset < 40);
     assert.equal(a.y - -100_000, offset);
   }
+});
+
+test("pages and group moves use one history and retain legacy retries after upgrading", async (t) => {
+  const { project, folder } = await fixture(t);
+  const {
+    projectId,
+    artboards: [first],
+  } = project.snapshot.manifest;
+  const second = (await project.execute(command(projectId))).artboard;
+  const edit = (operation, args) => ({
+    projectId,
+    commandId: randomUUID(),
+    expectedRevision: project.snapshot.manifest.revision,
+    operation,
+    arguments: args,
+  });
+  const artboardIds = [first.id, second.id];
+  const oldMove = edit("move_artboards", { artboardIds, dx: 10, dy: 20 });
+  const oldResult = await project.execute(oldMove);
+  assert.equal(project.snapshot.manifest.schemaVersion, 3);
+  const pointerPath = join(folder, "project.json");
+  const legacyPointer = await readFile(pointerPath, "utf8");
+  assert.deepEqual((await Project.open(folder)).pageLayout, project.pageLayout);
+  assert.equal(await readFile(pointerPath, "utf8"), legacyPointer);
+
+  const home = project.pageLayout.defaultPageId;
+  const create = edit("create_page", { name: "Exploration" });
+  const created = await project.execute(create);
+  const target = created.page.id;
+  assert.equal(project.snapshot.manifest.schemaVersion, 4);
+  assert.deepEqual(
+    project.snapshot.manifest.artboards.map(({ pageId }) => pageId),
+    [home, home],
+  );
+  await assert.rejects(
+    project.execute(
+      edit("move_artboards_to_page", {
+        artboardIds,
+        pageId: randomUUID(),
+      }),
+    ),
+    { code: "PAGE_NOT_FOUND" },
+  );
+  const move = edit("move_artboards_to_page", { artboardIds, pageId: target });
+  const moved = await project.execute(move);
+  assert.equal(moved.revision, created.revision + 1);
+  assert.deepEqual(
+    moved.artboards,
+    oldResult.artboards.map((board) => ({ ...board, pageId: target })),
+  );
+  await assert.rejects(project.execute({ ...move, commandId: randomUUID() }), {
+    code: "REVISION_CONFLICT",
+  });
+
+  await project.execute(edit("undo", {}));
+  assert.deepEqual(
+    project.snapshot.manifest.artboards,
+    oldResult.artboards.map((board) => ({ ...board, pageId: home })),
+  );
+  const removed = await project.execute(edit("undo", {}));
+  assert.deepEqual(removed.page, created.page);
+  assert.equal(project.pageLayout.pages.length, 1);
+  await project.execute(edit("undo", {}));
+  assert.deepEqual(
+    project.snapshot.manifest.artboards,
+    [first, second].map((board) => ({ ...board, pageId: home })),
+  );
+
+  for (let i = 0; i < 3; i++) await project.execute(edit("redo", {}));
+  assert.deepEqual(
+    project.pageLayout.pages.map(({ id }) => id),
+    [home, target],
+  );
+  const clipboardId = randomUUID();
+  project.copyArtboards([first.id], clipboardId);
+  const pasted = await project.execute(edit("paste_artboard", { clipboardId, pageId: home }));
+  assert.equal(pasted.artboard.pageId, home);
+  const duplicated = await project.execute(edit("duplicate_artboard", { artboardId: first.id }));
+  assert.equal(duplicated.artboard.pageId, target);
+  assert.deepEqual(
+    [duplicated.artboard.x, duplicated.artboard.y],
+    [pasted.artboard.x, pasted.artboard.y],
+  );
+
+  const reopened = await Project.open(folder);
+  assert.deepEqual(reopened.pageLayout, project.pageLayout);
+  assert.deepEqual(reopened.snapshot.manifest.artboards, project.snapshot.manifest.artboards);
+  assert.deepEqual(await reopened.execute(oldMove), oldResult);
+  assert.deepEqual(await reopened.execute(create), created);
+  assert.deepEqual(await reopened.execute(move), moved);
+  assert.deepEqual(reopened.snapshot.sources, project.snapshot.sources);
+});
+
+test("first page publication is atomic across interruption and preserves the default page ID", async (t) => {
+  const { project, folder } = await fixture(t);
+  const { projectId } = project.snapshot.manifest;
+  const input = {
+    projectId,
+    commandId: randomUUID(),
+    expectedRevision: 0,
+    operation: "create_page",
+    arguments: { name: "Components" },
+  };
+  await killAt(folder, input, "snapshotWritten");
+  const before = await Project.open(folder);
+  assert.equal(before.snapshot.manifest.schemaVersion, 1);
+  assert.equal(before.snapshot.manifest.revision, 0);
+  assert.deepEqual(before.pageLayout, project.pageLayout);
+
+  await killAt(folder, input, "pointerPublished");
+  const after = await Project.open(folder);
+  assert.equal(after.snapshot.manifest.schemaVersion, 4);
+  assert.equal(after.snapshot.manifest.revision, 1);
+  const [defaultPage, addedPage] = after.pageLayout.pages;
+  assert.equal(defaultPage.id, before.pageLayout.defaultPageId);
+  assert.equal(after.snapshot.manifest.artboards[0].pageId, defaultPage.id);
+  assert.deepEqual((await after.execute(input)).page, addedPage);
+  assert.equal(after.snapshot.manifest.revision, 1);
+
+  const pointer = JSON.parse(await readFile(join(folder, "project.json"), "utf8"));
+  const manifestPath = join(folder, ".easy-proto", pointer.snapshot, "manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.artboards[0].pageId = randomUUID();
+  await writeFile(manifestPath, JSON.stringify(manifest));
+  await assert.rejects(Project.open(folder), /Invalid artboard metadata/);
+});
+
+test("token source, CSS and command receipt publish and recover together", async (t) => {
+  const { project, folder } = await fixture(t);
+  const { projectId } = project.snapshot.manifest;
+  const original = await project.execute(command(projectId));
+  const document = (value) =>
+    JSON.stringify({
+      color: {
+        $type: "color",
+        blue: { $value: { colorSpace: "srgb", components: [0, 0, value], alpha: 0.75 } },
+        action: { $value: "{color.blue}" },
+      },
+      space: { base: { $type: "dimension", $value: { value: 1.5, unit: "rem" } } },
+      scale: { $type: "number", $value: 0 },
+      type: {
+        family: { $type: "fontFamily", $value: ["Inter", "Example Sans", "system-ui"] },
+        label: { $type: "fontFamily", $value: "{type.family}" },
+        weight: { $type: "fontWeight", $value: 600 },
+      },
+      motion: {
+        fast: { $type: "duration", $value: { value: 180, unit: "ms" } },
+        slow: { $type: "duration", $value: { value: 1.4, unit: "s" } },
+      },
+    });
+  const replace = (value, expectedRevision) => ({
+    projectId,
+    commandId: randomUUID(),
+    expectedRevision,
+    operation: "replace_project_tokens",
+    arguments: { document: value },
+  });
+  for (const bad of [
+    '{"a": {}, "a": {}}',
+    '{"a":{"$type":"number","$value":"{a}"}}',
+    '{"a":{"$type":"number","$value":"{missing}"}}',
+    '{"a":{"$type":"number","$value":"url(https://example.test)"}}',
+    '{"a-b":{"$type":"number","$value":1},"a":{"b":{"$type":"number","$value":2}}}',
+    '{"a":{"$type":"fontFamily","$value":["Inter","x; color: red"]}}',
+    '{"a":{"$type":"fontWeight","$value":0}}',
+    '{"a":{"$type":"duration","$value":{"value":10,"unit":"px"}}}',
+  ]) {
+    await assert.rejects(project.execute(replace(bad, original.revision)), {
+      code: "INVALID_TOKENS",
+    });
+  }
+  assert.equal(project.snapshot.manifest.revision, original.revision);
+  assert.deepEqual(project.tokenView.rows, []);
+  const input = replace(document(0.6), original.revision);
+  const saved = await project.execute(input);
+  assert.match(project.tokenView.css, /--ep-color-action: var\(--ep-color-blue\);/);
+  assert.match(project.tokenView.css, /--ep-space-base: 1\.5rem;/);
+  assert.match(project.tokenView.css, /--ep-type-family: Inter, "Example Sans", system-ui;/);
+  assert.match(project.tokenView.css, /--ep-type-label: var\(--ep-type-family\);/);
+  assert.match(project.tokenView.css, /--ep-type-weight: 600;/);
+  assert.match(project.tokenView.css, /--ep-motion-fast: 180ms;/);
+  assert.match(project.tokenView.css, /--ep-motion-slow: 1\.4s;/);
+  assert.equal(project.snapshot.manifest.schemaVersion, 5);
+  assert.equal(
+    project.snapshot.manifest.artboards.find(({ id }) => id === original.artboard.id)
+      .sourceRevision,
+    original.artboard.sourceRevision,
+  );
+  assert.deepEqual(await project.execute(input), saved);
+  await assert.rejects(project.execute({ ...input, arguments: { document: "{}" } }), {
+    code: "COMMAND_ID_REUSED",
+  });
+  await assert.rejects(project.execute(replace("{}", original.revision)), {
+    code: "REVISION_CONFLICT",
+  });
+  const action = (operation, expectedRevision) =>
+    project.execute({
+      projectId,
+      commandId: randomUUID(),
+      expectedRevision,
+      operation,
+      arguments: {},
+    });
+  const undone = await action("undo", saved.revision);
+  assert.equal(undone.tokens, null);
+  assert.equal(project.tokenView.css, "");
+  const redone = await action("redo", undone.revision);
+  assert.deepEqual(redone.tokens, saved.tokens);
+  const reopened = await Project.open(folder);
+  assert.deepEqual(reopened.tokenView, project.tokenView);
+  assert.deepEqual(await reopened.execute(input), saved);
+  const replacement = replace(document(0.4), redone.revision);
+  await killAt(folder, replacement, "snapshotWritten");
+  assert.deepEqual((await Project.open(folder)).tokenView, project.tokenView);
+  await killAt(folder, replacement, "pointerPublished");
+  const recovered = await Project.open(folder);
+  assert.equal(recovered.tokenView.revision, redone.revision + 1);
+  assert.match(recovered.tokenView.css, /rgba\(0, 0, 102, 0\.75\)/);
+  assert.deepEqual((await recovered.execute(replacement)).tokens, recovered.tokenView.stamp);
+  const pointer = JSON.parse(await readFile(join(folder, "project.json"), "utf8"));
+  const generated = join(folder, ".easy-proto", pointer.snapshot, "tokens.css");
+  await writeFile(generated, recovered.tokenView.css + "@import 'other.css';");
+  await assert.rejects(Project.open(folder), /saved token files do not match/);
+});
+
+test("renaming an implicit default page preserves identity and supports undo, redo and retry", async (t) => {
+  const { project, folder } = await fixture(t);
+  const { projectId } = project.snapshot.manifest;
+  const { defaultPageId: pageId } = project.pageLayout;
+  const rename = {
+    projectId,
+    commandId: randomUUID(),
+    expectedRevision: 0,
+    operation: "rename_page",
+    arguments: { pageId, name: "Overview" },
+  };
+  const saved = await project.execute(rename);
+  assert.deepEqual(saved.page, { id: pageId, name: "Overview" });
+  assert.equal(project.snapshot.manifest.schemaVersion, 4);
+  assert.equal(project.snapshot.manifest.artboards[0].pageId, pageId);
+  await assert.rejects(project.execute({ ...rename, commandId: randomUUID() }), {
+    code: "REVISION_CONFLICT",
+  });
+  const history = (operation, expectedRevision) =>
+    project.execute({
+      projectId,
+      commandId: randomUUID(),
+      expectedRevision,
+      operation,
+      arguments: {},
+    });
+  const undone = await history("undo", saved.revision);
+  assert.deepEqual(undone.page, { id: pageId, name: "Page 1" });
+  assert.deepEqual((await history("redo", undone.revision)).page, saved.page);
+  const reopened = await Project.open(folder);
+  assert.deepEqual(reopened.pageLayout, { defaultPageId: pageId, pages: [saved.page] });
+  assert.deepEqual(await reopened.execute(rename), saved);
 });

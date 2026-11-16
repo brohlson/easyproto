@@ -1,0 +1,77 @@
+:root {
+  color-scheme: light;
+  font: 13px Inter, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --chrome: #fff; --text: #1e1e1e; --muted: #595959; --canvas: #f5f5f5; --grid: #d9d9d9;
+  --line: #e6e6e6; --control: #d0d0d0; --accent: #f5f5f5; --edge: #a3a3a3;
+  --focus: #404040; --outline: #404040; --shadow: 0 7px 22px #0003;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark; --chrome: #2c2c2c; --text: #f5f5f5; --muted: #bfbfbf;
+    --canvas: #1e1e1e; --grid: #383838; --line: #444; --control: #5c5c5c;
+    --accent: #383838; --edge: #737373; --focus: #f5f5f5; --outline: #f5f5f5;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--text); }
+button { font: inherit; color: inherit; background: transparent; border: 0; }
+button svg, .row svg { flex: none; }
+.workspace { height: 100vh; display: grid; grid-template-rows: 58px minmax(0,1fr) 36px; background: var(--chrome); }
+.top, .bottom { z-index: 1; display: flex; align-items: center; padding: 0 20px; gap: 12px; }
+.top { border-bottom: 1px solid var(--line); }
+.bottom { border-top: 1px solid var(--line); justify-content: space-between; color: var(--muted); font-size: 12px; }
+.brand, .project, .trigger { display: flex; align-items: center; white-space: nowrap; }
+.brand { gap: 9px; font-size: 15px; font-weight: 650; letter-spacing: -.025em; }
+.logo { position: relative; width: 22px; height: 22px; border-radius: 6px; background: var(--text); }
+.logo::before, .logo::after { content: ""; position: absolute; width: 8px; height: 7px; border: 1px solid var(--chrome); border-radius: 2px; }
+.logo::before { top: 5px; left: 5px; }
+.logo::after { top: 8px; left: 8px; background: var(--text); }
+.divider { width: 1px; height: 20px; background: var(--line); }
+.project { font-weight: 600; min-width: 0; }
+.settings { color: var(--muted); margin-left: auto; width: 32px; height: 32px; display: grid; place-items: center; }
+.page-control, .move-cluster { position: relative; }
+.trigger { min-height: 28px; border-radius: 5px; padding: 0 8px; gap: 6px; font-weight: 550; }
+.trigger svg { color: var(--muted); }
+.is-open { background: var(--accent); }
+.panel { position: absolute; z-index: 2; width: 224px; padding: 5px; border: 1px solid var(--line); border-radius: 9px; color: var(--text); background: var(--chrome); box-shadow: var(--shadow); }
+.pages-panel { left: 0; top: calc(100% + 7px); }
+.move-panel { right: 0; bottom: calc(100% + 8px); }
+.panel h2 { margin: 0; padding: 7px 9px 5px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.row { min-height: 33px; width: 100%; padding: 0 9px; display: flex; align-items: center; gap: 8px; border-radius: 5px; font-size: 13px; text-align: left; }
+.row svg { color: var(--muted); }
+.row .right { margin-left: auto; color: var(--text); display: grid; place-items: center; }
+.row.active { background: var(--accent); }
+.row.focused { background: var(--accent); outline: 1px solid var(--focus); outline-offset: -1px; }
+.menu-footer { border-top: 1px solid var(--line); padding-top: 7px; margin-top: 7px; }
+.canvas { position: relative; display: grid; place-items: center; min-height: 0; background: radial-gradient(circle, var(--grid) .65px, transparent 1px) 0 0/24px 24px, var(--canvas); }
+.board-row { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 58px; width: min(calc(100% - 100px), 682px); margin-top: 12px; }
+.board { position: relative; min-width: 0; }
+.board-label { position: absolute; bottom: calc(100% + 7px); display: flex; justify-content: space-between; gap: 8px; width: 100%; font-size: 12px; font-weight: 600; }
+.board-label span + span { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.page-preview { min-height: 0; height: 100%; padding: clamp(13px, 2.25vw, 26px); background: #fff; color: #242321; color-scheme: light; box-shadow: 0 3px 12px #0002; outline: 1px solid var(--edge); }
+.board-row.selected::before { content: ""; position: absolute; inset: 0; outline: 2px dashed color-mix(in srgb, var(--outline) 52%, transparent); }
+.selected .page-preview { outline: 2px solid var(--outline); }
+.shop-name { width: max-content; padding-bottom: 8px; border-bottom: 1px solid #888078; font-size: 10px; font-weight: 650; }
+.page-preview h3 { font-size: clamp(18px, 3vw, 23px); font-weight: 650; letter-spacing: -.045em; margin: 16px 0 12px; }
+.product, .total { display: flex; align-items: center; justify-content: space-between; gap: 7px; }
+.product { padding: 9px 0; border-top: 1px solid #e6e3df; font-size: 11px; }
+.product-info { display: flex; align-items: center; gap: 8px; }
+.product strong { font-size: 11px; font-weight: 600; }
+.product small { display: block; color: #66615b; }
+.sample { flex: none; width: 21px; height: 25px; border-radius: 3px; background: #b6b0a3; }
+.sample.ink { background: #514c45; }
+.total { margin: 7px 0 10px; padding-top: 9px; border-top: 1px solid #e6e3df; font-weight: 600; font-size: 11px; }
+.preview-action { display: grid; place-items: center; width: 100%; min-height: 26px; background: #242321; color: white; border-radius: 4px; font-size: 10px; font-weight: 550; }
+.addr { height: 24px; border: 1px solid #e1dfdb; border-radius: 4px; margin-bottom: 6px; padding: 5px 7px; color: #645c54; font-size: 10px; }
+.right-actions { display: flex; align-items: center; gap: 10px; }
+.move-trigger { min-height: 26px; border: 1px solid var(--control); color: var(--text); font-size: 12px; }
+.empty { color: var(--muted); font-size: 13px; }
+.toast { position: absolute; bottom: 14px; right: 20px; display: flex; align-items: center; padding: 7px 9px 7px 12px; gap: 10px; background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); }
+.toast-action { display: flex; align-items: center; gap: 5px; min-height: 26px; border-radius: 5px; background: var(--accent); padding: 0 7px; font-size: 12px; font-weight: 600; }
+@media (max-width: 720px) {
+  .top, .bottom { padding-inline: 12px; gap: 8px; }
+  .board-row { width: min(calc(100% - 68px), 490px); gap: 34px; margin-top: 3px; }
+  .page-preview { padding: 13px; }
+  .canvas.moving .board-row { margin-left: -54px; width: min(calc(100% - 74px), 438px); }
+  .toast { right: 12px; }
+}

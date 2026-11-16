@@ -115,3 +115,95 @@ The selection box now includes partially overlapped artboards. The group outline
 Two-finger swipes and mouse scrolling pan the canvas on both axes. Pinch zoom and Space-drag remain available. Electron automation sent horizontal and vertical wheel events over an artboard and measured the camera translating on each axis at a fixed scale. Pinch-equivalent input changed the scale. All ten checks passed on Apple Silicon macOS. Physical trackpad input is available to try in the running app. [Verification log](../evidence/canvas-trackpad-pan/verify.log) · [Measured camera positions](../evidence/canvas-trackpad-pan/desktop-stages.json)
 
 The commit review covers the same group outline after Shift-click, marquee, duplicate, paste and undo. A plain click on a selected member narrows the selection to that board. Escape clears the selection, and the focused artboard name gets an underline during keyboard navigation. The storage regressions exercise fractional positions at the canvas limits, recovery on each side of the first v3 publication, and group copies in a narrow range of possible offsets. [Commit verification and review](../evidence/multi-select-commit/)
+
+## Project pages
+
+The page name beside the project title opens the Pages picker. Add page saves and opens a new canvas. To move a selection, choose **Move to page** in the footer. The source page stays open and the confirmation offers **Go to page**. Switching restores the page's camera during the session and clears selection. Creation and group moves use the project undo history. Existing projects open on Page 1 and upgrade on the first page creation. [Project format and recovery](decisions/0002-project-commits.md#pages)
+
+The macOS Electron check exercised page creation with the keyboard, camera restoration, default and explicit MCP destinations, a two-artboard move and single-step undo and redo, page creation undo and redo, and quitting and reopening. Storage checks interrupted the first v4 save before and after publication, verified legacy receipt replay after upgrade, and rejected invalid page membership. [Verification log](../evidence/pages-picker/verify.log) · [Pages picker](../evidence/pages-picker/pages-picker.png) · [Move to page](../evidence/pages-picker/move-to-page.png) · [Confirmation](../evidence/pages-picker/page-move-confirmation.png)
+
+## Project-wide tokens
+
+The working tree based on `a33b9e4` adds a Tokens editor, an Import/Export workflow and the authenticated `get_tokens` and `replace_project_tokens` tools. The first token edit upgrades the project to schema v5. The atomic snapshot saves the DTCG JSON and its Style Dictionary 5.8.0 CSS, with matching revision and digests. Tokens support sRGB, px/rem, numbers and whole-token aliases in this slice. [Storage and supported profile](decisions/0002-project-commits.md#project-tokens) · [Preview authority](decisions/0003-preview-and-mcp.md)
+
+On Apple Silicon macOS 27.0.1 (26A434), Node 24.16.0, pnpm 10.33.4 and Electron 45.3.2, all 15 checks in `EASY_PROTO_EVIDENCE="$PWD/evidence/project-tokens" pnpm verify` passed. The Electron check seeded an alias with the official MCP SDK, edited its target in the app, and observed `rgb(0, 0, 255)` change to `rgb(255, 0, 0)` on two pages. A 160 × 150 capture had the expected red pixel, matching token digests and an unchanged artboard source revision. Undo restored blue, then redo and reopen preserved red. Clipboard, add and delete, and import into a draft and committed exports were exercised. Automation supplies the native file picker paths. Both token tools refused a retired activation. Storage checks cover interrupted token saves on both sides of pointer publication, retry, stale edits, invalid tokens, and changed generated CSS on disk. [Verification log](../evidence/project-tokens/verify.log) · [Token manager](../evidence/project-tokens/token-manager.png) · [Capture evidence](../evidence/project-tokens/token-render.json)
+
+The development app was reopened on EasyProtoMocks at revision 267. The token manager design is available as a mock artboard there. The verification tokens live in disposable projects. [Running app check](../evidence/project-tokens/live-app.json)
+
+## Local agent chat review
+
+Architecture and Reliability, Security, Infrastructure, and Frontend with Design independently reviewed the proposal. The review recommended starting with a dogfooded chat dock and one reviewable artboard edit. Codex and Claude authentication, runtime limits, and isolation remain provider qualification tasks. [Architecture review and release gates](chat-architecture.md)
+
+## Desktop design system
+
+EasyProtoMocks revision 270 contains 113 desktop design tokens created through the official MCP SDK. They cover neutral Light and Dark roles, typography, spacing, controls, radii, strokes, elevation, opacity and motion. A reproducible MCP sync exports the `desktop` group for the trusted shell, and the Vite build compiles it using the same Style Dictionary pipeline as project tokens. [Token catalog](../evidence/desktop-design-system/token-catalog.png) · [Workflow](design-guidance.md#desktop-tokens)
+
+All 15 checks passed on Apple Silicon macOS 27.0.1 with Electron 45.3.2. Both themes use their expected chrome and canvas colors, bundled Inter, and shared toolbar and label sizing. The app kept those values when the open project supplied variables with matching names. The sync command reproduced the export byte for byte. The development app was reopened on the updated build with the catalog project active. [Verification log](../evidence/desktop-design-system/verify.log) · [Desktop readings](../evidence/desktop-design-system/desktop-stages.json) · [Running app](../evidence/desktop-design-system/live-app.json)
+
+## Page rename and token editor refinements
+
+The Pages picker shows a pencil beside each page. Enter saves the inline name and Escape cancels the edit. Renaming preserves page identity, order, and artboard membership. Undo and redo restore the corresponding name. Tokens opens with a 20 px window inset, a search icon, and an editor that replaces the selected table row. The type picker uses Chromium's customizable select for styling and keyboard interaction. Copy and save feedback use a reusable, dismissible toast.
+
+All 16 checks passed on Apple Silicon macOS 27.0.1 with Electron 45.3.2. The desktop check covered cancel and focus restoration, rename undo and redo, reopening, the modal inset at 660 px and 1180 px window widths, filtering, inline focus, keyboard opening and closing of the styled type picker, clipboard content, and toast dismissal and timeout. The storage check covered the implicit default page, stale rename rejection, and retry after reopening. Electron was reopened on EasyProtoMocks revision 280. [Verification](../evidence/workspace-refinements/verify.log) · [Page rename](../evidence/workspace-refinements/page-rename.png) · [Inline type picker](../evidence/workspace-refinements/token-type-picker.png) · [Copy toast](../evidence/workspace-refinements/token-copy-toast.png)
+
+## Compact Pages menu
+
+The Pages picker uses a 192 px list with a leading checkmark and a rename pencil that appears on hover or keyboard focus. The pencil keeps a 24 px hit area. All 16 macOS checks passed. The Electron check demonstrated the reveal with pointer and keyboard input, page switching, and rename persistence and undo. EasyProtoMocks is running on the updated build at revision 281. [Dark](../evidence/compact-pages/pages-picker.png) · [Light with hover](../evidence/compact-pages/pages-picker-light-hover.png) · [Verification](../evidence/compact-pages/verify.log)
+
+## Pages and Tokens review candidate
+
+The unpublished candidate `aee823edd9f9c13a7e0dc957ff13d1b0f628cb46` freezes the batch and EasyProtoMocks revision 281 ahead of chat design work. The isolated archive passed a pinned offline install and all 16 macOS checks. The portable snapshot reopened and matched the bundled token export. Independent sign-off is pending. [Review handoff](../evidence/pages-tokens-review/review.md) · [Candidate bundle](../evidence/pages-tokens-review/candidate.bundle)
+
+## Chat dock mock
+
+The live EasyProtoMocks **Chat dock** page contains four artboards captured at revision 340. The composer stays pinned below the scrolling conversation. The interactive copy demonstrates the simulated attach, stream, Apply, Undo, Stop, Discard and stale-proposal states, plus the revised Home, footer Settings, and Chat controls. [Design handoff](dogfooding.md#chat-dock-walkthrough) · [Interactive mock](../evidence/chat-dock/chat-dock.html)
+
+## Shared select
+
+The token editor uses a reusable Select with a bordered field and a quiet toolbar variant. All 16 macOS checks passed in the Select iteration, including keyboard selection and Escape in the desktop field. [Design guidance](design-guidance.md#select-controls) · [Desktop checks](../evidence/shared-select/verify.log)
+
+## Workspace and desktop chat
+
+EasyProtoMocks groups the 19 artboards by flow. The identical settings copy is in Archive and the Eggs page remains available. At revision 332 the project check confirmed unchanged artboard identities, sizes, and source digests. Revision 340 updates the four Chat dock mocks. [Verified layout](../evidence/mock-project-organization/layout.json) · [Mock revisions](dogfooding.md#chat-dock-walkthrough)
+
+In the desktop app, the Easy Proto header button returns Home, Settings sits at the bottom left, and Chat is visibly active while the drawer is open. The **Local demo** streams a response and proposes one headline change to an attached artboard. Apply commits to the existing project history, and Undo restores the original. Chat state is scoped to the current project activation for the session. The app reopened on EasyProtoMocks revision 340. [Desktop review state](../evidence/desktop-chat/desktop-chat-review.png) · [Running app check](../evidence/desktop-chat/live-app.json)
+
+All 17 desktop and storage checks passed on Apple Silicon macOS with Electron 45.3.2. The working-tree Security consultation found a Stop timing race between streaming and proposal. The fix lets the current turn cancel in either phase, and the desktop check confirms Apply cannot commit afterward. The suite also covers project switching, stale artboard proposals, duplicate Apply, and Undo. The installed Codex build completed an isolated stdio initialization. Authenticated provider turns and packaged-app behavior are still open. [Desktop verification](../evidence/desktop-chat/verify.log) · [Chat architecture](chat-architecture.md)
+
+## Logo workshop
+
+**Fold**, **Stack**, and **Focus** each have Light and Dark SVGs. Chromium rendered all three at 16, 24, and 48 px in both themes. The design recommendation is Fold, whose clipped corner and inset step hold up at 16 px. The comparison is ready for selection. [Comparison](../evidence/logo-workshop/index.html) · [Verification](../evidence/logo-workshop/checks.json)
+
+## Local browser sharing
+
+Run `pnpm web:dev` and sign in as `owner@example.test` using the Local inbox. The TanStack prototype shares a synthetic canvas or one artboard with optional phone and laptop frames. Two Node and Chromium checks cover single-use same-browser sign-in, unchanged artboard viewport dimensions during browser zoom, preview isolation, one-board scope, and immediate revocation on the next request. [Demo and commands](../web/README.md) · [Browser verification](../evidence/tanstack-web/verify.log)
+
+Architecture and Security consulted on immutable exports, scoped preview access and signed-in publishers. The prototype uses in-memory state and synthetic email. The next web task is to connect one real desktop snapshot to the staged Workers, D1 and private R2 workflow. Production mail, optional passwords, and live published HTML/CSS require their own verification. [Sharing architecture](web-sharing-architecture.md)
+
+## Shared UI and Codex experiment
+
+The selected **Fold** mark is shared by the desktop and browser headers and their favicon assets. EasyProtoMocks revision 352 shows it in the four chat mockups. The pnpm workspace keeps the desktop at the root, the TanStack Router app in `web/`, and the shared Brand and Select in `packages/ui/`. [Shared mark](../packages/ui/fold.svg) · [Mock capture](../evidence/chat-dock/chat-dock-attach.png)
+
+The opt-in Codex adapter can propose a headline replacement in the desktop. The installed Codex binary and Electron passed the loopback fixture check for proposal, cancellation, Apply, and Undo. The development app continues to use Local demo unless it is launched with explicitly configured credentials. The next chat check is one live API-key turn in a disposable project, followed by review of the packaged launch. [Synthetic evidence](../evidence/codex-compatibility/turn.log) · [Setup and verification](chat-architecture.md#opt-in-codex-experiment)
+
+## ChatGPT plan sign-in
+
+The first ChatGPT plan sign-in used the chat drawer, the system browser, and the installed qualified Codex. The saved account was encrypted in the local app profile. The current agent setup moves those controls to Home. EasyProtoMocks revision 356 contains the entry-point mock. [Desktop entry point](../evidence/chatgpt-sign-in/before-sign-in.png) · [Integration decision](chat-architecture.md#sign-in-with-chatgpt)
+
+All 22 automated checks passed on Apple Silicon macOS after a rerun of the existing canvas pan check. The ChatGPT fixtures verify callback binding and account identity, permit turns only with the plan grant, serialize token rotation and disconnect, and exercise the installed Codex request and edit approval. The live test used a disposable profile and a synthetic artboard. After the user approved ChatGPT plan usage, installed Codex returned the requested headline. The artboard stayed at revision 0 through review, Apply committed revision 1, and Undo restored the original headline at revision 2. The regular development app reopened on EasyProtoMocks revision 356. [Automated verification](../evidence/chatgpt-sign-in/verify.log) · [Live result](../evidence/chatgpt-sign-in/live-turn.json) · [Running app](../evidence/chatgpt-sign-in/live-desktop.json)
+
+## Agent profiles mock
+
+The **Agents** page in live EasyProtoMocks revision 367 contains eight screens for Home, provider setup, profile management, and selection in Chat. The offline interactive mock demonstrates multiple named Codex and Claude profiles, per-project selection, and reconnecting on Home. The composer places the upward-opening agent picker just before the icon-only paperclip. The preview uses synthetic auth and replies. [Dogfooding evidence](dogfooding.md#agents-on-home)
+
+## Home agent profiles implementation
+
+The desktop implements the approved EasyProtoMocks revision 367 flow. Home manages named Codex and Claude profiles. Codex uses ChatGPT browser sign-in, and Claude uses installed Claude Code with an Anthropic API key. Existing Codex sign-in migrates into the local encrypted profile store. Chat uses an upward-opening provider picker immediately left of the paperclip. **Manage agents** takes the user to Home. Project selection and per-agent display history stay scoped to the current app session. [Setup and verification commands](../readme.md#try-the-chat-drawer) · [Implementation decision](chat-architecture.md#home-agent-profiles)
+
+All 26 checks passed on Apple Silicon macOS 27.0.1 with both native runtime fixtures enabled. The desktop fixture verified profile setup, rename, the renderer's Home-only configuration boundary, picker placement and grouping, and independent histories across profiles and copied projects. The settings fixtures verified migration failure recovery and independent credentials. Installed Codex 0.167.0-alpha.4.1 and Claude Code 2.1.325 used synthetic provider responses. Security was consulted on credential and project boundaries during implementation. Live provider sign-in and inference through the new Home flow remain to be exercised with user credentials. [Home screenshot](../evidence/agent-profiles/agents-home.png) · [Chat picker](../evidence/agent-profiles/chat-agent-picker.png) · [Verification log](../evidence/agent-profiles/verify.log)
+
+The development app was restarted on EasyProtoMocks revision 367 and verified over MCP. The next bounded check is one live turn per provider through the new Home flow, followed by disconnecting one of two named profiles and confirming the other still works. [Running app check](../evidence/agent-profiles/live-desktop.json)
+
+The agent picker now uses an inline name and caret. The focused macOS Electron check verified the borderless trigger, the menu above it, and profile selection. The updated app is running on EasyProtoMocks revision 369. [Desktop screenshot](../evidence/inline-agent-picker/chat-agent-picker.png) · [Verification log](../evidence/inline-agent-picker/verify.log)
+
+The Git fixture is a compact copy of the revision 369 designs. The running EasyProtoMocks working copy retains its full history. The prior published checkpoint is recoverable from Git. [Fixture workflow](dogfooding.md)

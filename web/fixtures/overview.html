@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Overview</title>
+    <style>
+      * { box-sizing: border-box }
+      body { margin: 0; color: #17232e; background: #edf4f0; font: 16px system-ui, sans-serif }
+      header { padding: 32px 5%; border-bottom: 1px solid #b9ccc0; font-weight: 700 }
+      main { margin: 8vh auto; max-width: 88%; }
+      h1 { font-size: clamp(30px, 6vw, 70px); margin: 0 0 16px; letter-spacing: -.05em }
+      p { margin: 0 0 40px; color: #4d6355; font-size: clamp(14px, 1.8vw, 20px) }
+      section { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px }
+      article { background: white; padding: clamp(16px, 3vw, 40px); border-radius: 12px }
+      strong { display: block; font-size: clamp(20px, 3vw, 40px); margin-top: 12px }
+    </style>
+  </head>
+  <body>
+    <header>Field Notes</header>
+    <main>
+      <h1>Good morning, Sam.</h1>
+      <p>Here’s what happened in your garden this week.</p>
+      <section aria-label="Garden activity">
+        <article>Watered<strong>12</strong></article>
+        <article>Seeds sown<strong>24</strong></article>
+        <article>Ready to pick<strong>3</strong></article>
+      </section>
+    </main>
+  </body>
+</html>

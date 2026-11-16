@@ -1,0 +1,12 @@
+.ep-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.ep-fold-mark {
+  flex: none;
+  width: 22px;
+  height: 22px;
+}

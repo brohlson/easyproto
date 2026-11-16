@@ -19,6 +19,7 @@ Build a macOS-first personal desktop workspace for agent-created HTML/CSS mockup
 
 - For user-facing layout or interaction changes, start or update the relevant artboard in [EasyProtoMocks](mocks/EasyProtoMocks/) before implementing the interface. Use the [dogfooding workflow](docs/dogfooding.md) and [desktop design guidance](docs/design-guidance.md).
 - Make mockup changes through Easy Proto's MCP tools or canvas controls. Reuse an existing artboard when iterating, then capture and inspect the committed revision before translating it into production code.
+- Author the desktop design system in the `desktop` token group in EasyProtoMocks using MCP. Run `pnpm tokens:sync` to carry the committed group into the app build. Use semantic variables for new desktop styles. See [desktop tokens](docs/design-guidance.md#desktop-tokens).
 - When drafting edits to an existing artboard, use `set_artboard_activity` with a new activity ID and `working`. Renew it before the two-minute lease expires and send `idle` with the same ID when done.
 - Record friction encountered in the tool and the specific capability that was missing. Continue the requested work if the tool is unavailable, and record which design check still needs to happen in Easy Proto.
 

@@ -1,17 +1,22 @@
 import { randomUUID } from "node:crypto";
-import { realpath } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import {
   Menu,
   nativeTheme,
   app,
   BrowserWindow,
+  clipboard,
+  safeStorage,
+  shell,
   dialog,
   ipcMain,
   session,
   type IpcMainInvokeEvent,
 } from "electron";
 import { z } from "zod";
+import { agentAction, agentId } from "../shared/agents";
+import { chatPromptLimit } from "../shared/chat";
 import {
   artboardIds,
   commandSchema,
@@ -19,13 +24,21 @@ import {
   id,
   ipc,
   projectName,
+  revision,
   type DesktopState,
 } from "../shared/model";
 import { ArtboardActivity } from "./activity";
+import { ProjectChat, type ChatMemory } from "./chat";
+import { AgentProfiles, demoAgentId, keyAgentId } from "./agents";
+import { configuredCodex, installedCodex } from "./codex";
+import { installedClaude } from "./claude";
+import { colorToHex, tokenByteLimit } from "../shared/token-types";
+import desktopTokens from "../renderer/design.tokens.json";
 import { listen, type ActiveProject } from "./mcp";
 import { chromeUrl, Preview, securePreferences } from "./preview";
-import { Project, ProjectError } from "./project";
+import { Project, ProjectError, readRegular } from "./project";
 import { RecentProjects } from "./recent-projects";
+import { parseTokenDocument } from "./tokens";
 
 const projectOption = process.argv
   .find((arg) => arg.startsWith("--project="))
@@ -44,7 +57,62 @@ function allowSender(event: IpcMainInvokeEvent, window: BrowserWindow) {
 
 async function start() {
   const recent = await RecentProjects.load(join(app.getPath("userData"), "recent-projects.json"));
-  let active: ActiveProject | undefined;
+  const profileDir = app.getPath("userData");
+  const agentsPath = join(profileDir, "agent-profiles.bin");
+  const legacyPath = join(profileDir, "chatgpt-account.bin");
+  const [codex, claude] = await Promise.all([installedCodex(), installedClaude()]);
+  async function decrypt(path: string) {
+    try {
+      return safeStorage.decryptString(await readFile(path));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+  }
+  const agents = await AgentProfiles.load(
+    {
+      read: () => decrypt(agentsPath),
+      legacy: () => decrypt(legacyPath),
+      finishMigration: () => rm(legacyPath, { force: true }),
+      async write(record) {
+        if (!safeStorage.isEncryptionAvailable())
+          throw new Error("Unlock your macOS keychain to save an agent.");
+        const staging = agentsPath + "." + randomUUID();
+        try {
+          await writeFile(staging, safeStorage.encryptString(record), {
+            flag: "wx",
+            mode: 0o600,
+            flush: true,
+          });
+          await rename(staging, agentsPath);
+        } catch {
+          throw new Error("Could not save the agent profiles.");
+        } finally {
+          await rm(staging, { force: true }).catch(() => undefined);
+        }
+      },
+    },
+    {
+      codex,
+      claude,
+      demo: process.env.EASY_PROTO_CHAT_DEMO === "1",
+      experimental: configuredCodex(),
+      open: async (url) => {
+        await shell.openExternal(url).catch(() => {
+          throw new Error("Easy Proto could not open your browser.");
+        });
+      },
+    },
+  ).catch(() => undefined);
+  const agentState = () =>
+    agents?.status ?? {
+      profiles: [],
+      codexInstalled: false,
+      claudeInstalled: false,
+      message: "Agent profiles are unavailable. Unlock your macOS keychain and reopen Easy Proto.",
+    };
+  const conversations = new Map<string, ChatMemory>();
+  let active: (ActiveProject & { chat: ProjectChat }) | undefined;
   if (projectOption) {
     try {
       active = activate(await Project.open(resolve(projectOption)));
@@ -62,13 +130,40 @@ async function start() {
     ).catch(() => undefined);
     if (legacy) await remember(legacy);
   }
-  function activate(project: Project): ActiveProject {
+  function activate(project: Project): ActiveProject & { chat: ProjectChat } {
     const lifetime = new AbortController();
+    const activationId = randomUUID();
+    const key = JSON.stringify([project.root, project.snapshot.manifest.projectId]);
+    const memory = conversations.get(key) ?? { history: new Map() };
+    conversations.delete(key);
+    conversations.set(key, memory);
+    if (conversations.size > 32) conversations.delete(conversations.keys().next().value!);
     return {
       project,
-      activationId: randomUUID(),
+      activationId,
       signal: lifetime.signal,
       activity: new ArtboardActivity(lifetime.signal, changed),
+      chat: new ProjectChat(
+        project,
+        lifetime.signal,
+        (state) => {
+          if (active?.activationId !== activationId || window.isDestroyed()) return;
+          try {
+            window.webContents.send(ipc.chatChanged, { generation, ...state });
+          } catch {
+            // A reloaded renderer reads the current chat state when it mounts.
+          }
+        },
+        () => {
+          if (active?.activationId === activationId) changed();
+        },
+        memory,
+        (id) => {
+          if (!agents) throw new Error("Agent profiles are unavailable.");
+          return agents.provider(id);
+        },
+        agents?.defaultAgent,
+      ),
       retire: () => lifetime.abort(),
     };
   }
@@ -83,6 +178,12 @@ async function start() {
   const isolatedSession = session.fromPartition("easy-proto");
   const preview = new Preview(isolatedSession);
   await preview.install(join(app.getAppPath(), "dist", "ui"));
+  const theme = nativeTheme.shouldUseDarkColors ? "dark" : "light";
+  const chromeColor = parseTokenDocument(JSON.stringify(desktopTokens)).rows.find(
+    ({ path }) => path === `desktop.${theme}.background`,
+  )?.resolved;
+  if (typeof chromeColor !== "object" || !("colorSpace" in chromeColor))
+    throw new Error("The desktop background token is missing.");
   const window = new BrowserWindow({
     title: "Easy Proto",
     width: 1180,
@@ -90,7 +191,7 @@ async function start() {
     minWidth: 660,
     minHeight: 480,
     show: false,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#2c2c2c" : "#ffffff",
+    backgroundColor: colorToHex(chromeColor),
     webPreferences: {
       ...securePreferences,
       session: isolatedSession,
@@ -103,16 +204,20 @@ async function start() {
     if (!active) return { view: "home", sceneVersion, projects };
     const { project, activity } = active;
     const snapshot = preview.scene(project, generation);
+    const pageLayout = project.pageLayout;
     return {
       ...snapshot,
+      ...pageLayout,
       view: "project",
       sceneVersion,
       name: project.name,
+      tokenDigest: project.snapshot.tokens?.stamp.documentDigest,
       canUndo: project.canUndo,
       canRedo: project.canRedo,
       projects,
       artboards: snapshot.artboards.map((board) => ({
         ...board,
+        pageId: board.pageId ?? pageLayout.defaultPageId,
         agentWorking: activity.isWorking(board.id),
       })),
     };
@@ -237,6 +342,121 @@ async function start() {
     allowSender(event, window);
     return scene();
   });
+  ipcMain.handle(ipc.agents, async (event, raw: unknown) => {
+    allowSender(event, window);
+    const action = agentAction.safeParse(raw);
+    if (!action.success) throw new Error("Check the agent name and connection details.");
+    if (action.data.action === "status") return agentState();
+    if (!agents) throw new Error("Agent profiles are unavailable.");
+    if (active || switching) throw new Error("Manage agent connections from Home.");
+    try {
+      return await agents.action(action.data);
+    } finally {
+      if (!window.isDestroyed()) window.webContents.send(ipc.agentsChanged, agentState());
+    }
+  });
+  ipcMain.handle(ipc.chatSelect, (event, generation: unknown, input: unknown) => {
+    allowSender(event, window);
+    activeGeneration(generation);
+    return active!.chat.select(
+      z.union([agentId, z.literal(demoAgentId), z.literal(keyAgentId)]).parse(input),
+    );
+  });
+  ipcMain.handle(ipc.chat, (event, generation: unknown) => {
+    allowSender(event, window);
+    activeGeneration(generation);
+    return active!.chat.state;
+  });
+  ipcMain.handle(ipc.chatStart, (event, generation: unknown, input: unknown) => {
+    allowSender(event, window);
+    activeGeneration(generation);
+    return active!.chat.start(
+      z
+        .strictObject({
+          artboardId: id,
+          expectedRevision: revision,
+          prompt: z.string().trim().min(1).max(chatPromptLimit),
+        })
+        .parse(input),
+    );
+  });
+  ipcMain.handle(
+    ipc.chatDecide,
+    (event, generation: unknown, turnId: unknown, decision: unknown) => {
+      allowSender(event, window);
+      activeGeneration(generation);
+      return active!.chat.decide(
+        id.parse(turnId),
+        z.enum(["apply", "discard", "stop"]).parse(decision),
+      );
+    },
+  );
+  ipcMain.handle(ipc.tokens, (event, generation: unknown) => {
+    allowSender(event, window);
+    return activeGeneration(generation).tokenView;
+  });
+  ipcMain.handle(ipc.copyTokenCss, (event, generation: unknown, path: unknown) => {
+    allowSender(event, window);
+    const project = activeGeneration(generation);
+    const name = z.string().max(400).parse(path);
+    const row = project.tokenView.rows.find(({ path }) => path === name);
+    if (!row) throw new Error("That token is no longer in the project.");
+    clipboard.writeText(`var(${row.cssName})`);
+  });
+  ipcMain.handle(ipc.importTokens, async (event, generation: unknown) => {
+    allowSender(event, window);
+    activeGeneration(generation);
+    const { canceled, filePaths } = await dialog.showOpenDialog(window, {
+      title: "Import design tokens",
+      properties: ["openFile"],
+      filters: [{ name: "Design tokens", extensions: ["json", "tokens"] }],
+    });
+    if (canceled || !filePaths[0]) return null;
+    activeGeneration(generation);
+    let document: string;
+    try {
+      document = new TextDecoder("utf-8", { fatal: true }).decode(
+        await readRegular(filePaths[0], tokenByteLimit),
+      );
+    } catch {
+      throw new Error("Choose a regular UTF-8 JSON file of at most 128 KiB.");
+    }
+    activeGeneration(generation);
+    return document;
+  });
+  ipcMain.handle(ipc.exportTokens, async (event, generation: unknown, input: unknown) => {
+    allowSender(event, window);
+    const format = z.enum(["json", "css"]).parse(input);
+    const view = activeGeneration(generation).tokenView;
+    const { canceled, filePath } = await dialog.showSaveDialog(window, {
+      title: "Export committed tokens",
+      defaultPath: format === "json" ? "design.tokens.json" : "tokens.css",
+      filters: [{ name: format === "json" ? "Design tokens" : "Stylesheet", extensions: [format] }],
+    });
+    if (canceled || !filePath) return;
+    activeGeneration(generation);
+    // Generated project files are published only through the command service.
+    const destination = await realpath(dirname(filePath));
+    if (
+      destination.toLowerCase().split(/[\\/]/).includes(".easy-proto") ||
+      basename(filePath).toLowerCase() === "project.json"
+    )
+      throw new Error("Choose an export location outside the managed project files.");
+    activeGeneration(generation);
+    const staging = join(destination, `.easy-proto-export-${randomUUID()}`);
+    try {
+      await writeFile(staging, format === "json" ? view.document : view.css, {
+        flag: "wx",
+        flush: true,
+      });
+      activeGeneration(generation);
+      await rename(staging, join(destination, basename(filePath)));
+    } catch {
+      throw new Error("The token export could not be saved.");
+    } finally {
+      await rm(staging, { force: true }).catch(() => undefined);
+    }
+  });
   ipcMain.handle(ipc.copy, (event, generation: unknown, ids: unknown, clipboardId: unknown) => {
     allowSender(event, window);
     const project = activeGeneration(generation);
@@ -257,7 +477,7 @@ async function start() {
     try {
       const project = activeGeneration(selectedGeneration);
       const commit = await project.execute(command);
-      if (active?.project === project) {
+      if (active?.project === project && "artboard" in commit) {
         for (const { id } of commit.artboards ?? [commit.artboard]) {
           if (!project.snapshot.sources.has(id)) active.activity.clearLeases(id);
         }
@@ -266,7 +486,7 @@ async function start() {
       return commit;
     } catch (error) {
       if (error instanceof ProjectError) throw new Error(error.message);
-      throw new Error("The artboard layout could not be saved.");
+      throw new Error("The project change could not be saved.");
     }
   });
 
@@ -288,7 +508,10 @@ async function start() {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }, { role: "windowMenu" }]),
   );
-  window.on("closed", () => active?.retire());
+  window.on("closed", () => {
+    active?.retire();
+    agents?.cancel();
+  });
   window.once("ready-to-show", () => window.show());
   await window.loadURL(chromeUrl);
 }

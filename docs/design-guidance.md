@@ -9,3 +9,19 @@ The desktop uses Figma-inspired neutral surfaces, Geist’s crisp type hierarchy
 - Provide visible keyboard focus, plain-language feedback, and a keyboard path for pointer controls. Expand small pointer targets to at least 24 CSS pixels. Check default, hover, active, selected, disabled and error states when the change affects them. [Vercel Web Interface Guidelines](https://vercel.com/design/guidelines) · [shadcn/ui dark mode](https://ui.shadcn.com/docs/dark-mode)
 
 For reviews, include the default and minimum window sizes, light and dark screenshots, and the keyboard sequence for the changed task. Inspect whether the design holds at different canvas zoom levels. If a control has a visual mark smaller than its active area, check the actual hit area in screen pixels.
+
+## Desktop tokens
+
+Maintain the `desktop` group in EasyProtoMocks through `get_tokens` and `replace_project_tokens`. Keep both theme groups complete. Reference semantic roles such as `desktop.light.background` in consumers and let them alias the neutral palette. Use the shared typography, spacing, shape, opacity and motion scales for new desktop controls. Keep independent artboard presentation and component-specific geometry in their own styles.
+
+With EasyProtoMocks open and the local MCP connection configured, run `pnpm tokens:sync` to export the committed desktop group into `src/renderer/design.tokens.json`. Run `pnpm build` to compile the export with Style Dictionary. The build checks that the desktop stylesheet's token references exist. The export ships with the app, so Home and the native window can use the theme before a project opens. Project token changes affect project previews immediately. They reach the desktop theme after you sync the approved group and rebuild.
+
+The **Design system · Desktop tokens** artboard in EasyProtoMocks previews both theme palettes and common controls. Check that artboard before syncing changes to the app. Inspect the app itself to verify the bundled Inter font and keyboard focus treatment.
+
+## Select controls
+
+Use the shared [Select component](../packages/ui/select.tsx) for single-choice fields. The default field has a subtle border. Use the quiet variant for a compact toolbar control. Both variants share option spacing, a trailing checkmark and the focus ring. They keep the browser's keyboard behavior. HTML mockups can use the same [select stylesheet](../packages/ui/select.css) with a named native select. [Chromium customizable select](https://developer.chrome.com/blog/a-customizable-select)
+
+## Fold mark
+
+Use the shared [Brand component](../packages/ui/brand.tsx) in application headers. Fold uses the foreground color in both themes and pairs with the Easy Proto wordmark. The clipped corner and inset step come from the Easy Proto logo workshop. Use the same [Fold vector](../packages/ui/fold.svg) for the favicon.

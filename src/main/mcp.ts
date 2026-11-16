@@ -4,7 +4,15 @@ import { z } from "zod";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { boardInput, boardPatch, envelope, id, revision, type Command } from "../shared/model";
+import {
+  createArtboardInput,
+  boardPatch,
+  envelope,
+  id,
+  revision,
+  type Command,
+} from "../shared/model";
+import { tokenByteLimit } from "../shared/token-types";
 import { activityLeaseMs, type ArtboardActivity } from "./activity";
 import { Project, ProjectError } from "./project";
 import type { Preview } from "./preview";
@@ -109,9 +117,36 @@ function tools(
           revision,
           name: project.name,
           assetDigest: project.assetDigest,
+          tokenDigest: project.snapshot.tokens?.stamp.documentDigest,
+          ...project.pageLayout,
           artboards,
         });
       }),
+  );
+
+  server.registerTool(
+    "get_tokens",
+    {
+      description: "Read the committed project-wide DTCG document and generated CSS.",
+      inputSchema: projectScope,
+    },
+    ({ projectId, activationId }) =>
+      call(() => result(active(projectId, activationId).project.tokenView)),
+  );
+
+  server.registerTool(
+    "replace_project_tokens",
+    {
+      description: "Validate and replace the complete project-wide DTCG token document.",
+      inputSchema: envelope.extend({
+        activationId: id,
+        document: z.string().max(tokenByteLimit),
+      }).shape,
+    },
+    ({ document, ...identity }) =>
+      call(() =>
+        commit({ ...identity, operation: "replace_project_tokens", arguments: { document } }),
+      ),
   );
 
   server.registerTool(
@@ -136,8 +171,8 @@ function tools(
     "create_artboard",
     {
       description:
-        "Commit a new HTML/CSS artboard. Reuse the same command ID and arguments only when retrying.",
-      inputSchema: envelope.extend({ activationId: id, arguments: boardInput }),
+        "Commit a new HTML/CSS artboard on the specified page or the project default. Reuse the same command ID and arguments only when retrying.",
+      inputSchema: envelope.extend({ activationId: id, arguments: createArtboardInput }),
     },
     (request) => call(() => commit({ ...request, operation: "create_artboard" })),
   );

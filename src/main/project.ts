@@ -13,6 +13,8 @@ import {
 } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { z } from "zod";
+import { tokenByteLimit } from "../shared/token-types";
+import { compileTokens, loadTokens, TokenError, type TokenBundle } from "./tokens";
 import {
   boardInput,
   artboardLimit,
@@ -27,6 +29,8 @@ import {
   type Artboard,
   type Commit,
   type Manifest,
+  type Page,
+  type PageLayout,
   type Source,
 } from "../shared/model";
 
@@ -56,13 +60,21 @@ function canonical(value: unknown): string {
   return JSON.stringify(value);
 }
 
-export type Snapshot = { manifest: Manifest; sources: ReadonlyMap<string, Source> };
+export type Snapshot = {
+  manifest: Manifest;
+  sources: ReadonlyMap<string, Source>;
+  tokens?: TokenBundle;
+};
 type BoardInput = z.infer<typeof boardInput>;
 type ArtboardState = { board: Artboard; source: Source };
 type HistoryChange = { index: number } & (
   | { before?: ArtboardState; after: ArtboardState }
   | { before: ArtboardState; after?: never }
 );
+type HistoryEntry =
+  | HistoryChange[]
+  | { page: { before?: Page; after: Page } }
+  | { tokens: { before?: TokenBundle; after: TokenBundle } };
 const historyLimit = 50;
 export type Asset = { bytes: Buffer; mime: string };
 const assetTypes = new Map([
@@ -82,11 +94,13 @@ const pointerSchema = z.strictObject({
   snapshot: id,
 });
 const managed = ".easy-proto";
+const tokenDocument = "design.tokens.json";
+const tokenStylesheet = "tokens.css";
 const projectLabel = z.strictObject({ name: projectName });
 const prepareBytes = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
 
-async function readRegular(path: string, max: number) {
+export async function readRegular(path: string, max: number) {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = await file.stat();
@@ -149,11 +163,12 @@ async function readAssets(root: string) {
   return assets;
 }
 
-function metadata(artboardId: string, atRevision: number, input: BoardInput) {
+function metadata(artboardId: string, atRevision: number, input: BoardInput, pageId?: string) {
   const { html, css, ...bounds } = input;
   const artboard: Artboard = {
     ...bounds,
     id: artboardId,
+    ...(pageId && { pageId }),
     sourceRevision: atRevision,
     sourceDigest: digest(canonical({ html, css })),
     htmlRef: `${artboardId}.html`,
@@ -251,6 +266,7 @@ function applyHistory(
   boards: Artboard[],
   sources: Map<string, Source>,
   atRevision: number,
+  defaultPageId?: string,
 ) {
   return entry.map((change) => {
     const id = (change.after ?? change.before).board.id;
@@ -265,12 +281,19 @@ function applyHistory(
     }
     const sourceRevision =
       current?.sourceDigest === target.board.sourceDigest ? current.sourceRevision : atRevision;
-    const board = { ...target.board, sourceRevision };
+    const pageId = target.board.pageId ?? defaultPageId;
+    const board = { ...target.board, sourceRevision, ...(pageId && { pageId }) };
     if (current) boards[index] = board;
     else boards.splice(change.index, 0, board);
     sources.set(id, target.source);
     return board;
   });
+}
+
+function defaultPageLayout(projectId: string): PageLayout {
+  const hash = digest(`easy-proto:default-page:${projectId}`);
+  const id = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-8${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+  return { defaultPageId: id, pages: [{ id, name: "Page 1" }] };
 }
 
 function starter(): Snapshot {
@@ -312,10 +335,20 @@ async function load(root: string): Promise<Snapshot> {
   ) {
     throw new Error("Project pointer and revision disagree.");
   }
+  const { pageLayout } = manifest;
+  const pageIds = new Set(pageLayout?.pages.map(({ id }) => id));
+  if (
+    manifest.schemaVersion >= 4 !== Boolean(pageLayout) ||
+    (manifest.schemaVersion < 5 && manifest.tokens !== undefined) ||
+    (pageLayout &&
+      (pageIds.size !== pageLayout.pages.length || !pageIds.has(pageLayout.defaultPageId)))
+  )
+    throw new Error("Invalid project pages.");
   const sources = new Map<string, Source>();
   for (const board of manifest.artboards) {
     if (
       sources.has(board.id) ||
+      (board.pageId === undefined ? manifest.schemaVersion >= 4 : !pageIds.has(board.pageId)) ||
       board.htmlRef !== `${board.id}.html` ||
       board.cssRef !== `${board.id}.css` ||
       board.sourceRevision > manifest.revision
@@ -331,29 +364,44 @@ async function load(root: string): Promise<Snapshot> {
   }
   const commands = new Set<string>();
   for (const { result } of manifest.commands) {
-    const affected = result.artboards ?? [result.artboard];
     if (
       commands.has(result.commandId) ||
       result.projectId !== manifest.projectId ||
       result.revision < 1 ||
-      result.revision > manifest.revision ||
-      (manifest.schemaVersion === 1 && !sources.has(result.artboard.id)) ||
-      (result.artboards &&
-        (manifest.schemaVersion !== 3 ||
-          canonical(result.artboard) !== canonical(affected[0]) ||
-          new Set(affected.map(({ id }) => id)).size !== affected.length)) ||
-      affected.some(
-        (board) =>
-          board.htmlRef !== `${board.id}.html` ||
-          board.cssRef !== `${board.id}.css` ||
-          board.sourceRevision > result.revision,
-      )
+      result.revision > manifest.revision
     ) {
       throw new Error("Invalid command history.");
     }
+    if ("artboard" in result) {
+      const affected = result.artboards ?? [result.artboard];
+      if (
+        (manifest.schemaVersion === 1 && !sources.has(result.artboard.id)) ||
+        (result.artboards &&
+          (manifest.schemaVersion < 3 ||
+            canonical(result.artboard) !== canonical(affected[0]) ||
+            new Set(affected.map(({ id }) => id)).size !== affected.length)) ||
+        affected.some(
+          (board) =>
+            (board.pageId !== undefined && manifest.schemaVersion < 4) ||
+            board.htmlRef !== `${board.id}.html` ||
+            board.cssRef !== `${board.id}.css` ||
+            board.sourceRevision > result.revision,
+        )
+      )
+        throw new Error("Invalid artboard command history.");
+    } else if (manifest.schemaVersion < ("tokens" in result ? 5 : 4)) {
+      throw new Error("Invalid project command history.");
+    }
     commands.add(result.commandId);
   }
-  return { manifest, sources };
+  const tokens =
+    manifest.tokens &&
+    loadTokens(
+      (await readRegular(join(folder, tokenDocument), tokenByteLimit)).toString("utf8"),
+      (await readRegular(join(folder, tokenStylesheet), tokenByteLimit)).toString("utf8"),
+      manifest.tokens,
+    );
+  return { manifest, sources, tokens };
 }
 
 async function readName(root: string) {
@@ -373,13 +421,17 @@ async function publish(root: string, snapshot: Snapshot, onPhase?: (phase: Commi
   const key = randomUUID();
   const folder = join(root, managed, key);
   const pending = join(root, `.project-${key}.tmp`);
-  const { manifest, sources } = snapshot;
+  const { manifest, sources, tokens } = snapshot;
   const { schemaVersion, projectId, revision } = manifest;
   const serialized = prepareBytes(manifest);
   if (Buffer.byteLength(serialized) > 32 * 1024 * 1024)
     throw new Error("Project history capacity reached.");
   await mkdir(folder);
   try {
+    if (tokens) {
+      await writeFile(join(folder, tokenDocument), tokens.document, { flag: "wx", flush: true });
+      await writeFile(join(folder, tokenStylesheet), tokens.css, { flag: "wx", flush: true });
+    }
     for (const board of manifest.artboards) {
       const data = sources.get(board.id)!;
       await writeFile(join(folder, board.htmlRef), data.html, { flag: "wx", flush: true });
@@ -404,8 +456,8 @@ async function publish(root: string, snapshot: Snapshot, onPhase?: (phase: Commi
 export class Project {
   #tail = Promise.resolve();
   #snapshot: Snapshot;
-  #undo: HistoryChange[][] = [];
-  #redo: HistoryChange[][] = [];
+  #undo: HistoryEntry[] = [];
+  #redo: HistoryEntry[] = [];
   #clipboard?: { id: string; originals: ArtboardState[] };
   readonly assetDigest: string;
 
@@ -481,6 +533,22 @@ export class Project {
     return this.displayName;
   }
 
+  get pageLayout() {
+    const { manifest } = this.#snapshot;
+    return manifest.pageLayout ?? defaultPageLayout(manifest.projectId);
+  }
+
+  get tokenView() {
+    const { tokens, manifest } = this.#snapshot;
+    return {
+      revision: manifest.revision,
+      ...(tokens ? { stamp: tokens.stamp } : {}),
+      document: tokens?.document ?? "{}\n",
+      css: tokens?.css ?? "",
+      rows: tokens?.rows ?? [],
+    };
+  }
+
   get canUndo() {
     return this.#undo.length > 0;
   }
@@ -537,12 +605,54 @@ export class Project {
       const boards = [...manifest.artboards];
       const nextSources = new Map(sources);
       const operation = command.operation;
-      let entry: HistoryChange[];
+      const { defaultPageId, pages } = this.pageLayout;
+      const tokenVersion = manifest.schemaVersion === 5 || operation === "replace_project_tokens";
+      const paged =
+        tokenVersion ||
+        manifest.schemaVersion === 4 ||
+        operation === "create_page" ||
+        operation === "rename_page";
+      const pageOf = (board: Artboard) => board.pageId ?? defaultPageId;
+      function requirePage(pageId: string) {
+        const page = pages.find(({ id }) => id === pageId);
+        if (!page)
+          throw new ProjectError("PAGE_NOT_FOUND", "The destination page no longer exists.");
+        return page;
+      }
+      let entry: HistoryEntry;
       if (operation === "undo" || operation === "redo") {
         const history = operation === "undo" ? this.#undo : this.#redo;
         const saved = history.at(-1);
         if (!saved) throw new ProjectError("HISTORY_EMPTY", `Nothing to ${operation}.`);
         entry = saved;
+      } else if (operation === "create_page") {
+        entry = { page: { after: { id: randomUUID(), name: command.arguments.name } } };
+      } else if (operation === "rename_page") {
+        const before = requirePage(command.arguments.pageId);
+        entry = { page: { before, after: { ...before, name: command.arguments.name } } };
+      } else if (operation === "replace_project_tokens") {
+        try {
+          entry = {
+            tokens: {
+              before: this.#snapshot.tokens,
+              after: await compileTokens(command.arguments.document),
+            },
+          };
+        } catch (error) {
+          if (error instanceof TokenError) throw new ProjectError("INVALID_TOKENS", error.message);
+          throw error;
+        }
+      } else if (operation === "move_artboards_to_page") {
+        const { artboardIds, pageId } = command.arguments;
+        requirePage(pageId);
+        const selected = readBoards(this.#snapshot, artboardIds);
+        if (selected.some(({ before }) => pageOf(before.board) === pageId))
+          throw new ProjectError("PAGE_UNCHANGED", "A selected artboard is already on that page.");
+        entry = selected.map(({ index, before }) => ({
+          index,
+          before,
+          after: { ...before, board: { ...before.board, pageId } },
+        }));
       } else if (operation === "delete_artboard" || operation === "delete_artboards") {
         entry = readBoards(
           this.#snapshot,
@@ -579,28 +689,45 @@ export class Project {
           ...previous.before.source,
           ...patch,
         });
-        const { artboard, source } = metadata(artboardId, atRevision, input);
+        const { artboard, source } = metadata(
+          artboardId,
+          atRevision,
+          input,
+          previous.before.board.pageId,
+        );
         entry = [{ ...previous, after: { board: artboard, source } }];
       } else {
         let inputs: BoardInput[];
+        let destination = defaultPageId;
         if (operation === "create_artboard") {
-          inputs = [command.arguments];
+          const { pageId = defaultPageId, ...input } = command.arguments;
+          requirePage(pageId);
+          destination = pageId;
+          inputs = [input];
         } else {
           let originals: ArtboardState[];
           if (operation === "paste_artboard") {
             if (this.#clipboard?.id !== command.arguments.clipboardId)
               throw new ProjectError("CLIPBOARD_EMPTY", "Copy an artboard in this project first.");
             originals = this.#clipboard.originals;
+            destination = command.arguments.pageId ?? defaultPageId;
+            requirePage(destination);
           } else {
             const ids =
               operation === "duplicate_artboard"
                 ? [command.arguments.artboardId]
                 : command.arguments.artboardIds;
             originals = readBoards(this.#snapshot, ids).map(({ before }) => before);
+            destination = pageOf(originals[0].board);
+            if (originals.some(({ board }) => pageOf(board) !== destination))
+              throw new ProjectError(
+                "PAGE_MISMATCH",
+                "Select artboards from one page to duplicate.",
+              );
           }
           const offset = copyOffset(
             originals.map(({ board }) => board),
-            boards,
+            boards.filter((board) => pageOf(board) === destination),
           );
           inputs = originals.map((original) => copyInput(original, offset));
         }
@@ -610,36 +737,80 @@ export class Project {
             `This slice supports up to ${artboardLimit} artboards.`,
           );
         entry = inputs.map((input, index) => {
-          const { artboard, source } = metadata(randomUUID(), atRevision, input);
+          const { artboard, source } = metadata(
+            randomUUID(),
+            atRevision,
+            input,
+            paged ? destination : undefined,
+          );
           return { index: boards.length + index, after: { board: artboard, source } };
         });
       }
-      const affected = applyHistory(entry, operation === "undo", boards, nextSources, atRevision);
-      const result: Commit = {
-        status: "committed",
+      const undo = operation === "undo";
+      const receipt = {
+        status: "committed" as const,
         projectId: command.projectId,
         commandId: command.commandId,
         revision: atRevision,
-        artboard: affected[0],
-        ...(affected.length > 1 ? { artboards: affected } : {}),
       };
+      let nextPages = pages;
+      let nextTokens = this.#snapshot.tokens;
+      let result: Commit;
+      if (Array.isArray(entry)) {
+        const affected = applyHistory(
+          entry,
+          undo,
+          boards,
+          nextSources,
+          atRevision,
+          paged ? defaultPageId : undefined,
+        );
+        result = {
+          ...receipt,
+          artboard: affected[0],
+          ...(affected.length > 1 ? { artboards: affected } : {}),
+        };
+      } else if ("page" in entry) {
+        const { before, after } = entry.page;
+        const page = undo ? before : after;
+        if (before) {
+          nextPages = pages.map((current) =>
+            current.id === after.id ? (page ?? current) : current,
+          );
+        } else {
+          nextPages = undo ? pages.filter(({ id }) => id !== after.id) : [...pages, after];
+        }
+        result = { ...receipt, page: page ?? after };
+      } else {
+        nextTokens = undo ? entry.tokens.before : entry.tokens.after;
+        result = { ...receipt, tokens: nextTokens?.stamp ?? null };
+      }
+      let nextVersion = manifest.schemaVersion;
+      if (tokenVersion) nextVersion = 5;
+      else if (paged) nextVersion = 4;
+      else if ("artboards" in result && result.artboards) nextVersion = 3;
+      else if (
+        nextVersion === 1 &&
+        (operation === "delete_artboard" ||
+          operation === "delete_artboards" ||
+          operation === "undo" ||
+          operation === "redo")
+      )
+        nextVersion = 2;
       const next = {
         manifest: {
           ...manifest,
-          schemaVersion:
-            affected.length > 1 || manifest.schemaVersion === 3
-              ? (3 as const)
-              : operation === "delete_artboard" ||
-                  operation === "delete_artboards" ||
-                  operation === "undo" ||
-                  operation === "redo"
-                ? (2 as const)
-                : manifest.schemaVersion,
+          tokens: nextTokens?.stamp,
+          schemaVersion: nextVersion,
           revision: atRevision,
-          artboards: boards,
+          ...(paged ? { pageLayout: { defaultPageId, pages: nextPages } } : {}),
+          artboards: paged
+            ? boards.map((board) => (board.pageId ? board : { ...board, pageId: defaultPageId }))
+            : boards,
           commands: [...manifest.commands, { digest: fingerprint, result }],
         },
         sources: nextSources,
+        tokens: nextTokens,
       };
       try {
         await publish(this.root, next, this.onPhase);

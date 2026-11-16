@@ -2,6 +2,12 @@
 
 Easy Proto is a macOS desktop canvas for reviewing HTML/CSS mockups made by a coding agent. Each artboard has its own browser viewport. Click an artboard to select it, Shift-click to toggle it in the selection, or drag a box from an empty canvas area to select every artboard it overlaps. Drag or press the arrow keys to move the selection. Use ⌘D to duplicate, ⌘C and ⌘V to copy and paste, and Delete to remove the selected boards. Each edit takes one undo step. Swipe with two fingers, scroll, or hold Space while dragging to pan. Pinch to zoom, and press Shift+0 to fit the canvas. Click an artboard’s dimensions to choose a viewport preset. Use **Appearance** to choose System, Light, or Dark.
 
+Use the current page name beside the project name to switch pages or choose **Add page**. Click the pencil beside a page to rename it, then press Enter to save or Escape to cancel. Select artboards and use **Move to page** in the footer to move them together. ⌘Z undoes a move, page creation, or rename, and ⇧⌘Z redoes it. Projects from earlier builds open on **Page 1**. The app remembers each page’s camera during the open session.
+
+Click **Tokens** to manage shared design tokens. Search by name or type, then click a token name to edit it in its row. Use a token’s **Copy CSS** action and paste the reference into an artboard stylesheet, for example `body { background: var(--ep-color-brand); }`. Artboards using that reference pick up changes across all pages. Close Tokens to undo or redo with the canvas shortcuts. **JSON…** opens the source editor and the import and export actions. Importing fills a draft. **Save tokens** applies it to the project.
+
+This version supports sRGB colors, dimensions in px or rem, numbers, font-family stacks, numeric font weights, durations in ms or s, and whole-token aliases such as `{color.brand}`. Names use lowercase dot-separated paths, for example `space.page-gutter`. Easy Proto saves the DTCG JSON and Style Dictionary CSS together inside the project folder. [Supported format and recovery](docs/decisions/0002-project-commits.md#project-tokens)
+
 ## Install and run
 
 Use Node 24.16.0 and pnpm 10.33.4. The following commands use nvm and Corepack to select the pinned versions.
@@ -17,13 +23,28 @@ pnpm dev
 
 The runtime installer comes from the pinned Electron npm package and fetches the matching official Electron release. `pnpm dev` builds and launches the development app. Rebuild or rerun it after source changes. For a build already on disk, use `pnpm start`.
 
-Home shows the projects you have created or opened on this device. Click a row to reopen it, or use **Create project** and select an empty folder in the macOS picker. Use **Settings** for **Home**, **Open project…**, and **Appearance**. Use **Open project…** to add an existing project or find a folder that moved.
+Home shows the projects you have created or opened on this device. Click a row to reopen it, or use **Create project** and select an empty folder in the macOS picker. Click **Easy Proto** in the header to return Home. The footer’s **Settings** menu has project actions and **Appearance**. Use **Open project…** to add an existing project or find a folder that moved.
 
 Double-click the project name or an artboard title to edit it. Enter or clicking away saves, and Escape cancels. You can also focus the name and press Enter to start editing. Project titles travel with their folders. Artboard titles, dimensions, and activity labels stay the same screen size as you zoom. Select an artboard and press **⌘D** to save an offset copy with its own editable HTML and CSS. The copy becomes selected.
 
 Use **⌘C** and **⌘V** to copy and paste an artboard within the open project. Press **Delete** to remove the selected artboard. **⌘Z** undoes the latest artboard change, and **⇧⌘Z** redoes it. Undo and redo save their results, and the history resets when you leave or reopen the project. Text fields keep their usual editing shortcuts.
 
 You can launch straight into a folder with `pnpm start "--project=$PWD/My prototype"` after building. Use an empty folder or an existing project. Without a path, the app starts at Home. Changes save automatically. Copy the entire project folder, including `.easy-proto` and `assets`, to move it.
+
+## Try the chat drawer
+
+On **Home → Agents → Add agent**, choose a provider and give the connection a name. You can add multiple profiles for either provider.
+
+- **Codex** uses the installed Codex CLI. Choose **Continue with ChatGPT** and approve eligible plan usage in your browser. The qualified build is `codex-cli 0.167.0-alpha.4.1` on macOS. Set `EASY_PROTO_CODEX_BIN` if Easy Proto cannot find the executable.
+- **Claude** uses installed Claude Code 2.1.259 or later in the 2.x series and an Anthropic API key. Set `EASY_PROTO_CLAUDE_BIN` if Easy Proto cannot find the executable.
+
+Open a project and choose a profile from the picker in **Chat**. Select an artboard with a plain-text heading, attach it with the paperclip, and ask for a rewrite. Send shares the prompt and current headline with the selected provider. **Apply edit** and **Undo edit** use the standard project history. The app remembers each project's selected profile and keeps its conversations separate for the current app session. Use **Manage agents** to return to Home and rename, reconnect, or disconnect a profile. [Account and provider details](docs/chat-architecture.md#home-agent-profiles)
+
+Run `pnpm build` and `node verify/chatgpt-live.mjs` to exercise a real Codex turn in a disposable Electron profile. Complete the browser sign-in in the test window. The check sends one synthetic headline request, tests Apply and Undo, then disconnects. The OAuth and model fixtures run in `pnpm verify`. Set `EASY_PROTO_TEST_CLAUDE_BIN` to a compatible Claude executable to also run the native Claude integration against a local fixture.
+
+## Try browser sharing
+
+Run `pnpm web:dev` and open [the local sharing prototype](http://127.0.0.1:8787). The pnpm workspace contains the desktop app at the root, the TanStack Router app in `web/`, and the shared Brand and Select in `packages/ui/`. The [web walkthrough](web/README.md) covers the demo account, canvas and artboard links, and revocation.
 
 ## Connect Codex
 
@@ -41,16 +62,22 @@ The app must be running before Codex connects. Restart the client if it was alre
 
 Ask Codex to get the Easy Proto context, create a 480 × 320 artboard next to the starter at canvas coordinates (620, 0), then capture it. Ask it to change the title and background and capture the new revision. Press Shift+0 to bring both boards into view. Drag a board, return Home, and reopen the project to see the saved position.
 
-- `get_context` returns the selected project's name, ID, activation ID, revision and layouts. Home returns `NO_PROJECT` and revokes the previous activation. Include both `projectId` and `activationId` in every other tool call. Call `get_context` again after a project switch, reopen or restart. The same MCP connection can discover the newly selected project.
+- `get_context` returns the selected project's name, ID, activation ID, revision, pages, default page ID and artboards across all pages. Legacy artboards without a `pageId` belong to the default page. Home returns `NO_PROJECT` and revokes the previous activation. Include both `projectId` and `activationId` in every other tool call. Call `get_context` again after a project switch, reopen or restart. The same MCP connection can discover the newly selected project.
 - `get_artboard` takes `projectId` and `artboardId` and returns source plus metadata.
-- `create_artboard` takes `projectId`, a new UUID `commandId`, `expectedRevision` and `arguments` containing `name`, `x`, `y`, `width`, `height`, `html` and `css`.
+- `get_tokens` takes `projectId` and `activationId` and returns the committed JSON document, CSS, resolved rows, revision and token digests when present.
+- `replace_project_tokens` takes `projectId`, `activationId`, `commandId`, `expectedRevision` and `document`, a complete DTCG JSON string. Use the revision returned by `get_tokens`. Every artboard can refer to the published variables.
+- `create_artboard` takes `projectId`, a new UUID `commandId`, `expectedRevision` and `arguments` containing `name`, `x`, `y`, `width`, `height`, `html` and `css`. Include `pageId` in `arguments` to choose the destination. With no destination, it uses the project's default page.
 - `update_artboard` takes the same envelope with `arguments: { artboardId, patch }`. Supply any subset of the layout and source fields.
-- `capture_artboard` takes `projectId`, `artboardId` and the current `revision`. It returns PNG image content and metadata, including unresolved resources when present.
+- `capture_artboard` takes `projectId`, `artboardId` and the current `revision`. It returns PNG image content and metadata, including token digests and unresolved resources when present.
 - `set_artboard_activity` takes `projectId`, `activationId`, `artboardId`, a caller-generated UUID as `activityId`, and `status` of `working` or `idle`. Send `working` before drafting changes to an existing board. Renew with the same ID before the two-minute lease expires and send `idle` with that ID when done. The tool returns the board's combined `working` state, including other active work.
 
 The canvas shows **Agent working** with three animated dots and gently pulses the affected artboard's opacity during an explicit activity lease or an in-flight MCP update or capture. With reduced motion enabled, the dots stay still and the artboard stays fully opaque. An agent must report activity to cover time spent drafting between calls. Overlapping activities clear independently. Switching projects drops the previous activation's activity, including when reopening the same folder. Activity never changes the project revision, saves to disk, or appears in captured artboard images.
 
 Place PNG, JPEG, GIF, WebP, AVIF, WOFF or WOFF2 files under the project's `assets/` folder before opening it. Reference them like `assets/logo.png` in HTML or CSS. Reopen after changing assets. Use the HTML and CSS tool arguments to update source. The [persistence decision](docs/decisions/0002-project-commits.md) explains retry and recovery behavior.
+
+## Update the desktop design system
+
+Open EasyProtoMocks and use its MCP tools to update the `desktop` token group. With the app's bearer token and port in your environment, run `pnpm tokens:sync`, then `pnpm build`. See the [desktop token guidance](docs/design-guidance.md#desktop-tokens).
 
 ## Verify
 
