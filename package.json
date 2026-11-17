@@ -12,6 +12,7 @@
     "build": "vite build && node scripts/build.mjs",
     "dev": "pnpm build && electron .",
     "start": "electron .",
+    "project:import-sqlite": "node scripts/import-sqlite-project.mjs",
     "tokens:sync": "node scripts/sync-design-tokens.mjs",
     "lint": "oxlint --deny-warnings .",
     "fmt": "oxfmt --write '**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}'",

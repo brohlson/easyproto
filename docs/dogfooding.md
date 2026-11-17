@@ -23,7 +23,7 @@ The first capture reported that Inter could not load from the project’s local 
 
 The Home boards now inform the desktop project launcher. The `Workspace · Edit and settings` artboard shows the inline title editor, fixed-size dimensions, and the Settings popover. All three were captured at 960 × 600 on macOS at project revision 59. See the [desktop evidence](../evidence/home-workspace/) for the implemented screens.
 
-The same workspace artboard was updated through MCP at project revision 84 to compare the device-size popup and the settings rows. The 960 × 600 dark capture is under `evidence/dogfooding/Workspace-device-presets.png`. Real interaction and Lucide icons are in the desktop implementation.
+The same workspace artboard was updated through MCP at project revision 84 to compare the device-size popup and the settings rows. The 960 × 600 dark capture is under `evidence/dogfooding/Workspace-device-presets.png`. Real interaction and Lucide icons are in the desktop implementation. Revision 372 adds the Arbitrary size option and a bottom-right handle in the same artboard. The 820 × 390 MCP capture reported no unresolved dependencies. [Arbitrary size mock](../evidence/arbitrary-resize/mock.png)
 
 `Workspace · Duplicate artboard` shows a selected copy offset from its original. It was captured in dark appearance at 760 × 540 at project revision 122. [Mockup capture](../evidence/dogfooding/Workspace-duplicate.png)
 
@@ -76,6 +76,12 @@ Revision 344 adds more composer padding and a 10 px gap above the action row. Al
 Revision 352 previews the selected **Fold** mark in the chat mock's Light and Dark header. All four artboards were recaptured through MCP. The desktop and web headers use the shared vector. [Mock capture](../evidence/chat-dock/chat-dock-attach.png) · [Shared asset](../packages/ui/fold.svg)
 
 Revision 356 adds the **Continue with ChatGPT** entry point in the Attach mock. The app uses the published OpenAI mark and keeps the ChatGPT plan label and usage link near the composer after connecting. [Sign-in mock](../evidence/chat-dock/chat-dock-attach.png) · [Desktop before sign-in](../evidence/chatgpt-sign-in/before-sign-in.png)
+
+## Page deletion
+
+The **Workspace · Pages picker** artboard previews page deletion at revision 370. A compact trash action sits beside Rename. A populated page opens a confirmation with the artboard count and the Undo shortcut. The 820 × 310 MCP capture reported no unresolved dependencies. [Deletion mock](../evidence/page-deletion/mock.png)
+
+Revision 371 replaces the two row actions with one settings icon and a nested Rename/Delete menu. The 500 × 220 MCP capture was inspected before implementation and reported zero unresolved dependencies. [Settings menu mock](../evidence/page-deletion/menu-mock.png)
 
 ## Agents on Home
 

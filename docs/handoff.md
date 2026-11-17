@@ -207,3 +207,37 @@ The development app was restarted on EasyProtoMocks revision 367 and verified ov
 The agent picker now uses an inline name and caret. The focused macOS Electron check verified the borderless trigger, the menu above it, and profile selection. The updated app is running on EasyProtoMocks revision 369. [Desktop screenshot](../evidence/inline-agent-picker/chat-agent-picker.png) · [Verification log](../evidence/inline-agent-picker/verify.log)
 
 The Git fixture is a compact copy of the revision 369 designs. The running EasyProtoMocks working copy retains its full history. The prior published checkpoint is recoverable from Git. [Fixture workflow](dogfooding.md)
+
+## SQLite project pilot
+
+The Pages, Tokens, Chat and local sharing baseline was reviewed, tested and pushed to GitHub as `57cad0b`. The Git checkout now contains 58 EasyProtoMocks files. Its complete working history is preserved in the ignored `mocks/.workspace/` copy. Two minor Frontend findings remain for the next accessibility pass. Announce chat proposal readiness, and focus the Tokens JSON editor when it opens. [Baseline verification](../evidence/sqlite-baseline/verify.log) · [Review dispositions](../evidence/sqlite-baseline/review.md)
+
+The local SQLite pilot imports a copy of the active folder revision to a new editable `.easyproto` file. It preserves project and board identity, pages, source, tokens, assets and durable command receipts. A database write commits the document and receipt together. On macOS, **Open project** accepts both formats. Folder creation remains the default. [Commands](../readme.md#try-a-sqlite-project) · [Storage decision](decisions/0006-sqlite-project-pilot.md)
+
+The local sample `mocks/.workspace/EasyProtoMocks.easyproto` imported revision 369 with 27 artboards, eight pages, 113 token rows and 369 receipts. The database is 606,208 bytes. The original current snapshot and pointer occupy 669,850 bytes, and the full working folder contains 83,625,298 bytes. Both EasyProtoMocks picker captures matched pixel for pixel across the two formats. The synthetic asset fixture also matched and reopened with the MCP edit saved. A process kill before SQLite commit preserved the prior state. A kill after commit preserved the new revision and returned the original receipt on retry. All 29 desktop and storage checks passed on Apple Silicon macOS. The updated app is running on the original EasyProtoMocks working folder at revision 369. [Sample comparison](../evidence/sqlite-pilot/easy-proto-mocks.json) · [Mock capture comparison](../evidence/sqlite-pilot/compare-mocks.json) · [Verification log](../evidence/sqlite-pilot/verify.log)
+
+The next bounded task is a portable Save a Copy and export workflow, followed by opening both formats through packaged macOS and deciding when to make SQLite the default.
+
+## Page deletion
+
+The Pages picker reveals one Lucide settings icon on hover or keyboard focus. It opens a nested menu with Rename and Delete. Empty pages delete immediately. Populated pages ask for confirmation and state how many artboards will be removed. Cancel receives initial focus, and Escape returns focus to the picker. The final page's Delete control is disabled. Undo restores the page, its original position and default-page role, and every artboard's source, bounds and order in one step. The UI opens the restored page. Redo removes it again.
+
+Both UI and the scoped MCP `delete_page` tool use the existing revision-checked command service. The implementation retains project tokens and assets, refuses stale confirmation, and replays the original receipt after reopen. Architecture and Reliability was consulted on page/default restoration and compatibility. [Storage decision](decisions/0002-project-commits.md#pages) · [Desktop confirmation](../evidence/page-deletion/page-delete-confirm-folder.png) · [Compact Dark menu](../evidence/page-deletion/pages-delete-menu-sqlite.png)
+
+On Apple Silicon macOS 27.2.1, 33 checks passed and two optional provider-runtime checks were skipped. Implementer checks cover folder and SQLite projects, default and empty pages, the final-page restriction, cancellation, keyboard Undo/Redo, page source/order restoration, stale and mismatched command retries, MCP authority, save/reopen, and process termination before and after commit. The mock was updated through MCP at EasyProtoMocks revision 370 before the UI was implemented. The updated desktop was reopened on that working project and left running. [Verification](../evidence/page-deletion/verify.log) · [Mock capture](../evidence/page-deletion/mock.json)
+
+An existing macOS text-field check now uses ArrowRight to collapse the selected title before Backspace. End did not move the selection on the current macOS build. The next bounded UI task remains the tracked accessibility follow-ups for chat status and the Tokens JSON editor.
+
+The page row actions are now grouped under one settings icon. Its nested Rename/Delete menu supports keyboard opening, arrow navigation, Escape and focus return. The revised mock was captured at revision 371. Lint, formatting, TypeScript and build checks passed, along with the existing workspace flow and both folder/SQLite deletion flows. Electron was reopened on the updated working mock project. [Compact menu](../evidence/page-settings-menu/pages-delete-menu-sqlite.png) · [Focused verification](../evidence/page-settings-menu/verify.log)
+
+## Arbitrary artboard size
+
+The device size menu has an **Arbitrary size** option after the device groups. Choosing it reveals a bottom-right handle for that artboard. Dragging changes its iframe viewport live and releases one width/height command into the existing Undo history. The handle supports 5 px arrow-key steps and 20 px Shift-arrow steps. Choosing a device preset hides it. Its visibility is temporary editing state, and saved dimensions persist.
+
+The handle converts pointer motion to viewport dimensions using the canvas zoom at the start of the gesture, then saves through the existing geometry command service. Geometry changes preserve the iframe and source revision. The handle clamps to the supported dimensions, keeps focus through keyboard saves, and rejects a gesture if another edit commits after it begins. Its hit area stays 24 CSS px across camera zoom. The design was captured through MCP at EasyProtoMocks revision 372. [Mock](../evidence/arbitrary-resize/mock.png) · [Desktop](../evidence/arbitrary-resize/arbitrary-resize.png)
+
+The focused macOS checks passed for the new resize flow and the existing desktop/MCP slice. They measured the iframe viewport during and after a drag, one commit per gesture, Undo/Redo, a second drag at a different zoom, fixed handle hit area and corner alignment, keyboard increments, capture dimensions, a concurrent MCP edit, preset selection, and reopening. The updated app was left running on the current EasyProtoMocks working project. [Live app](../evidence/arbitrary-resize/live-app.json)
+
+## SQLite, page settings, and resize release checks
+
+The release checks cover SQLite payload limits, source integrity, refusal of unsupported recovery sidecars, rollback at capacity, and replacement of an active database. They also exercise focus return from page settings and successive keyboard resizes. The full run and review dispositions are recorded alongside the release evidence. [Verification](../evidence/sqlite-pages-resize-commit/verify.log) · [Review dispositions](../evidence/sqlite-pages-resize-commit/review.md)

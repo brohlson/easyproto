@@ -1,8 +1,8 @@
 # Easy Proto
 
-Easy Proto is a macOS desktop canvas for reviewing HTML/CSS mockups made by a coding agent. Each artboard has its own browser viewport. Click an artboard to select it, Shift-click to toggle it in the selection, or drag a box from an empty canvas area to select every artboard it overlaps. Drag or press the arrow keys to move the selection. Use ⌘D to duplicate, ⌘C and ⌘V to copy and paste, and Delete to remove the selected boards. Each edit takes one undo step. Swipe with two fingers, scroll, or hold Space while dragging to pan. Pinch to zoom, and press Shift+0 to fit the canvas. Click an artboard’s dimensions to choose a viewport preset. Use **Appearance** to choose System, Light, or Dark.
+Easy Proto is a macOS desktop canvas for reviewing HTML/CSS mockups made by a coding agent. Each artboard has its own browser viewport. Click an artboard to select it, Shift-click to toggle it in the selection, or drag a box from an empty canvas area to select every artboard it overlaps. Drag or press the arrow keys to move the selection. Use ⌘D to duplicate, ⌘C and ⌘V to copy and paste, and Delete to remove the selected boards. Each edit takes one undo step. Swipe with two fingers, scroll, or hold Space while dragging to pan. Pinch to zoom, and press Shift+0 to fit the canvas. Click an artboard’s dimensions to choose a viewport preset or **Arbitrary size**. Arbitrary size shows a bottom-right handle. Drag it to resize the HTML viewport, or focus it and use the arrow keys for 5 px steps and Shift for 20 px steps. Choosing a preset hides the handle. Use **Appearance** to choose System, Light, or Dark.
 
-Use the current page name beside the project name to switch pages or choose **Add page**. Click the pencil beside a page to rename it, then press Enter to save or Escape to cancel. Select artboards and use **Move to page** in the footer to move them together. ⌘Z undoes a move, page creation, or rename, and ⇧⌘Z redoes it. Projects from earlier builds open on **Page 1**. The app remembers each page’s camera during the open session.
+Use the current page name beside the project name to switch pages or choose **Add page**. Open a page’s settings menu and choose Rename, then press Enter to save or Escape to cancel. Select artboards and use **Move to page** in the footer to move them together. ⌘Z undoes a move, page creation, or rename, and ⇧⌘Z redoes it. Projects from earlier builds open on **Page 1**. The app remembers each page’s camera during the open session.
 
 Click **Tokens** to manage shared design tokens. Search by name or type, then click a token name to edit it in its row. Use a token’s **Copy CSS** action and paste the reference into an artboard stylesheet, for example `body { background: var(--ep-color-brand); }`. Artboards using that reference pick up changes across all pages. Close Tokens to undo or redo with the canvas shortcuts. **JSON…** opens the source editor and the import and export actions. Importing fills a draft. **Save tokens** applies it to the project.
 
@@ -27,9 +27,23 @@ Home shows the projects you have created or opened on this device. Click a row t
 
 Double-click the project name or an artboard title to edit it. Enter or clicking away saves, and Escape cancels. You can also focus the name and press Enter to start editing. Project titles travel with their folders. Artboard titles, dimensions, and activity labels stay the same screen size as you zoom. Select an artboard and press **⌘D** to save an offset copy with its own editable HTML and CSS. The copy becomes selected.
 
+Open the Pages picker and hover or focus a page row to show its settings icon. Open it to choose Rename or Delete. Deleting a page with artboards asks for confirmation. **⌘Z** restores the page and its artboards in one step, and **⇧⌘Z** deletes them again. Keep at least one page in each project.
+
 Use **⌘C** and **⌘V** to copy and paste an artboard within the open project. Press **Delete** to remove the selected artboard. **⌘Z** undoes the latest artboard change, and **⇧⌘Z** redoes it. Undo and redo save their results, and the history resets when you leave or reopen the project. Text fields keep their usual editing shortcuts.
 
 You can launch straight into a folder with `pnpm start "--project=$PWD/My prototype"` after building. Use an empty folder or an existing project. Without a path, the app starts at Home. Changes save automatically. Copy the entire project folder, including `.easy-proto` and `assets`, to move it.
+
+### Try a SQLite project
+
+With the source project closed, import its current revision into a new editable file.
+
+```sh
+pnpm build
+pnpm project:import-sqlite "mocks/.workspace/EasyProtoMocks" "mocks/.workspace/EasyProtoMocks.easyproto"
+pnpm start "--project=$PWD/mocks/.workspace/EasyProtoMocks.easyproto"
+```
+
+On macOS, you can also choose the file from **Open project** in Settings. The source folder and its historical snapshots remain available. New projects still start as folders. [SQLite pilot and recovery](docs/decisions/0006-sqlite-project-pilot.md)
 
 ## Try the chat drawer
 

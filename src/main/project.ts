@@ -11,9 +11,16 @@ import {
   rmdir,
   writeFile,
 } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, extname, join } from "node:path";
 import { z } from "zod";
 import { tokenByteLimit } from "../shared/token-types";
+import {
+  importSqliteProject,
+  readSqliteProject,
+  renameSqliteProject,
+  saveSqliteProject,
+  type SqliteIdentity,
+} from "./sqlite-project";
 import { compileTokens, loadTokens, TokenError, type TokenBundle } from "./tokens";
 import {
   boardInput,
@@ -74,6 +81,15 @@ type HistoryChange = { index: number } & (
 type HistoryEntry =
   | HistoryChange[]
   | { page: { before?: Page; after: Page } }
+  | {
+      deletedPage: {
+        page: Page;
+        index: number;
+        previousDefault: string;
+        nextDefault: string;
+        artboards: HistoryChange[];
+      };
+    }
   | { tokens: { before?: TokenBundle; after: TokenBundle } };
 const historyLimit = 50;
 export type Asset = { bytes: Buffer; mime: string };
@@ -125,6 +141,33 @@ async function requireDirectory(path: string) {
   if (!(await lstat(path)).isDirectory()) throw new Error("Expected a real directory.");
 }
 
+function assetSegment(name: string) {
+  // Control characters are excluded from project asset names.
+  // oxlint-disable-next-line no-control-regex
+  return Boolean(name) && !name.startsWith(".") && !/[\\\u0000-\u001f]/.test(name);
+}
+
+function assetMime(name: string) {
+  return assetTypes.get(name.slice(name.lastIndexOf(".")).toLowerCase());
+}
+
+function validateDatabaseAssets(assets: Map<string, Asset>) {
+  let total = 0;
+  for (const [path, { mime, bytes }] of assets) {
+    const segments = path.split("/");
+    total += bytes.length;
+    if (
+      segments.length > 13 ||
+      !segments.every(assetSegment) ||
+      mime !== assetMime(segments.at(-1)!) ||
+      bytes.length > 8 * 1024 * 1024 ||
+      total > 32 * 1024 * 1024 ||
+      assets.size > 2048
+    )
+      throw new Error("Invalid project asset data.");
+  }
+}
+
 async function readAssets(root: string) {
   const assets = new Map<string, Asset>();
   let total = 0;
@@ -135,9 +178,7 @@ async function readAssets(root: string) {
     await requireDirectory(folder);
     for (const name of (await readdir(folder)).sort()) {
       if (++entries > 2048) throw new Error("The assets directory contains too many entries.");
-      // Control characters are excluded from project asset names.
-      // oxlint-disable-next-line no-control-regex
-      if (name.startsWith(".") || /[\\\u0000-\u001f]/.test(name)) continue;
+      if (!assetSegment(name)) continue;
       const path = join(folder, name);
       const entry = await lstat(path);
       if (entry.isSymbolicLink()) throw new Error("Project assets cannot contain symbolic links.");
@@ -145,7 +186,7 @@ async function readAssets(root: string) {
         await walk([...segments, name]);
         continue;
       }
-      const mime = assetTypes.get(name.slice(name.lastIndexOf(".")).toLowerCase());
+      const mime = assetMime(name);
       if (!mime) continue;
       const bytes = await readRegular(path, 8 * 1024 * 1024);
       total += bytes.byteLength;
@@ -335,6 +376,25 @@ async function load(root: string): Promise<Snapshot> {
   ) {
     throw new Error("Project pointer and revision disagree.");
   }
+  return validateSnapshot(
+    manifest,
+    async (board) => ({
+      html: (await readRegular(join(folder, board.htmlRef), 1024 * 1024)).toString(),
+      css: (await readRegular(join(folder, board.cssRef), 512 * 1024)).toString(),
+    }),
+    async () => ({
+      document: (await readRegular(join(folder, tokenDocument), tokenByteLimit)).toString("utf8"),
+      css: (await readRegular(join(folder, tokenStylesheet), tokenByteLimit)).toString("utf8"),
+    }),
+  );
+}
+
+type TokenFiles = { document: string; css: string };
+async function validateSnapshot(
+  manifest: Manifest,
+  readSource: (board: Artboard) => unknown | Promise<unknown>,
+  readTokenFiles: () => TokenFiles | undefined | Promise<TokenFiles>,
+): Promise<Snapshot> {
   const { pageLayout } = manifest;
   const pageIds = new Set(pageLayout?.pages.map(({ id }) => id));
   if (
@@ -354,10 +414,7 @@ async function load(root: string): Promise<Snapshot> {
       board.sourceRevision > manifest.revision
     )
       throw new Error("Invalid artboard metadata.");
-    const content = source.parse({
-      html: (await readRegular(join(folder, board.htmlRef), 1024 * 1024)).toString(),
-      css: (await readRegular(join(folder, board.cssRef), 512 * 1024)).toString(),
-    });
+    const content = source.parse(await readSource(board));
     if (board.sourceDigest !== digest(canonical(content)))
       throw new Error("Artboard source has changed on disk.");
     sources.set(board.id, content);
@@ -394,13 +451,12 @@ async function load(root: string): Promise<Snapshot> {
     }
     commands.add(result.commandId);
   }
-  const tokens =
-    manifest.tokens &&
-    loadTokens(
-      (await readRegular(join(folder, tokenDocument), tokenByteLimit)).toString("utf8"),
-      (await readRegular(join(folder, tokenStylesheet), tokenByteLimit)).toString("utf8"),
-      manifest.tokens,
-    );
+  let tokens: TokenBundle | undefined;
+  if (manifest.tokens) {
+    const files = await readTokenFiles();
+    if (!files) throw new Error("The token files are missing.");
+    tokens = loadTokens(files.document, files.css, manifest.tokens);
+  }
   return { manifest, sources, tokens };
 }
 
@@ -467,6 +523,7 @@ export class Project {
     readonly assets: ReadonlyMap<string, Asset>,
     private displayName: string,
     private readonly onPhase?: (phase: CommitPhase) => void,
+    private readonly sqlite?: SqliteIdentity,
   ) {
     this.#snapshot = snapshot;
     this.assetDigest = digest(
@@ -479,6 +536,21 @@ export class Project {
     onPhase?: (phase: CommitPhase) => void,
     mode: "open" | "create" | "either" = "either",
   ) {
+    if (extname(path) === ".easyproto" && mode !== "create") {
+      const selected = await lstat(path, { bigint: true });
+      if (!selected.isDirectory()) {
+        if (!selected.isFile()) throw new Error("Choose a regular Easy Proto project file.");
+        const root = await realpath(path);
+        const stored = readSqliteProject(root, selected);
+        validateDatabaseAssets(stored.assets);
+        const snapshot = await validateSnapshot(
+          stored.manifest,
+          (board) => stored.sources.get(board.id),
+          () => stored.tokens,
+        );
+        return new Project(root, snapshot, stored.assets, stored.name, onPhase, stored.identity);
+      }
+    }
     if (mode === "either") await mkdir(path, { recursive: true });
     const root = await realpath(path);
     try {
@@ -523,6 +595,12 @@ export class Project {
       await readName(root),
       onPhase,
     );
+  }
+
+  static async importFolder(path: string, destination: string) {
+    await requireDirectory(await realpath(path));
+    const source = await Project.open(path, undefined, "open");
+    return importSqliteProject(destination, source);
   }
 
   get snapshot() {
@@ -611,7 +689,8 @@ export class Project {
         tokenVersion ||
         manifest.schemaVersion === 4 ||
         operation === "create_page" ||
-        operation === "rename_page";
+        operation === "rename_page" ||
+        operation === "delete_page";
       const pageOf = (board: Artboard) => board.pageId ?? defaultPageId;
       function requirePage(pageId: string) {
         const page = pages.find(({ id }) => id === pageId);
@@ -630,6 +709,27 @@ export class Project {
       } else if (operation === "rename_page") {
         const before = requirePage(command.arguments.pageId);
         entry = { page: { before, after: { ...before, name: command.arguments.name } } };
+      } else if (operation === "delete_page") {
+        const page = requirePage(command.arguments.pageId);
+        if (pages.length === 1)
+          throw new ProjectError("LAST_PAGE", "Keep at least one page in the project.");
+        const index = pages.findIndex(({ id }) => id === page.id);
+        const remaining = pages.filter(({ id }) => id !== page.id);
+        entry = {
+          deletedPage: {
+            page,
+            index,
+            previousDefault: defaultPageId,
+            nextDefault:
+              page.id === defaultPageId
+                ? remaining[Math.min(index, remaining.length - 1)].id
+                : defaultPageId,
+            artboards: readBoards(
+              this.#snapshot,
+              boards.filter((board) => pageOf(board) === page.id).map(({ id }) => id),
+            ),
+          },
+        };
       } else if (operation === "replace_project_tokens") {
         try {
           entry = {
@@ -754,6 +854,7 @@ export class Project {
         revision: atRevision,
       };
       let nextPages = pages;
+      let nextDefaultPageId = defaultPageId;
       let nextTokens = this.#snapshot.tokens;
       let result: Commit;
       if (Array.isArray(entry)) {
@@ -770,6 +871,17 @@ export class Project {
           artboard: affected[0],
           ...(affected.length > 1 ? { artboards: affected } : {}),
         };
+      } else if ("deletedPage" in entry) {
+        const { page, index, previousDefault, nextDefault, artboards } = entry.deletedPage;
+        if (undo) {
+          nextPages = [...pages];
+          nextPages.splice(index, 0, page);
+        } else {
+          nextPages = pages.filter(({ id }) => id !== page.id);
+        }
+        nextDefaultPageId = undo ? previousDefault : nextDefault;
+        applyHistory(artboards, undo, boards, nextSources, atRevision, nextDefaultPageId);
+        result = { ...receipt, page };
       } else if ("page" in entry) {
         const { before, after } = entry.page;
         const page = undo ? before : after;
@@ -803,9 +915,11 @@ export class Project {
           tokens: nextTokens?.stamp,
           schemaVersion: nextVersion,
           revision: atRevision,
-          ...(paged ? { pageLayout: { defaultPageId, pages: nextPages } } : {}),
+          ...(paged ? { pageLayout: { defaultPageId: nextDefaultPageId, pages: nextPages } } : {}),
           artboards: paged
-            ? boards.map((board) => (board.pageId ? board : { ...board, pageId: defaultPageId }))
+            ? boards.map((board) =>
+                board.pageId ? board : { ...board, pageId: nextDefaultPageId },
+              )
             : boards,
           commands: [...manifest.commands, { digest: fingerprint, result }],
         },
@@ -813,7 +927,11 @@ export class Project {
         tokens: nextTokens,
       };
       try {
-        await publish(this.root, next, this.onPhase);
+        if (this.sqlite)
+          saveSqliteProject(this.root, this.sqlite, this.#snapshot, next, () =>
+            this.onPhase?.("snapshotWritten"),
+          );
+        else await publish(this.root, next, this.onPhase);
       } catch {
         throw new ProjectError(
           "SAVE_FAILED",
@@ -842,6 +960,21 @@ export class Project {
       if (this.name === label.name) return;
       if (this.name !== previous)
         throw new ProjectError("NAME_CHANGED", "The project was renamed while you were editing.");
+      if (this.sqlite) {
+        try {
+          renameSqliteProject(
+            this.root,
+            this.sqlite,
+            this.#snapshot.manifest.projectId,
+            previous,
+            label.name,
+          );
+        } catch {
+          throw new ProjectError("SAVE_FAILED", "The project name could not be saved.");
+        }
+        this.displayName = label.name;
+        return;
+      }
       const folder = join(this.root, managed);
       const pending = join(folder, `.name-${randomUUID()}.tmp`);
       try {

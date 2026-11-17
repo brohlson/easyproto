@@ -75,7 +75,10 @@ function tools(
       command.operation === "update_artboard"
         ? await activity.run(command.arguments.artboardId, execute)
         : await execute();
-    if (current()?.project === project) changed();
+    if (current()?.project === project) {
+      activity.pruneLeases((id) => project.snapshot.sources.has(id));
+      changed();
+    }
     return result(saved);
   }
 
@@ -187,6 +190,19 @@ function tools(
       }),
     },
     (request) => call(() => commit({ ...request, operation: "update_artboard" })),
+  );
+
+  server.registerTool(
+    "delete_page",
+    {
+      description:
+        "Delete a page and all its artboards in one undoable revision. The final page cannot be deleted.",
+      inputSchema: envelope.extend({
+        activationId: id,
+        arguments: z.strictObject({ pageId: id }),
+      }),
+    },
+    (request) => call(() => commit({ ...request, operation: "delete_page" })),
   );
 
   server.registerTool(

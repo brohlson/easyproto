@@ -42,7 +42,14 @@ export function DevicePresets({
   height,
   disabled,
   begin,
-}: Size & { disabled: boolean; begin: () => SaveSize | undefined }) {
+  arbitrary,
+  onArbitraryChange,
+}: Size & {
+  disabled: boolean;
+  begin: () => SaveSize | undefined;
+  arbitrary: boolean;
+  onArbitraryChange(value: boolean): void;
+}) {
   const id = useId();
   const popover = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -107,7 +114,7 @@ export function DevicePresets({
               {name}
             </div>
             {presets.map((preset) => {
-              const current = preset.width === width && preset.height === height;
+              const current = !arbitrary && preset.width === width && preset.height === height;
               return (
                 <button
                   key={preset.name}
@@ -118,7 +125,9 @@ export function DevicePresets({
                     if (disabled) return;
                     popover.current?.hidePopover();
                     trigger.current?.focus({ preventScroll: true });
-                    if (!current) save.current?.({ width: preset.width, height: preset.height });
+                    onArbitraryChange(false);
+                    if (preset.width !== width || preset.height !== height)
+                      save.current?.({ width: preset.width, height: preset.height });
                   }}
                 >
                   <span>{preset.name}</span>
@@ -131,6 +140,22 @@ export function DevicePresets({
             })}
           </div>
         ))}
+        <div className="menu-section">
+          <button
+            type="button"
+            className="menu-row preset-row"
+            aria-pressed={arbitrary}
+            disabled={disabled}
+            onClick={() => {
+              popover.current?.hidePopover();
+              trigger.current?.focus({ preventScroll: true });
+              onArbitraryChange(true);
+            }}
+          >
+            <span>Arbitrary size</span>
+            <Check aria-hidden="true" className={arbitrary ? "" : "inactive-check"} size={14} />
+          </button>
+        </div>
       </div>
     </>
   );

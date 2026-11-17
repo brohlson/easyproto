@@ -119,7 +119,7 @@ async function start() {
       await remember(active.project, true);
     } catch {
       throw new Error(
-        "Easy Proto could not open this folder. Choose a valid project or an empty folder with --project=PATH.",
+        "Easy Proto could not open the selected project. Use a project folder or .easyproto file with --project=PATH.",
       );
     }
   } else if (!recent.list().length) {
@@ -275,8 +275,12 @@ async function start() {
         defaultPath: active ? dirname(active.project.root) : app.getPath("documents"),
         message: creating
           ? "Choose an empty folder or create a new folder."
-          : "Choose the folder that contains your Easy Proto project.",
-        properties: creating ? ["openDirectory", "createDirectory"] : ["openDirectory"],
+          : "Choose an Easy Proto project folder or .easyproto file.",
+        properties: creating
+          ? ["openDirectory", "createDirectory"]
+          : process.platform === "darwin"
+            ? ["openDirectory", "openFile"]
+            : ["openDirectory"],
       });
       const [folder] = selection.filePaths;
       if (selection.canceled || !folder || window.isDestroyed()) return;
@@ -285,7 +289,7 @@ async function start() {
       throw new Error(
         mode === "create"
           ? "Could not create the project. Choose a new or empty folder."
-          : "Could not open the project. Choose a folder containing a valid Easy Proto project.",
+          : "Could not open the project. Choose a valid project folder or .easyproto file.",
       );
     } finally {
       choosing = false;
@@ -300,10 +304,10 @@ async function start() {
       await switchTo(async () => {
         if (!entry) throw new Error("Unknown project.");
         if ((await realpath(entry.folder)) !== entry.folder)
-          throw new Error("The saved project folder now resolves to a different location.");
+          throw new Error("The saved project now resolves to a different location.");
         const project = await Project.open(entry.folder, undefined, "open");
         if (project.root !== entry.folder)
-          throw new Error("The saved project folder changed while opening.");
+          throw new Error("The saved project changed while opening.");
         project.authorize(entry.projectId);
         return project;
       });
@@ -477,11 +481,8 @@ async function start() {
     try {
       const project = activeGeneration(selectedGeneration);
       const commit = await project.execute(command);
-      if (active?.project === project && "artboard" in commit) {
-        for (const { id } of commit.artboards ?? [commit.artboard]) {
-          if (!project.snapshot.sources.has(id)) active.activity.clearLeases(id);
-        }
-      }
+      if (active?.project === project)
+        active.activity.pruneLeases((id) => project.snapshot.sources.has(id));
       changed();
       return commit;
     } catch (error) {

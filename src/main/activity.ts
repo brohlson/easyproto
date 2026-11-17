@@ -30,9 +30,9 @@ export class ArtboardActivity {
     return false;
   }
 
-  clearLeases(artboardId: string) {
+  pruneLeases(exists: (artboardId: string) => boolean) {
     for (const [key, lease] of this.#leases) {
-      if (lease.artboardId !== artboardId) continue;
+      if (exists(lease.artboardId)) continue;
       clearTimeout(lease.timer);
       this.#leases.delete(key);
     }

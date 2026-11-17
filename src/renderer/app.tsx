@@ -1,5 +1,5 @@
 import { Brand } from "@easy-proto/ui";
-import { Folder, MessageSquare, Plus } from "lucide-react";
+import { Folder, MessageSquare, MoveDiagonal2, Plus } from "lucide-react";
 import {
   createContext,
   memo,
@@ -11,6 +11,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type PointerEvent,
 } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -47,6 +48,7 @@ import { MoveToPage, PagePicker } from "./pages";
 import { Settings, type Theme } from "./settings";
 import { TokenManager } from "./tokens";
 import { ToastProvider } from "./toast";
+import { artboardSize } from "../shared/artboard-size";
 
 declare global {
   interface Window {
@@ -62,7 +64,7 @@ type ArtboardChange = {
 }[DesktopArtboardCommand["operation"]];
 const ArtboardEditing = createContext<{
   disabled: boolean;
-  begin(id: string): ((patch: DesktopArtboardPatch) => void) | undefined;
+  begin(id: string): ((patch: DesktopArtboardPatch) => Promise<boolean>) | undefined;
   focusCopy(id: string): boolean;
 } | null>(null);
 
@@ -89,6 +91,35 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
   const editing = useContext(ArtboardEditing)!;
   const zoom = useStore((state) => state.transform[2]);
   const artboard = useRef<HTMLDivElement>(null);
+  const [arbitrary, setArbitrary] = useState(false);
+  const [draft, setDraft] = useState<{ width: number; height: number }>();
+  const handle = useRef<HTMLButtonElement>(null);
+  const gesture = useRef<
+    | {
+        pointerId: number;
+        x: number;
+        y: number;
+        zoom: number;
+        width: number;
+        height: number;
+        save(patch: DesktopArtboardPatch): Promise<boolean>;
+      }
+    | undefined
+  >(undefined);
+  const visible = draft ? { ...data, ...draft } : data;
+
+  function pointerSize(event: PointerEvent<HTMLButtonElement>) {
+    const start = gesture.current;
+    if (start?.pointerId !== event.pointerId) return;
+    return {
+      width: resizeDimension(start.width + (event.clientX - start.x) / start.zoom),
+      height: resizeDimension(start.height + (event.clientY - start.y) / start.zoom),
+    };
+  }
+
+  useEffect(() => {
+    if (arbitrary) handle.current?.focus({ preventScroll: true });
+  }, [arbitrary]);
 
   useLayoutEffect(() => {
     if (selected && editing.focusCopy(id))
@@ -96,13 +127,13 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
   }, [selected]);
 
   return (
-    <div ref={artboard} className="artboard">
+    <div ref={artboard} className="artboard" style={draft && { width: draft.width }}>
       <div
         className="artboard-meta"
         style={
           {
             "--inverse-zoom": 1 / zoom,
-            "--label-width": `${Math.max(172, data.width * zoom)}px`,
+            "--label-width": `${Math.max(172, visible.width * zoom)}px`,
           } as CSSProperties
         }
       >
@@ -129,17 +160,84 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
             }}
           />
           <DevicePresets
-            width={data.width}
-            height={data.height}
+            width={visible.width}
+            height={visible.height}
             disabled={editing.disabled}
             begin={() => editing.begin(id)}
+            arbitrary={arbitrary}
+            onArbitraryChange={setArbitrary}
           />
         </div>
       </div>
-      <ArtboardPreview key={data.previewUrl} board={data} />
+      <ArtboardPreview key={data.previewUrl} board={visible} />
+      {arbitrary && (
+        <button
+          ref={handle}
+          type="button"
+          className="resize-handle nodrag nopan"
+          style={{ transform: `translate(50%, 50%) scale(${1 / zoom})` }}
+          aria-disabled={editing.disabled}
+          aria-label={`Resize artboard ${data.name}`}
+          title="Drag to resize. Arrow keys resize by 5 px, Shift by 20 px."
+          onPointerDown={(event) => {
+            if (event.button !== 0 || gesture.current || editing.disabled) return;
+            const save = editing.begin(id);
+            if (!save) return;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            gesture.current = {
+              pointerId: event.pointerId,
+              x: event.clientX,
+              y: event.clientY,
+              zoom,
+              width: data.width,
+              height: data.height,
+              save,
+            };
+          }}
+          onPointerMove={(event) => {
+            const size = pointerSize(event);
+            if (size) setDraft(size);
+          }}
+          onPointerUp={async (event) => {
+            const size = pointerSize(event);
+            if (!size) return;
+            const start = gesture.current!;
+            gesture.current = undefined;
+            if (size.width !== start.width || size.height !== start.height) {
+              setDraft(size);
+              await start.save(size);
+            }
+            setDraft(undefined);
+          }}
+          onLostPointerCapture={(event) => {
+            if (gesture.current?.pointerId !== event.pointerId) return;
+            gesture.current = undefined;
+            setDraft(undefined);
+          }}
+          onKeyDown={(event) => {
+            const direction = arrows.get(event.key);
+            if (!direction || event.metaKey || event.ctrlKey || event.altKey) return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (editing.disabled || gesture.current) return;
+            const save = editing.begin(id);
+            if (!save) return;
+            const step = event.shiftKey ? 20 : 5;
+            const width = resizeDimension(data.width + direction.x * step);
+            const height = resizeDimension(data.height + direction.y * step);
+            if (width !== data.width || height !== data.height) void save({ width, height });
+          }}
+        >
+          <MoveDiagonal2 size={12} aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 });
+
+function resizeDimension(value: number) {
+  return Math.max(artboardSize.min, Math.min(artboardSize.max, Math.round(value)));
+}
 
 const nodeTypes = { artboard: ArtboardNode };
 
@@ -359,7 +457,13 @@ function App() {
         ...change,
       });
       if (latest.current?.generation !== from.generation) return false;
-      if (change.operation === "create_page" && "page" in commit) {
+      if (
+        (change.operation === "create_page" ||
+          (change.operation === "undo" &&
+            "page" in commit &&
+            !from.pages.some(({ id }) => id === commit.page.id))) &&
+        "page" in commit
+      ) {
         const pageId = commit.page.id;
         if (!latest.current.pages.some(({ id }) => id === pageId)) {
           try {
@@ -604,7 +708,7 @@ function App() {
     begin(id: string) {
       const current = latest.current;
       if (!current || choosing || drag.current || savingGeneration.current !== null) return;
-      return (patch: DesktopArtboardPatch) => void arrange(id, patch, current);
+      return (patch: DesktopArtboardPatch) => arrange(id, patch, current);
     },
   };
 
@@ -706,8 +810,16 @@ function App() {
                   key={scene.generation}
                   active={page}
                   pages={scene.pages}
+                  artboards={scene.artboards}
                   disabled={busy}
                   onSwitch={navigatePage}
+                  beginDelete={(pageId) => {
+                    const current = latest.current;
+                    return current
+                      ? () =>
+                          saveCommand({ operation: "delete_page", arguments: { pageId } }, current)
+                      : undefined;
+                  }}
                   beginRename={(pageId) => {
                     const current = latest.current;
                     return current

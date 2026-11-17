@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { link, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  link,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { Project } from "../dist/project.js";
 
@@ -711,3 +722,295 @@ test("renaming an implicit default page preserves identity and supports undo, re
   assert.deepEqual(reopened.pageLayout, { defaultPageId: pageId, pages: [saved.page] });
   assert.deepEqual(await reopened.execute(rename), saved);
 });
+
+test("SQLite import preserves the active snapshot, ordered assets, project name and retry ledger", async (t) => {
+  const { project, folder, root } = await fixture(t);
+  const id = project.snapshot.manifest.projectId;
+  const input = command(id);
+  const receipt = await project.execute(input);
+  await project.rename("Project", "Original name");
+  const nested = join(folder, "assets", "a");
+  await mkdir(nested, { recursive: true });
+  await writeFile(join(nested, "nested.png"), Buffer.from([1, 2, 3]));
+  await writeFile(join(folder, "assets", "a-.png"), Buffer.from([4, 5, 6]));
+  const original = await Project.open(folder);
+  const destination = join(root, "Copy.easyproto");
+  await Project.importFolder(folder, destination);
+  const stored = await readFile(destination);
+  assert.equal(stored.subarray(0, 16).toString(), "SQLite format 3\0");
+  await assert.rejects(Project.importFolder(folder, destination), { code: "EEXIST" });
+  assert.deepEqual(await readFile(destination), stored);
+  const copy = await Project.open(destination);
+  assert.equal(copy.name, original.name);
+  assert.deepEqual(copy.snapshot, original.snapshot);
+  assert.deepEqual(Array.from(copy.assets), Array.from(original.assets));
+  assert.deepEqual(Array.from(copy.assets.keys()), ["a/nested.png", "a-.png"]);
+  assert.equal(copy.assetDigest, original.assetDigest);
+  assert.deepEqual(await copy.execute(input), receipt);
+  await assert.rejects(copy.execute({ ...input, arguments: { ...input.arguments, x: 800 } }), {
+    code: "COMMAND_ID_REUSED",
+  });
+  await assert.rejects(copy.execute(command(id)), { code: "REVISION_CONFLICT" });
+  await copy.rename("Original name", "Copied name");
+  assert.equal((await Project.open(destination)).name, "Copied name");
+  assert.equal((await Project.open(folder)).name, "Original name");
+});
+
+test("SQLite rolls back a killed write and replays the committed receipt after a lost reply", async (t) => {
+  const { project, folder, root } = await fixture(t);
+  const original = await Project.open(folder);
+  const destination = join(root, "Crash check.easyproto");
+  await Project.importFolder(folder, destination);
+  const input = command(project.snapshot.manifest.projectId);
+  await killAt(destination, input, "snapshotWritten");
+  const before = await Project.open(destination);
+  assert.deepEqual(before.snapshot, original.snapshot);
+  await killAt(destination, input, "pointerPublished");
+  const after = await Project.open(destination);
+  assert.equal(after.snapshot.manifest.revision, 1);
+  assert.equal(after.snapshot.manifest.artboards.length, 2);
+  const saved = after.snapshot.manifest.commands[0].result;
+  assert.deepEqual(await after.execute(input), saved);
+  assert.deepEqual(after.snapshot.sources.get(saved.artboard.id), {
+    html: args.html,
+    css: args.css,
+  });
+  const stale = await Project.open(destination);
+  const next = { ...command(input.projectId), expectedRevision: 1 };
+  await after.execute(next);
+  await assert.rejects(stale.execute({ ...next, commandId: randomUUID() }), {
+    code: "SAVE_FAILED",
+  });
+  assert.equal(stale.snapshot.manifest.revision, 1);
+  assert.equal((await Project.open(destination)).snapshot.manifest.revision, 2);
+  assert.deepEqual((await Project.open(folder)).snapshot, original.snapshot);
+});
+
+test("SQLite refuses invalid source keys and over-limit assets before accepting a project", async (t) => {
+  const { folder, root } = await fixture(t);
+  const destination = join(root, "Invalid.easyproto");
+  await Project.importFolder(folder, destination);
+  const good = await readFile(destination);
+  {
+    using db = new DatabaseSync(destination);
+    const digest = createHash("sha256").update(args.html).digest("hex");
+    db.prepare("INSERT INTO source VALUES (?, ?)").run(digest, "Different content");
+  }
+  await assert.rejects(Project.open(destination), /not a supported Easy Proto project/);
+  await writeFile(destination, good);
+  {
+    using db = new DatabaseSync(destination);
+    db.prepare("INSERT INTO asset VALUES (0, 'large.png', 'image/png', zeroblob(?))").run(
+      8 * 1024 * 1024 + 1,
+    );
+  }
+  await assert.rejects(Project.open(destination), /not a supported Easy Proto project/);
+});
+
+test("SQLite rejects unsupported recovery sidecars without changing the selected files", async (t) => {
+  const { folder, root } = await fixture(t);
+  const destination = join(root, "Recovery.easyproto");
+  await Project.importFolder(folder, destination);
+  const original = await readFile(destination);
+  const journal = destination + "-journal";
+  const unsupported = Buffer.concat([Buffer.alloc(512), Buffer.from("d9d505f920a163d7", "hex")]);
+  await writeFile(journal, unsupported);
+  await assert.rejects(Project.open(destination), /not a supported Easy Proto project/);
+  assert.deepEqual(await readFile(destination), original);
+  assert.deepEqual(await readFile(journal), unsupported);
+});
+
+test("SQLite refuses extra schema objects, including SQLite's own analysis table", async (t) => {
+  const { folder, root } = await fixture(t);
+  const destination = join(root, "Extra schema.easyproto");
+  await Project.importFolder(folder, destination);
+  {
+    using db = new DatabaseSync(destination);
+    db.exec("ANALYZE");
+    assert.ok(db.prepare("SELECT name FROM sqlite_schema WHERE name = 'sqlite_stat1'").get());
+  }
+  await assert.rejects(Project.open(destination), /not a supported Easy Proto project/);
+});
+
+test("SQLite rejects edits and rename after the active file is replaced by a copy", async (t) => {
+  const { project, folder, root } = await fixture(t);
+  const destination = join(root, "Active.easyproto");
+  const previous = join(root, "Original.easyproto");
+  await Project.importFolder(folder, destination);
+  const active = await Project.open(destination);
+  await rename(destination, previous);
+  await copyFile(previous, destination);
+  await assert.rejects(active.execute(command(project.snapshot.manifest.projectId)), {
+    code: "SAVE_FAILED",
+  });
+  await assert.rejects(active.rename(active.name, "Uncommitted name"), { code: "SAVE_FAILED" });
+  const reopened = await Project.open(destination);
+  assert.deepEqual(reopened.snapshot, active.snapshot);
+  assert.equal(reopened.name, project.name);
+  assert.deepEqual(await readFile(destination), await readFile(previous));
+});
+
+test("SQLite rolls back a write that would exceed the saved history capacity", async (t) => {
+  const { project, folder, root } = await fixture(t);
+  const id = project.snapshot.manifest.projectId;
+  const first = command(id);
+  const receipt = await project.execute(first);
+  const destination = join(root, "Capacity.easyproto");
+  await Project.importFolder(folder, destination);
+  {
+    using db = new DatabaseSync(destination);
+    const { bytes } = db
+      .prepare(`SELECT
+      (SELECT sum(octet_length(metadata)) FROM project) +
+      (SELECT sum(octet_length(metadata)) FROM board) +
+      (SELECT sum(octet_length(result) + octet_length(digest)) FROM receipt) AS bytes`)
+      .get();
+    db.prepare("UPDATE receipt SET result = result || printf('%*s', ?, '') WHERE position = 0").run(
+      32 * 1024 * 1024 - bytes - 100,
+    );
+  }
+  const active = await Project.open(destination);
+  await assert.rejects(active.execute({ ...command(id), expectedRevision: 1 }), {
+    code: "SAVE_FAILED",
+  });
+  const reopened = await Project.open(destination);
+  assert.deepEqual(reopened.snapshot, active.snapshot);
+  assert.deepEqual(await reopened.execute(first), receipt);
+});
+
+for (const storage of ["folder", "sqlite"]) {
+  test(`page deletion restores layout, sources, default and tokens with undo in ${storage}`, async (t) => {
+    const { folder, root } = await fixture(t);
+    const path = storage === "sqlite" ? join(root, "Pages.easyproto") : folder;
+    if (storage === "sqlite") await Project.importFolder(folder, path);
+    const project = await Project.open(path);
+    const { projectId } = project.snapshot.manifest;
+    const edit = (operation, args = {}) => ({
+      projectId,
+      commandId: randomUUID(),
+      expectedRevision: project.snapshot.manifest.revision,
+      operation,
+      arguments: args,
+    });
+    const home = project.pageLayout.defaultPageId;
+    await assert.rejects(project.execute(edit("delete_page", { pageId: home })), {
+      code: "LAST_PAGE",
+    });
+    assert.equal(project.snapshot.manifest.revision, 0);
+    await assert.rejects(project.execute(edit("delete_page", { pageId: randomUUID() })), {
+      code: "PAGE_NOT_FOUND",
+    });
+    const middle = (await project.execute(edit("create_page", { name: "Explorations" }))).page;
+    const last = (await project.execute(edit("create_page", { name: "Empty" }))).page;
+    const first = (await project.execute(edit("create_artboard", { ...args, pageId: middle.id })))
+      .artboard;
+    await project.execute(edit("create_artboard", { ...args, pageId: home }));
+    const second = (await project.execute(edit("create_artboard", { ...args, pageId: middle.id })))
+      .artboard;
+    await project.execute(
+      edit("replace_project_tokens", {
+        document: JSON.stringify({
+          spacing: { $type: "dimension", $value: { value: 8, unit: "px" } },
+        }),
+      }),
+    );
+    const original = project.snapshot;
+    const pages = project.pageLayout;
+    const deletion = edit("delete_page", { pageId: middle.id });
+    const removed = await project.execute(deletion);
+    assert.deepEqual(removed.page, middle);
+    assert.equal(project.snapshot.manifest.revision, original.manifest.revision + 1);
+    assert.deepEqual(
+      project.snapshot.manifest.artboards.map(({ id }) => id),
+      original.manifest.artboards.filter(({ pageId }) => pageId !== middle.id).map(({ id }) => id),
+    );
+    assert.equal(project.snapshot.sources.has(first.id), false);
+    assert.equal(project.snapshot.sources.has(second.id), false);
+    assert.deepEqual(project.snapshot.tokens, original.tokens);
+    assert.deepEqual(
+      project.pageLayout.pages.map(({ id }) => id),
+      [home, last.id],
+    );
+    await assert.rejects(project.execute({ ...deletion, commandId: randomUUID() }), {
+      code: "REVISION_CONFLICT",
+    });
+    const reopened = await Project.open(path);
+    assert.deepEqual(await reopened.execute(deletion), removed);
+    assert.deepEqual(reopened.snapshot, project.snapshot);
+    await assert.rejects(reopened.execute({ ...deletion, arguments: { pageId: last.id } }), {
+      code: "COMMAND_ID_REUSED",
+    });
+
+    const undone = await project.execute(edit("undo"));
+    assert.deepEqual(undone.page, middle);
+    assert.deepEqual(project.pageLayout, pages);
+    assert.deepEqual(project.snapshot.sources, original.sources);
+    assert.deepEqual(
+      project.snapshot.manifest.artboards.map(
+        ({ sourceRevision: _sourceRevision, ...board }) => board,
+      ),
+      original.manifest.artboards.map(({ sourceRevision: _sourceRevision, ...board }) => board),
+    );
+    assert.equal(
+      project.snapshot.manifest.artboards.find(({ id }) => id === first.id).sourceRevision,
+      undone.revision,
+    );
+    await project.execute(edit("redo"));
+    assert.equal(
+      project.pageLayout.pages.some(({ id }) => id === middle.id),
+      false,
+    );
+    await project.execute(edit("undo"));
+    const emptyDeletion = edit("delete_page", { pageId: last.id });
+    const emptyResult = await project.execute(emptyDeletion);
+    assert.deepEqual(emptyResult.page, last);
+    assert.equal(project.canRedo, false);
+    await project.execute(edit("undo"));
+    assert.deepEqual(project.pageLayout, pages);
+    await project.execute(edit("delete_page", { pageId: home }));
+    assert.equal(project.pageLayout.defaultPageId, middle.id);
+    assert.equal(
+      project.snapshot.manifest.artboards.every(({ pageId }) => pageId === middle.id),
+      true,
+    );
+    await project.execute(edit("undo"));
+    assert.deepEqual(project.pageLayout, pages);
+    assert.deepEqual(project.snapshot.sources, original.sources);
+    await project.execute(edit("redo"));
+    const saved = await Project.open(path);
+    assert.deepEqual(saved.pageLayout, project.pageLayout);
+    assert.deepEqual(saved.snapshot, project.snapshot);
+    assert.equal(saved.pageLayout.defaultPageId, middle.id);
+  });
+
+  test(`page deletion recovers atomically before and after commit in ${storage}`, async (t) => {
+    const { project, folder, root } = await fixture(t);
+    const { projectId } = project.snapshot.manifest;
+    const created = await project.execute({
+      projectId,
+      commandId: randomUUID(),
+      expectedRevision: 0,
+      operation: "create_page",
+      arguments: { name: "Surviving page" },
+    });
+    const path = storage === "sqlite" ? join(root, "Crash.easyproto") : folder;
+    if (storage === "sqlite") await Project.importFolder(folder, path);
+    const original = (await Project.open(path)).snapshot;
+    const input = {
+      projectId,
+      commandId: randomUUID(),
+      expectedRevision: created.revision,
+      operation: "delete_page",
+      arguments: { pageId: project.pageLayout.defaultPageId },
+    };
+    await killAt(path, input, "snapshotWritten");
+    assert.deepEqual((await Project.open(path)).snapshot, original);
+    await killAt(path, input, "pointerPublished");
+    const after = await Project.open(path);
+    assert.equal(after.snapshot.manifest.revision, created.revision + 1);
+    assert.deepEqual(after.pageLayout, { defaultPageId: created.page.id, pages: [created.page] });
+    assert.equal(after.snapshot.sources.size, 0);
+    const receipt = after.snapshot.manifest.commands.at(-1).result;
+    assert.deepEqual(await after.execute(input), receipt);
+  });
+}

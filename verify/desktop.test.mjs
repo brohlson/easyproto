@@ -186,6 +186,7 @@ test(
     assert.deepEqual(list.tools.map(({ name }) => name).sort(), [
       "capture_artboard",
       "create_artboard",
+      "delete_page",
       "get_artboard",
       "get_context",
       "get_tokens",
@@ -1925,7 +1926,7 @@ test(
     await sourceNode.locator(".artboard").click({ position: { x: 15, y: 35 } });
     await sourceNode.and(desktop.locator(".react-flow__node.selected")).waitFor();
     await sketchTitle.dblclick();
-    await edit("Artboard").press("End");
+    await edit("Artboard").press("ArrowRight");
     await edit("Artboard").press("Backspace");
     assert.equal(await edit("Artboard").inputValue(), "Sketche");
     await edit("Artboard").press("Escape");
@@ -2402,7 +2403,9 @@ test(
       "page",
     );
     const exploration = pageMenu().getByRole("button", { name: "Exploration", exact: true });
-    const renameExploration = pageMenu().getByRole("button", { name: "Rename page Exploration" });
+    const renameExploration = pageMenu().getByRole("button", {
+      name: "Page settings for Exploration",
+    });
     const renameOpacity = () =>
       renameExploration.evaluate((button) => getComputedStyle(button).opacity);
     await desktop.mouse.move(2, 2);
@@ -2486,19 +2489,25 @@ test(
     assert.deepEqual(restoredPage.pages, scratch.pages);
 
     await picker("Page 1").click();
-    const renameScratch = pageMenu().getByRole("button", { name: "Rename page Scratch" });
+    const renameScratch = pageMenu().getByRole("button", { name: "Page settings for Scratch" });
     const renameField = pageMenu().getByRole("textbox", { name: "Rename page", exact: true });
     await renameScratch.press("Enter");
+    const scratchActions = desktop.getByRole("menu", {
+      name: "Page actions for Scratch",
+      exact: true,
+    });
+    await scratchActions.getByRole("menuitem", { name: "Rename", exact: true }).click();
     assert.equal(await renameField.evaluate((input) => input === document.activeElement), true);
     assert.equal(await renameField.inputValue(), "Scratch");
     await renameField.fill("Discarded");
     await renameField.press("Escape");
     await pageMenu().waitFor();
     await desktop.waitForFunction(
-      () => document.activeElement?.getAttribute("aria-label") === "Rename page Scratch",
+      () => document.activeElement?.getAttribute("aria-label") === "Page settings for Scratch",
     );
     assert.equal((await snapshot()).revision, restoredPage.revision);
     await renameScratch.click();
+    await scratchActions.getByRole("menuitem", { name: "Rename", exact: true }).click();
     await renameField.fill("Notes");
     if (evidence) await desktop.screenshot({ path: join(evidence, "page-rename.png") });
     await renameField.press("Enter");

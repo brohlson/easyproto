@@ -61,6 +61,10 @@ export const commandSchema = z.discriminatedUnion("operation", [
     arguments: z.strictObject({ pageId: id, name: projectName }),
   }),
   envelope.extend({
+    operation: z.literal("delete_page"),
+    arguments: z.strictObject({ pageId: id }),
+  }),
+  envelope.extend({
     operation: z.literal("replace_project_tokens"),
     arguments: z.strictObject({ document: z.string().max(tokenByteLimit) }),
   }),
@@ -164,6 +168,7 @@ export type DesktopArtboardCommand = Extract<
       | "move_artboards"
       | "create_page"
       | "rename_page"
+      | "delete_page"
       | "replace_project_tokens"
       | "move_artboards_to_page"
       | "duplicate_artboards"
