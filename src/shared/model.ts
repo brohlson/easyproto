@@ -217,6 +217,7 @@ export type DesktopBridge = {
   importTokens(generation: number): Promise<string | null>;
   exportTokens(generation: number, format: "json" | "css"): Promise<void>;
   chooseProject(mode: "create" | "open"): Promise<void>;
+  saveProjectCopy(generation: number): Promise<boolean>;
   openRecentProject(id: string): Promise<void>;
   goHome(): Promise<void>;
   renameProject(generation: number, previous: string, name: string): Promise<void>;
@@ -239,6 +240,7 @@ export const ipc = {
   importTokens: "project:import-tokens",
   exportTokens: "project:export-tokens",
   choose: "project:choose",
+  saveCopy: "project:save-copy",
   recent: "project:open-recent",
   home: "project:home",
   rename: "project:rename",

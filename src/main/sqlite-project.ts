@@ -323,15 +323,26 @@ export function readSqliteProject(path: string, identity: SqliteIdentity): Sqlit
   }
 }
 
-export async function importSqliteProject(
+export async function writeSqliteProjectCopy(
   path: string,
   project: { name: string; snapshot: Snapshot; assets: ReadonlyMap<string, Asset> },
+  checkDestination?: (parent: string) => void,
 ) {
   if (extname(path) !== ".easyproto") throw new Error("Use a destination ending in .easyproto.");
   const target = resolve(path);
   const parent = await realpath(dirname(target));
   const final = join(parent, basename(target));
-  const staging = await mkdtemp(join(parent, ".easyproto-import-"));
+  function checkAvailable() {
+    checkDestination?.(parent);
+    for (const suffix of ["", "-journal", "-wal", "-shm"]) {
+      if (lstatSync(final + suffix, { throwIfNoEntry: false }))
+        throw Object.assign(new Error("The destination or a recovery file already exists."), {
+          code: "EEXIST",
+        });
+    }
+  }
+  checkAvailable();
+  const staging = await mkdtemp(join(parent, ".easyproto-copy-"));
   const pending = join(staging, "project");
   try {
     const file = await open(pending, "wx", 0o600);
@@ -359,6 +370,7 @@ export async function importSqliteProject(
     } finally {
       db.close();
     }
+    checkAvailable();
     await link(pending, final);
     await unlink(pending);
     return final;

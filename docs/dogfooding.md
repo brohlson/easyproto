@@ -83,6 +83,10 @@ The **Workspace · Pages picker** artboard previews page deletion at revision 37
 
 Revision 371 replaces the two row actions with one settings icon and a nested Rename/Delete menu. The 500 × 220 MCP capture was inspected before implementation and reported zero unresolved dependencies. [Settings menu mock](../evidence/page-deletion/menu-mock.png)
 
+## Save a Copy
+
+The **Home & settings** page has two new boards beside the existing workspace mockup. **Workspace · Save a Copy** shows the focused Settings action in Dark. **Workspace · Project copy saved** shows the success toast above the footer in Light. Both were created and captured through MCP before implementation at EasyProtoMocks revisions 375 and 376. The captures are 660 × 448 and report zero unresolved dependencies. The native save sheet belongs to the desktop workflow. [Settings mockup](../evidence/save-a-copy/mock-settings-dark.png) · [Success mockup](../evidence/save-a-copy/mock-success-light.png) · [Capture metadata](../evidence/save-a-copy/mock-captures.json)
+
 ## Agents on Home
 
 The **Agents** page in EasyProtoMocks shows the proposed Home layout, provider choice, Codex and Claude setup, editing an existing profile, and the chat agent picker. Home keeps Projects and Agents as two plain lists with their own empty states. Codex setup uses **Continue with ChatGPT** and Claude setup shows an Anthropic API key. Both happen from Home. [Home](../evidence/agent-setup/home.png) · [Add agent](../evidence/agent-setup/add-agent.png) · [Codex](../evidence/agent-setup/codex.png) · [Claude](../evidence/agent-setup/claude.png) · [OpenAI account guidance](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions) · [Anthropic authentication guidance](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use)

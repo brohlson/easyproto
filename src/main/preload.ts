@@ -37,6 +37,7 @@ const bridge: DesktopBridge = {
   copyArtboards: (generation, artboardIds, clipboardId) =>
     ipcRenderer.invoke(ipc.copy, generation, artboardIds, clipboardId),
   chooseProject: (mode) => ipcRenderer.invoke(ipc.choose, mode),
+  saveProjectCopy: (generation) => ipcRenderer.invoke(ipc.saveCopy, generation),
   openRecentProject: (id) => ipcRenderer.invoke(ipc.recent, id),
   goHome: () => ipcRenderer.invoke(ipc.home),
   renameProject: (generation, previous, name) =>

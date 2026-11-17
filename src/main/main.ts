@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import {
   Menu,
   nativeTheme,
@@ -330,6 +330,47 @@ async function start() {
     checkWritable();
     return active.project;
   }
+
+  ipcMain.handle(ipc.saveCopy, async (event, ...args: unknown[]) => {
+    allowSender(event, window);
+    const [selectedGeneration] = z.tuple([revision]).parse(args);
+    if (choosing || switching) return false;
+    const project = activeGeneration(selectedGeneration);
+    choosing = true;
+    try {
+      const { canceled, filePath } = await dialog.showSaveDialog(window, {
+        title: "Save a Copy",
+        buttonLabel: "Save Copy",
+        defaultPath: join(
+          dirname(project.root),
+          `${basename(project.root, ".easyproto")} copy.easyproto`,
+        ),
+        showsTagField: false,
+        properties: ["createDirectory"],
+      });
+      if (canceled || !filePath || window.isDestroyed()) return false;
+      const extension = extname(filePath);
+      if (extension && extension !== ".easyproto")
+        throw new ProjectError("COPY_DESTINATION", "Use a filename ending in .easyproto.");
+      await project.saveCopy(extension ? filePath : `${filePath}.easyproto`, () => {
+        if (window.isDestroyed())
+          throw new ProjectError("PROJECT_SCOPE", "The project selection changed.");
+        activeGeneration(selectedGeneration);
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof ProjectError) throw error;
+      if ((error as NodeJS.ErrnoException).code === "EEXIST")
+        throw new Error(
+          "A file already exists at that location. Choose a different name or folder.",
+        );
+      throw new Error(
+        "The project copy could not be saved. Choose another location and try again.",
+      );
+    } finally {
+      choosing = false;
+    }
+  });
 
   ipcMain.handle(ipc.rename, async (event, ...args: unknown[]) => {
     allowSender(event, window);

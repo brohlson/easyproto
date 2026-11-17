@@ -33,6 +33,10 @@ Use **⌘C** and **⌘V** to copy and paste an artboard within the open project.
 
 You can launch straight into a folder with `pnpm start "--project=$PWD/My prototype"` after building. Use an empty folder or an existing project. Without a path, the app starts at Home. Changes save automatically. Copy the entire project folder, including `.easy-proto` and `assets`, to move it.
 
+### Save a portable copy
+
+With a project open, choose **Settings → Save a Copy…** and pick a new filename. Use **Open project…** to open the resulting `.easyproto` file, even after moving it. The original stays open when you save, and each file can be edited independently. The copy contains the saved artboards, pages, tokens, and loaded project assets. Choose a new filename if one already exists.
+
 ### Try a SQLite project
 
 With the source project closed, import its current revision into a new editable file.

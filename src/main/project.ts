@@ -11,14 +11,14 @@ import {
   rmdir,
   writeFile,
 } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { basename, extname, join, sep } from "node:path";
 import { z } from "zod";
 import { tokenByteLimit } from "../shared/token-types";
 import {
-  importSqliteProject,
   readSqliteProject,
   renameSqliteProject,
   saveSqliteProject,
+  writeSqliteProjectCopy,
   type SqliteIdentity,
 } from "./sqlite-project";
 import { compileTokens, loadTokens, TokenError, type TokenBundle } from "./tokens";
@@ -600,7 +600,24 @@ export class Project {
   static async importFolder(path: string, destination: string) {
     await requireDirectory(await realpath(path));
     const source = await Project.open(path, undefined, "open");
-    return importSqliteProject(destination, source);
+    return source.saveCopy(destination);
+  }
+
+  async saveCopy(destination: string, checkActive?: () => void) {
+    const committed = await this.#enqueue(() => {
+      checkActive?.();
+      return { name: this.name, snapshot: this.#snapshot, assets: this.assets };
+    });
+    const assetsRoot = join(this.root, "assets").toLowerCase();
+    return writeSqliteProjectCopy(destination, committed, (parent) => {
+      checkActive?.();
+      const directory = parent.toLowerCase();
+      if (
+        directory.split(sep).includes(managed) ||
+        (!this.sqlite && (directory === assetsRoot || directory.startsWith(assetsRoot + sep)))
+      )
+        throw new ProjectError("COPY_DESTINATION", "Choose a location outside project data.");
+    });
   }
 
   get snapshot() {
@@ -989,7 +1006,7 @@ export class Project {
     });
   }
 
-  #enqueue<T>(run: () => Promise<T>) {
+  #enqueue<T>(run: () => T | Promise<T>) {
     const job = this.#tail.then(run);
     this.#tail = job.then(
       () => undefined,

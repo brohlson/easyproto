@@ -47,7 +47,7 @@ import { EditableName } from "./editable-name";
 import { MoveToPage, PagePicker } from "./pages";
 import { Settings, type Theme } from "./settings";
 import { TokenManager } from "./tokens";
-import { ToastProvider } from "./toast";
+import { ToastProvider, useToast } from "./toast";
 import { artboardSize } from "../shared/artboard-size";
 
 declare global {
@@ -301,6 +301,7 @@ function FitShortcut() {
 }
 
 function App() {
+  const { notify, dismiss } = useToast();
   const [desktop, setDesktop] = useState<DesktopState>();
   const [agents, setAgents] = useState<AgentProfilesState>();
   const focusAgents = useRef(false);
@@ -770,6 +771,15 @@ function App() {
     scene?.artboards.filter(({ pageId }) => pageId === activePageId).length ?? 0;
   const choose = (mode: "create" | "open") =>
     void navigate(() => window.easyProto.chooseProject(mode));
+
+  function saveProjectCopy() {
+    const current = latest.current;
+    if (!current || busy || drag.current) return;
+    dismiss("workspace");
+    void navigate(async () => {
+      if (await window.easyProto.saveProjectCopy(current.generation)) notify("Project copy saved");
+    });
+  }
   return (
     <main className={scene ? "workspace" : "workspace home-view"}>
       <header>
@@ -1018,6 +1028,7 @@ function App() {
             changeTheme={setTheme}
             busy={busy}
             choose={choose}
+            saveCopy={scene ? saveProjectCopy : undefined}
             goHome={scene ? () => void navigate(() => window.easyProto.goHome()) : undefined}
           />
           {scene && (

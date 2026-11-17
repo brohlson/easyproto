@@ -756,6 +756,52 @@ test("SQLite import preserves the active snapshot, ordered assets, project name 
   assert.equal((await Project.open(folder)).name, "Original name");
 });
 
+test("Save a Copy pins queued revisions, project name, and assets together", async (t) => {
+  const { folder, root } = await fixture(t);
+  const assets = join(folder, "assets");
+  await mkdir(assets);
+  const asset = join(assets, "loaded.png");
+  const loadedBytes = Buffer.from([1, 2, 3]);
+  await writeFile(asset, loadedBytes);
+  const active = await Project.open(folder);
+  await writeFile(asset, Buffer.from([4, 5, 6]));
+  const first = command(active.snapshot.manifest.projectId);
+  const rename = active.rename(active.name, "Display name at confirmation");
+  const firstEdit = active.execute(first);
+  const path = join(root, "Copy.easyproto");
+  const save = active.saveCopy(path);
+  const laterEdit = active.execute({ ...command(first.projectId), expectedRevision: 1 });
+  await Promise.all([rename, firstEdit, save, laterEdit]);
+
+  const copy = await Project.open(path);
+  assert.equal(copy.name, "Display name at confirmation");
+  assert.equal(copy.snapshot.manifest.revision, 1);
+  assert.equal(active.snapshot.manifest.revision, 2);
+  assert.deepEqual(copy.assets.get("loaded.png").bytes, loadedBytes);
+  assert.equal(copy.assetDigest, active.assetDigest);
+  assert.deepEqual(await copy.execute(first), await firstEdit);
+  assert.equal(copy.canUndo, false);
+});
+
+test("Save a Copy rejects managed destinations, existing links, and recovery sidecars", async (t) => {
+  const { folder, root, project } = await fixture(t);
+  const assets = join(folder, "assets");
+  await mkdir(assets);
+  for (const directory of [assets, join(folder, ".easy-proto")]) {
+    const path = join(directory, "Copy.easyproto");
+    await assert.rejects(project.saveCopy(path), { code: "COPY_DESTINATION" });
+    await assert.rejects(readFile(path), { code: "ENOENT" });
+  }
+  const path = join(root, "Copy.easyproto");
+  await symlink(join(root, "absent"), path);
+  await assert.rejects(project.saveCopy(path), { code: "EEXIST" });
+  await rm(path);
+  await writeFile(path + "-journal", "Recovery file");
+  await assert.rejects(project.saveCopy(path), { code: "EEXIST" });
+  assert.equal(await readFile(path + "-journal", "utf8"), "Recovery file");
+  await assert.rejects(readFile(path), { code: "ENOENT" });
+});
+
 test("SQLite rolls back a killed write and replays the committed receipt after a lost reply", async (t) => {
   const { project, folder, root } = await fixture(t);
   const original = await Project.open(folder);

@@ -241,3 +241,15 @@ The focused macOS checks passed for the new resize flow and the existing desktop
 ## SQLite, page settings, and resize release checks
 
 The release checks cover SQLite payload limits, source integrity, refusal of unsupported recovery sidecars, rollback at capacity, and replacement of an active database. They also exercise focus return from page settings and successive keyboard resizes. The full run and review dispositions are recorded alongside the release evidence. [Verification](../evidence/sqlite-pages-resize-commit/verify.log) · [Review dispositions](../evidence/sqlite-pages-resize-commit/review.md)
+
+## Save a Copy
+
+The local desktop work builds on `5bd4d6b`. **Settings → Save a Copy…** writes an editable `.easyproto` file from an open folder or SQLite project. The original stays open. The file carries the saved revision, name, pages, sources, tokens, loaded assets, and command receipts. Copy creation preserves the existing file on a destination conflict. [Usage](../readme.md#save-a-portable-copy) · [Storage decision](decisions/0006-sqlite-project-pilot.md) · [Mockups](dogfooding.md#save-a-copy)
+
+On Apple Silicon macOS 27.2.1, the focused Electron and MCP checks captured matching pixels for each source and its moved copy. Both copied projects reopened with the same tokens and assets, replayed an original receipt, rejected the source activation after switching, and preserved distinct edits to the original and copy. The checks also cover cancellation, occupied destinations, and an edit committed while the picker is open. The automated desktop checks supply the picker’s return value. A separate storage check verifies the queued snapshot, display name, and loaded asset bytes. [Verification](../evidence/save-a-copy/verify.log) · [Folder result](../evidence/save-a-copy/round-trip-folder.json) · [SQLite result](../evidence/save-a-copy/round-trip-sqlite.json)
+
+The real macOS save sheet wrote EasyProtoMocks revision 376 with 29 artboards, seven pages, and 376 command receipts. The copy reopened after moving it, with the same snapshot and assets. The updated Electron app is open on the original EasyProtoMocks project. [Native check](../evidence/save-a-copy/native-copy.json)
+
+The final `pnpm verify` run passed 43 tests. Two opt-in native agent runtime checks were skipped. An earlier run hit an intermittent resize test failure, and the next two full runs passed that check. [Final run](../evidence/save-a-copy/verify.log)
+
+Architecture and Reliability consulted on pinning the snapshot and reusing the atomic SQLite writer. The next bounded portability check is reopening both project formats in a packaged macOS build.

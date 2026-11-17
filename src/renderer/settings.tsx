@@ -1,4 +1,14 @@
-import { Check, FolderOpen, House, Monitor, Moon, Plus, Settings as Cog, Sun } from "lucide-react";
+import {
+  Check,
+  Copy,
+  FolderOpen,
+  House,
+  Monitor,
+  Moon,
+  Plus,
+  Settings as Cog,
+  Sun,
+} from "lucide-react";
 import { useRef } from "react";
 
 export type Theme = "system" | "light" | "dark";
@@ -15,12 +25,14 @@ export function Settings({
   busy,
   goHome,
   choose,
+  saveCopy,
 }: {
   theme: Theme;
   changeTheme: (theme: Theme) => void;
   busy: boolean;
   goHome?: () => void;
   choose: (mode: "create" | "open") => void;
+  saveCopy?: () => void;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -80,6 +92,16 @@ export function Settings({
           >
             <FolderOpen aria-hidden="true" size={15} /> Open project…
           </button>
+          {saveCopy && (
+            <button
+              type="button"
+              className="menu-row"
+              disabled={busy}
+              onClick={() => invoke(saveCopy)}
+            >
+              <Copy aria-hidden="true" size={15} /> Save a Copy…
+            </button>
+          )}
         </div>
         <div className="menu-section" role="group" aria-label="Appearance">
           <div className="menu-caption">Appearance</div>
