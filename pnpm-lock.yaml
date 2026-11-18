@@ -7,10 +7,22 @@ settings:
 importers:
 
   .:
+    devDependencies:
+      oxfmt:
+        specifier: 0.78.0
+        version: 0.78.0
+      oxlint:
+        specifier: 1.93.0
+        version: 1.93.0
+      playwright:
+        specifier: 1.59.1
+        version: 1.59.1
+
+  apps/desktop:
     dependencies:
       '@easy-proto/ui':
         specifier: workspace:*
-        version: link:packages/ui
+        version: link:../../packages/ui
       '@modelcontextprotocol/sdk':
         specifier: 1.32.2
         version: 1.32.2(zod@4.6.7)
@@ -63,12 +75,6 @@ importers:
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
-      oxfmt:
-        specifier: 0.78.0
-        version: 0.78.0
-      oxlint:
-        specifier: 1.93.0
-        version: 1.93.0
       playwright:
         specifier: 1.59.1
         version: 1.59.1
@@ -79,20 +85,11 @@ importers:
         specifier: 8.3.8
         version: 8.3.8(@types/node@24.10.1)(esbuild@0.28.2)
 
-  packages/ui:
-    dependencies:
-      lucide-react:
-        specifier: 1.73.0
-        version: 1.73.0(@types/react@19.3.0)(react@19.3.1)
-      react:
-        specifier: 19.3.1
-        version: 19.3.1
-
-  web:
+  apps/web:
     dependencies:
       '@easy-proto/ui':
         specifier: workspace:*
-        version: link:../packages/ui
+        version: link:../../packages/ui
       '@tanstack/react-router':
         specifier: 1.170.46
         version: 1.170.46(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -118,6 +115,19 @@ importers:
       vite:
         specifier: 8.3.8
         version: 8.3.8(@types/node@24.10.1)(esbuild@0.28.2)
+
+  packages/ui:
+    dependencies:
+      lucide-react:
+        specifier: 1.73.0
+        version: 1.73.0(@types/react@19.3.0)(react@19.3.1)
+      react:
+        specifier: 19.3.1
+        version: 19.3.1
+    devDependencies:
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
 
 packages:
 

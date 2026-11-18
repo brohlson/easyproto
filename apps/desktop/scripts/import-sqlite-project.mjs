@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { Project } from "../dist/project.js";
 
 const [source, destination, ...rest] = process.argv.slice(2);
@@ -6,7 +7,8 @@ if (!source || !destination || rest.length) {
   process.exitCode = 1;
 } else {
   try {
-    const path = await Project.importFolder(source, destination);
+    const cwd = process.env.INIT_CWD ?? process.cwd();
+    const path = await Project.importFolder(resolve(cwd, source), resolve(cwd, destination));
     const project = await Project.open(path, undefined, "open");
     const { revision, artboards, commands } = project.snapshot.manifest;
     console.log(

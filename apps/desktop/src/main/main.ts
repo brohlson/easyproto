@@ -42,8 +42,9 @@ import { parseTokenDocument } from "./tokens";
 const projectOption = process.argv
   .find((arg) => arg.startsWith("--project="))
   ?.slice("--project=".length);
+const launchDirectory = process.env.INIT_CWD ?? process.cwd();
 const testProfile = process.env.EASY_PROTO_PROFILE;
-if (testProfile) app.setPath("userData", resolve(testProfile));
+if (testProfile) app.setPath("userData", resolve(launchDirectory, testProfile));
 
 function allowSender(event: IpcMainInvokeEvent, window: BrowserWindow) {
   if (
@@ -113,7 +114,7 @@ async function start() {
   let active: (ActiveProject & { chat: ProjectChat }) | undefined;
   if (projectOption) {
     try {
-      active = activate(await Project.open(resolve(projectOption)));
+      active = activate(await Project.open(resolve(launchDirectory, projectOption)));
       await remember(active.project, true);
     } catch {
       throw new Error(

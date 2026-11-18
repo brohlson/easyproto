@@ -17,11 +17,11 @@ nvm install
 nvm use
 corepack enable pnpm
 pnpm install --frozen-lockfile
-pnpm exec install-electron --no
+pnpm --filter @easy-proto/desktop exec install-electron --no
 pnpm dev
 ```
 
-The runtime installer comes from the pinned Electron npm package and fetches the matching official Electron release. `pnpm dev` builds and launches the development app. Rebuild or rerun it after source changes. For a build already on disk, use `pnpm start`.
+The runtime installer comes from the pinned Electron npm package and fetches the matching official Electron release. `pnpm dev` builds and launches the desktop app. Rebuild or rerun it after source changes. For a build already on disk, use `pnpm start`.
 
 Home shows the projects you have created or opened on this device. Click a row to reopen it, or use **Create project** and select an empty folder in the macOS picker. Click **Easy Proto** in the header to return Home. The footer’s **Settings** menu has project actions and **Appearance**. Use **Open project…** to add an existing project or find a folder that moved.
 
@@ -57,11 +57,11 @@ The desktop uses the installed Codex CLI. Qualified macOS builds are `0.169.0` a
 
 Open a project and open **Chat**. Try “Create a page called Explorations” or “Change the headline on Field notes”. OpenAI receives your message, recent chat, and project details. If Codex needs an artboard’s HTML/CSS, Chat asks you to approve that read. Review each edit with **Apply change** or **Discard**. **Undo edit** uses the project’s undo history. For a request with dependent changes, apply the first proposal and ask chat to continue. [Project chat details](docs/chat-architecture.md#project-wide-chat)
 
-Run `pnpm build` and `node verify/chatgpt-live.mjs` to exercise a real Codex turn in a disposable Electron profile. Complete browser sign-in from the test window. The check requests a new page, tests Apply and Undo, then disconnects. To test against a local synthetic provider with the installed Codex runtime, run `EASY_PROTO_CHECK_CODEX_BIN="$(command -v codex)" pnpm verify`.
+Run `pnpm desktop:build` and `pnpm desktop:verify:chatgpt-live` to exercise a real Codex turn in a disposable Electron profile. Complete browser sign-in from the test window. The check requests a new page, tests Apply and Undo, then disconnects. To test against a local synthetic provider with the installed Codex runtime, run `EASY_PROTO_CHECK_CODEX_BIN="$(command -v codex)" pnpm verify`.
 
 ## Try browser sharing
 
-Run `pnpm web:dev` and open [the local sharing prototype](http://127.0.0.1:8787). The pnpm workspace contains the desktop app at the root, the TanStack Router app in `web/`, and the shared Brand and Select in `packages/ui/`. The [web walkthrough](web/README.md) covers the demo account, canvas and artboard links, and revocation.
+Run `pnpm web:dev` and open [the local sharing prototype](http://127.0.0.1:8787). The pnpm workspace contains Electron in `apps/desktop/`, TanStack Router in `apps/web/`, and the shared Brand, Select, and Inter assets in `packages/ui/`. Run `pnpm build` to build both apps or `pnpm desktop:build` and `pnpm web:build` individually. The [web walkthrough](apps/web/README.md) covers the demo account, canvas and artboard links, and revocation.
 
 ## Connect Codex
 

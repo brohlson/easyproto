@@ -58,4 +58,4 @@ The desktop chat dock exercises the project authority and approval boundaries wi
 
 ## Browser sharing
 
-The [browser sharing architecture](web-sharing-architecture.md) uses immutable read-only snapshots and distinguishes publisher sign-in from guest-link access. The [local prototype](../web/README.md) uses React and TanStack Router. Its Node server retains access control for canvas and individual artboard links, device frames, magic-link sign-in, and revocation. The desktop root, web app, and shared UI package use one pnpm workspace and lockfile.
+The [browser sharing architecture](web-sharing-architecture.md) uses immutable read-only snapshots and distinguishes publisher sign-in from guest-link access. The [local prototype](../apps/web/README.md) uses React and TanStack Router. Its Node server retains access control for canvas and individual artboard links, device frames, magic-link sign-in, and revocation. The Electron and web applications live in `apps/desktop/` and `apps/web/`. Shared UI and Inter assets live in `packages/ui/`. The applications use one pnpm workspace, lockfile, and TypeScript base configuration.

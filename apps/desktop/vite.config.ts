@@ -4,7 +4,7 @@ import { defineConfig } from "vite";
 import { compileTokens } from "./src/main/tokens";
 
 const tokenFile = fileURLToPath(new URL("./src/renderer/design.tokens.json", import.meta.url));
-const styleFiles = ["./src/renderer/styles.css", "./packages/ui/select.css"].map((name) =>
+const styleFiles = ["./src/renderer/styles.css", "../../packages/ui/select.css"].map((name) =>
   fileURLToPath(new URL(name, import.meta.url)),
 );
 const tokenModule = "virtual:desktop-design-tokens.css";
@@ -12,6 +12,7 @@ const resolvedTokenModule = "\0" + tokenModule;
 
 export default defineConfig({
   base: "/",
+  publicDir: fileURLToPath(new URL("../../packages/ui/public", import.meta.url)),
   build: { outDir: "dist/ui", emptyOutDir: true },
   esbuild: { jsx: "automatic" },
   plugins: [

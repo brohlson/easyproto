@@ -9,7 +9,7 @@ if (!token || !Number.isInteger(port) || port < 1 || port > 65535)
 const output = new URL("../src/renderer/design.tokens.json", import.meta.url);
 const projectIds = new Set();
 for (const path of ["EasyProtoMocks", ".workspace/EasyProtoMocks"]) {
-  const pointer = new URL(`../mocks/${path}/project.json`, import.meta.url);
+  const pointer = new URL(`../../../mocks/${path}/project.json`, import.meta.url);
   const contents = await readFile(pointer, "utf8").catch((error) => {
     if (error.code !== "ENOENT") throw error;
   });

@@ -58,7 +58,7 @@ Use short-lived URL-path grants for preview documents and their scoped subresour
 
 ## Loopback viewer prototype
 
-Run `node web/server.mjs` with the repository's Node.js 24 toolchain and visit [127.0.0.1:8787](http://127.0.0.1:8787). The [local demo](../web/README.md) exercises same-browser magic-link redemption through a browser test inbox, guest link grants and revocation, whole-canvas pan and zoom, and single-artboard phone and laptop frames. It uses one checked-in synthetic revision, local Node.js and in-memory SQLite. The fixture iframes have an opaque origin and deliver only known static HTML. The production release continues to start with PNG uploads.
+Run `pnpm web:start` with the repository's Node.js 24 toolchain and visit [127.0.0.1:8787](http://127.0.0.1:8787). The [local demo](../apps/web/README.md) exercises same-browser magic-link redemption through a browser test inbox, guest link grants and revocation, whole-canvas pan and zoom, and single-artboard phone and laptop frames. It uses one checked-in synthetic revision, local Node.js and in-memory SQLite. The fixture iframes have an opaque origin and deliver only known static HTML. The production release continues to start with PNG uploads.
 
 ## Build order and release evidence
 
