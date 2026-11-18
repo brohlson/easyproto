@@ -1,14 +1,15 @@
-import { ArrowUp, Paperclip, Square, X } from "lucide-react";
+import { ArrowUp, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { chatPromptLimit, type ChatDecision, type ChatState } from "../shared/chat";
 import type { AgentProfile } from "../shared/agents";
 import { AgentPicker } from "./agent-picker";
+import { ChatMarkdown } from "./chat-markdown";
 import type { Scene } from "../shared/model";
 
 export function ChatDock({
   scene,
+  pageId,
   open,
-  selectedId,
   busy,
   onClose,
   profiles,
@@ -16,8 +17,8 @@ export function ChatDock({
   onUndo,
 }: {
   scene: Scene;
+  pageId: string;
   open: boolean;
-  selectedId?: string;
   busy: boolean;
   onClose(): void;
   profiles: AgentProfile[];
@@ -25,7 +26,6 @@ export function ChatDock({
   onUndo(): Promise<boolean>;
 }) {
   const [chat, setChat] = useState<ChatState>();
-  const [attachment, setAttachment] = useState<string>();
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -35,11 +35,10 @@ export function ChatDock({
   const follow = useRef(true);
   const turn = chat?.turn;
   const phase = turn?.phase;
-  const blocked = phase === "streaming" || phase === "proposal" || phase === "applying";
+  const blocked =
+    phase === "streaming" || phase === "source" || phase === "proposal" || phase === "applying";
   const stale =
     phase === "stale" || (phase === "proposal" && scene.revision !== turn?.baseRevision);
-  const attached = scene.artboards.find(({ id }) => id === attachment);
-  const selected = scene.artboards.find(({ id }) => id === selectedId);
   const agent = profiles.find(({ id }) => id === chat?.agentId);
   const connected = agent?.state === "connected";
 
@@ -95,19 +94,18 @@ export function ChatDock({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!attached || !prompt.trim() || !chat || blocked || busy || pending || !connected) return;
+    if (!prompt.trim() || !chat || blocked || busy || pending || !connected) return;
     follow.current = true;
     if (
       await perform(() =>
         window.easyProto.startChat(scene.generation, {
-          artboardId: attached.id,
+          pageId,
           expectedRevision: scene.revision,
           prompt,
         }),
       )
     ) {
       setPrompt("");
-      setAttachment(undefined);
       input.current?.focus();
     }
   }
@@ -135,21 +133,23 @@ export function ChatDock({
       >
         {!turn && !chat?.history.length && (
           <p className="chat-hint">
-            {connected
-              ? "Select and attach an artboard to try a headline edit."
-              : "Choose an agent to start a chat."}
+            {agent?.id === "local-demo"
+              ? "Try asking for a headline edit."
+              : connected
+                ? "Ask about this project, organize pages, or build an artboard."
+                : "Choose an agent to start a chat."}
           </p>
         )}
         {chat?.history.map((message) => (
           <div key={message.id} className="chat-history">
             <div className="chat-message">
-              <span>You · {message.artboardName}</span>
+              <span>You</span>
               <p>{message.prompt}</p>
             </div>
             {message.response && (
               <div className="chat-response">
                 <span>{agent?.name ?? "Agent"}</span>
-                <p>{message.response}</p>
+                <ChatMarkdown text={message.response} />
               </div>
             )}
           </div>
@@ -157,36 +157,84 @@ export function ChatDock({
         {turn && (
           <>
             <div className="chat-message">
-              <span>You · {turn.artboardName}</span>
+              <span>You</span>
               <p>{turn.prompt}</p>
             </div>
             {(turn.response || phase === "streaming") && (
               <div className="chat-response">
                 <span>{agent?.name ?? "Agent"}</span>
-                <p>{turn.response || "Preparing a proposal…"}</p>
+                {turn.response ? <ChatMarkdown text={turn.response} /> : <p>Working…</p>}
               </div>
             )}
+            {phase === "source" && turn.sourceRequest && (
+              <section className="chat-proposal" aria-label="Artboard source request">
+                <strong>Read artboard source?</strong>
+                <p role="status">
+                  OpenAI will receive the HTML and CSS for {turn.sourceRequest.artboard}
+                  {turn.sourceRequest.page ? ` on ${turn.sourceRequest.page}` : ""}.
+                </p>
+                <div className="chat-actions">
+                  <button type="button" disabled={pending} onClick={() => decide("stop")}>
+                    Deny
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-primary"
+                    disabled={pending || busy || scene.revision !== turn.baseRevision}
+                    onClick={() => decide("allow_source")}
+                  >
+                    Allow once
+                  </button>
+                </div>
+              </section>
+            )}
             {(phase === "proposal" || phase === "applying" || phase === "stale") &&
-              turn.proposal && (
-                <section className="chat-proposal" aria-label="Proposed headline change">
-                  <strong>Proposed headline change</strong>
-                  <span>
-                    {turn.artboardName} · Revision {turn.baseRevision}
-                  </span>
-                  <dl>
-                    <div>
-                      <dt>Before</dt>
-                      <dd>{turn.proposal.before}</dd>
-                    </div>
-                    <div>
-                      <dt>After</dt>
-                      <dd>{turn.proposal.after}</dd>
-                    </div>
-                  </dl>
+              (turn.proposal || turn.change) && (
+                <section
+                  className="chat-proposal"
+                  aria-label={turn.change ? "Proposed project change" : "Proposed headline change"}
+                >
+                  {turn.change ? (
+                    <>
+                      <strong>Proposed project change</strong>
+                      <p>{turn.change.summary}</p>
+                      {turn.change.details && <p>{turn.change.details}</p>}
+                      {(turn.change.html !== undefined || turn.change.css !== undefined) && (
+                        <details className="chat-proposal-source">
+                          <summary>View proposed source</summary>
+                          {turn.change.html !== undefined && (
+                            <pre aria-label="HTML">{turn.change.html}</pre>
+                          )}
+                          {turn.change.css !== undefined && (
+                            <pre aria-label="CSS">{turn.change.css}</pre>
+                          )}
+                        </details>
+                      )}
+                    </>
+                  ) : (
+                    turn.proposal && (
+                      <>
+                        <strong>Proposed headline change</strong>
+                        <span>
+                          {turn.artboardName} · Revision {turn.baseRevision}
+                        </span>
+                        <dl>
+                          <div>
+                            <dt>Before</dt>
+                            <dd>{turn.proposal.before}</dd>
+                          </div>
+                          <div>
+                            <dt>After</dt>
+                            <dd>{turn.proposal.after}</dd>
+                          </div>
+                        </dl>
+                      </>
+                    )
+                  )}
                   {stale && (
                     <p role="status">
                       {phase === "stale"
-                        ? "The project changed. Attach the artboard and send a new turn."
+                        ? "The project changed. Send your request again."
                         : "The project changed. Discard this proposal and send a new turn."}
                     </p>
                   )}
@@ -206,14 +254,22 @@ export function ChatDock({
                         disabled={pending || busy || stale || phase === "applying"}
                         onClick={() => decide("apply")}
                       >
-                        {phase === "applying" ? "Applying…" : "Apply edit"}
+                        {phase === "applying"
+                          ? "Applying…"
+                          : turn.change
+                            ? "Apply change"
+                            : "Apply edit"}
                       </button>
                     </div>
                   )}
                 </section>
               )}
             {phase === "failed" && <p role="alert">{turn.error}</p>}
-            {phase === "stopped" && <p role="status">Stopped. The artboard is unchanged.</p>}
+            {phase === "stopped" && (
+              <p role="status">
+                {chat?.backend === "demo" ? "Stopped. The artboard is unchanged." : "Stopped."}
+              </p>
+            )}
             {phase === "discarded" && <p role="status">Proposal discarded.</p>}
             {phase === "applied" && (
               <div className="chat-result">
@@ -246,15 +302,16 @@ export function ChatDock({
         )}
         {connected && agent.id !== "local-demo" && (
           <p className="chat-provider-note">
-            Send shares your message and the current headline with{" "}
-            {agent.kind === "codex" ? "OpenAI" : "Anthropic"}.
+            {agent.kind === "codex"
+              ? "OpenAI receives your message, recent chat, and project details. Chat asks before sharing artboard source."
+              : "Anthropic receives your message and the headline of the artboard you name."}
           </p>
         )}
         <div className="chat-input">
           <textarea
             ref={input}
             aria-label="Message"
-            placeholder={connected ? "Change the headline to…" : "Choose an agent to chat…"}
+            placeholder={connected ? "Ask about this project…" : "Choose an agent to chat…"}
             disabled={!connected}
             rows={2}
             value={prompt}
@@ -281,7 +338,6 @@ export function ChatDock({
                 void perform(() => window.easyProto.selectChatAgent(scene.generation, id)).then(
                   (picked) => {
                     if (picked) {
-                      setAttachment(undefined);
                       setPrompt("");
                       follow.current = true;
                     }
@@ -290,32 +346,6 @@ export function ChatDock({
               }}
               onManage={onManage}
             />
-            <button
-              type="button"
-              className="chat-attach chat-icon"
-              aria-label={
-                attached
-                  ? `Remove ${attached.name} attachment`
-                  : selected
-                    ? `Attach ${selected.name}`
-                    : "Attach artboard"
-              }
-              title={
-                attached
-                  ? `Remove ${attached.name} attachment`
-                  : selected
-                    ? `Attach ${selected.name}`
-                    : "Attach artboard"
-              }
-              aria-pressed={Boolean(attached)}
-              disabled={busy || (!attached && !selected) || blocked || pending || !connected}
-              onClick={() => {
-                setAttachment(attached ? undefined : selected?.id);
-                input.current?.focus();
-              }}
-            >
-              <Paperclip size={15} aria-hidden="true" />
-            </button>
             {phase === "streaming" ? (
               <button
                 type="button"
@@ -329,9 +359,7 @@ export function ChatDock({
               <button
                 type="submit"
                 className="chat-primary chat-send"
-                disabled={
-                  !chat || busy || blocked || pending || !connected || !attached || !prompt.trim()
-                }
+                disabled={!chat || busy || blocked || pending || !connected || !prompt.trim()}
               >
                 <ArrowUp size={14} aria-hidden="true" /> Send
               </button>

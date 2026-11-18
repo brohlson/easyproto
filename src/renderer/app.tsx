@@ -304,6 +304,7 @@ function App() {
   const { notify, dismiss } = useToast();
   const [desktop, setDesktop] = useState<DesktopState>();
   const [agents, setAgents] = useState<AgentProfilesState>();
+  const [agentSigningIn, setAgentSigningIn] = useState(false);
   const focusAgents = useRef(false);
   useEffect(() => {
     let current = true;
@@ -746,7 +747,7 @@ function App() {
     }
   }
 
-  const busy = !desktop || choosing || saving;
+  const busy = !desktop || choosing || saving || agentSigningIn;
   const page = scene?.pages.find(({ id }) => id === activePageId);
   const otherPages = scene?.pages.filter(({ id }) => id !== activePageId) ?? [];
   function navigatePage(pageId: string) {
@@ -899,7 +900,7 @@ function App() {
               </ul>
             )}
           </section>
-          <AgentSettings state={agents} onChange={setAgents} />
+          <AgentSettings state={agents} onChange={setAgents} onSigningIn={setAgentSigningIn} />
         </div>
       )}
       {scene && activePageId && (
@@ -1001,8 +1002,8 @@ function App() {
           <ChatDock
             key={scene.generation}
             scene={scene}
+            pageId={activePageId}
             open={chatOpen}
-            selectedId={selection.length === 1 ? selection[0].id : undefined}
             busy={busy}
             onClose={closeChat}
             profiles={agents?.profiles ?? []}

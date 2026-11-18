@@ -112,3 +112,10 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, [tabindex]:f
   .wording div { padding-block:5px; }
   .note { margin-bottom:7px; }
 }
+
+.markdown-reply{line-height:1.5;color:var(--foreground,inherit)}
+.markdown-reply h2{font-size:14px;line-height:1.35;margin:4px 0 0;font-weight:650}
+.markdown-reply p,.markdown-reply ul{margin:6px 0 0}
+.markdown-reply ul{padding-inline-start:19px}
+.markdown-reply li+li{margin-top:3px}
+.markdown-reply code{border-radius:4px;padding:1px 4px;background:rgba(128,128,128,.2)}

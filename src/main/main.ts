@@ -31,7 +31,6 @@ import { ArtboardActivity } from "./activity";
 import { ProjectChat, type ChatMemory } from "./chat";
 import { AgentProfiles, demoAgentId, keyAgentId } from "./agents";
 import { configuredCodex, installedCodex } from "./codex";
-import { installedClaude } from "./claude";
 import { colorToHex, tokenByteLimit } from "../shared/token-types";
 import desktopTokens from "../renderer/design.tokens.json";
 import { listen, type ActiveProject } from "./mcp";
@@ -60,7 +59,7 @@ async function start() {
   const profileDir = app.getPath("userData");
   const agentsPath = join(profileDir, "agent-profiles.bin");
   const legacyPath = join(profileDir, "chatgpt-account.bin");
-  const [codex, claude] = await Promise.all([installedCodex(), installedClaude()]);
+  const codex = await installedCodex();
   async function decrypt(path: string) {
     try {
       return safeStorage.decryptString(await readFile(path));
@@ -94,7 +93,6 @@ async function start() {
     },
     {
       codex,
-      claude,
       demo: process.env.EASY_PROTO_CHAT_DEMO === "1",
       experimental: configuredCodex(),
       open: async (url) => {
@@ -134,7 +132,14 @@ async function start() {
     const lifetime = new AbortController();
     const activationId = randomUUID();
     const key = JSON.stringify([project.root, project.snapshot.manifest.projectId]);
-    const memory = conversations.get(key) ?? { history: new Map() };
+    const memory: ChatMemory = conversations.get(key) ?? { history: new Map() };
+    if (
+      memory.agentId &&
+      !agents?.status.profiles.some(
+        ({ id, state }) => id === memory.agentId && state === "connected",
+      )
+    )
+      delete memory.agentId;
     conversations.delete(key);
     conversations.set(key, memory);
     if (conversations.size > 32) conversations.delete(conversations.keys().next().value!);
@@ -243,6 +248,7 @@ async function start() {
 
   async function switchTo(load: () => Promise<Project | undefined>, findMoved = false) {
     switching = true;
+    active?.chat.stopUnresolved();
     try {
       await active?.project.whenIdle();
       if (window.isDestroyed()) return;
@@ -418,7 +424,7 @@ async function start() {
     return active!.chat.start(
       z
         .strictObject({
-          artboardId: id,
+          pageId: id.optional(),
           expectedRevision: revision,
           prompt: z.string().trim().min(1).max(chatPromptLimit),
         })
@@ -432,7 +438,7 @@ async function start() {
       activeGeneration(generation);
       return active!.chat.decide(
         id.parse(turnId),
-        z.enum(["apply", "discard", "stop"]).parse(decision),
+        z.enum(["apply", "discard", "stop", "allow_source"]).parse(decision),
       );
     },
   );

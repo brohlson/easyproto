@@ -77,6 +77,12 @@ Revision 352 previews the selected **Fold** mark in the chat mock's Light and Da
 
 Revision 356 adds the **Continue with ChatGPT** entry point in the Attach mock. The app uses the published OpenAI mark and keeps the ChatGPT plan label and usage link near the composer after connecting. [Sign-in mock](../evidence/chat-dock/chat-dock-attach.png) · [Desktop before sign-in](../evidence/chatgpt-sign-in/before-sign-in.png)
 
+The working EasyProtoMocks **Chat dock** page now has **Project chat** and **Project proposal** boards. The composer shows an enabled Send for an unattached page request. The second board shows the proposed page creation and Apply or Discard. The boards were updated through MCP and inspected at revisions 379 and 380. Both 1180 × 738 captures reported zero unresolved dependencies. [Composer](../evidence/project-chat/mock-compose.png) · [Proposal](../evidence/project-chat/mock-proposal.png) · [Desktop proposal](../evidence/project-chat/desktop-chat-project-proposal.png)
+
+Revisions 381 and 382 simplify those two composers to the agent picker and Send. Both captures were made through MCP and inspected before implementation, with zero unresolved dependencies. [Composer](../evidence/chat-composer/mock-1.png) · [Proposal](../evidence/chat-composer/mock-2.png)
+
+Revision 383 shows a formatted agent reply on **Chat dock · 2 Project proposal**. The dark mock uses a short heading, list, and inline code above the project proposal. The 1180 × 738 MCP capture had zero unresolved dependencies and was inspected before implementation. [Mock](../evidence/chat-markdown/mock.png) · [Desktop reply](../evidence/chat-markdown/desktop-chat-markdown.png)
+
 ## Page deletion
 
 The **Workspace · Pages picker** artboard previews page deletion at revision 370. A compact trash action sits beside Rename. A populated page opens a confirmation with the artboard count and the Undo shortcut. The 820 × 310 MCP capture reported no unresolved dependencies. [Deletion mock](../evidence/page-deletion/mock.png)
@@ -96,6 +102,8 @@ The chat picker sits immediately left of the icon-only paperclip in the composer
 All eight MCP captures at revision 367 reported zero unresolved dependencies. Chromium on Apple Silicon macOS verified adding profiles of both types alongside the seeded profiles, editing and reconnecting, keyboard selection and focus return, separate conversations, the new composer order, and the compact empty state. The paperclip keeps its accessible name and shows a pressed state when attached. The clickable mock uses synthetic connections and sent zero external requests. Add page required the desktop page picker. [Capture metadata](../evidence/agent-setup/captures.json) · [Interactive mock](../evidence/agent-setup/agent-setup.html) · [Browser checks](../evidence/agent-setup/interaction-check.json)
 
 Revision 369 updates the populated and empty chat mockups with an inline name and caret. Both were recaptured and inspected before applying the change to the desktop. [Dark picker](../evidence/agent-setup/picker.png) · [Light empty picker](../evidence/agent-setup/chat-empty.png)
+
+The **Agents · Log in with ChatGPT** board updates the existing sign-in artboard at revision 378. Home shows one login action under Agents, with the project list kept separate. The 1180 × 738 dark capture was inspected before implementation and reported zero unresolved dependencies. [Login mock](../evidence/chatgpt-login/mock-home-login.png)
 
 ## Shared select
 

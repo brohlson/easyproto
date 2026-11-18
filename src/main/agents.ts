@@ -10,7 +10,7 @@ import {
 } from "../shared/agents";
 import { ChatGPTAccount } from "./chatgpt";
 import { type ChatProvider } from "./chat";
-import { proposeHeadline, qualifyCodex, type CodexSettings } from "./codex";
+import { proposeProjectChange, qualifyCodex, type CodexSettings } from "./codex";
 import { claudeModel, proposeClaude } from "./claude";
 
 export const demoAgentId = "local-demo";
@@ -95,38 +95,42 @@ export class AgentProfiles {
   }
 
   get defaultAgent() {
-    return this.options.experimental ? keyAgentId : this.options.demo ? demoAgentId : undefined;
+    if (this.options.experimental) return keyAgentId;
+    if (this.options.demo) return demoAgentId;
+    return this.status.profiles.find(({ state }) => state === "connected")?.id;
   }
 
   get status(): AgentProfilesState {
-    const profiles = this.#document.profiles.map<AgentProfile>((profile) => {
-      if (profile.kind === "claude")
+    const profiles = this.#document.profiles
+      .filter(({ kind }) => kind === "codex" || Boolean(this.options.claude))
+      .map<AgentProfile>((profile) => {
+        if (profile.kind === "claude")
+          return {
+            id: profile.id,
+            name: profile.name,
+            kind: "claude",
+            state:
+              !profile.key || !profile.model
+                ? "reconnect"
+                : this.options.claude
+                  ? "connected"
+                  : "runtime-unavailable",
+          };
+        const status = this.#accounts.get(profile.id)?.status;
         return {
           id: profile.id,
           name: profile.name,
-          kind: "claude",
-          state:
-            !profile.key || !profile.model
-              ? "reconnect"
-              : this.options.claude
-                ? "connected"
-                : "runtime-unavailable",
+          kind: "codex",
+          state: !status?.plan
+            ? "reconnect"
+            : this.options.codex
+              ? "connected"
+              : "runtime-unavailable",
+          account: status?.email,
+          welcome: status?.welcome,
+          message: status?.message,
         };
-      const status = this.#accounts.get(profile.id)?.status;
-      return {
-        id: profile.id,
-        name: profile.name,
-        kind: "codex",
-        state: !status?.plan
-          ? "reconnect"
-          : this.options.codex
-            ? "connected"
-            : "runtime-unavailable",
-        account: status?.email,
-        welcome: status?.welcome,
-        message: status?.message,
-      };
-    });
+      });
     if (this.options.experimental)
       profiles.push({ id: keyAgentId, name: "Codex · API key", kind: "codex", state: "connected" });
     if (this.options.demo)
@@ -156,7 +160,8 @@ export class AgentProfiles {
 
   #find(id: string) {
     const profile = this.#document.profiles.find((entry) => entry.id === id);
-    if (!profile) throw new Error("That agent is no longer available.");
+    if (!profile || (profile.kind === "claude" && !this.options.claude))
+      throw new Error("That agent is no longer available.");
     return profile;
   }
 
@@ -222,6 +227,8 @@ export class AgentProfiles {
       throw new Error("Choose the agent’s original provider.");
     const id = previous?.id ?? randomUUID();
     if (input.kind === "claude") {
+      if (!this.options.claude)
+        throw new Error("Claude is unavailable in this version of Easy Proto.");
       if (!input.key) throw new Error("Enter an Anthropic API key.");
       const lifetime = new AbortController();
       this.#cancel = () => lifetime.abort();
@@ -271,7 +278,10 @@ export class AgentProfiles {
     if (id === demoAgentId && this.options.demo) return;
     if (id === keyAgentId && this.options.experimental) {
       const settings = this.options.experimental;
-      return { backend: "codex", run: (input, signal) => proposeHeadline(settings, input, signal) };
+      return {
+        backend: "codex",
+        runProject: (input, signal) => proposeProjectChange(settings, input, signal),
+      };
     }
     const profile = this.#find(id);
     if (profile.kind === "claude" && profile.key && profile.model && this.options.claude) {
@@ -283,10 +293,10 @@ export class AgentProfiles {
     if (profile.kind === "codex" && executable && account?.enabled)
       return {
         backend: "chatgpt",
-        run: async (input, signal) => {
+        runProject: async (input, signal) => {
           const authorized = await account.provider(signal);
           signal.throwIfAborted();
-          return proposeHeadline(
+          return proposeProjectChange(
             { ...authorized, executable, credential: "chatgpt" },
             input,
             signal,

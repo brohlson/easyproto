@@ -218,7 +218,7 @@ function metadata(artboardId: string, atRevision: number, input: BoardInput, pag
   return { artboard, source: { html, css } };
 }
 
-function translation(bounds: Artboard[], dx: number, dy: number) {
+export function translation(bounds: Pick<Artboard, "x" | "y">[], dx: number, dy: number) {
   const clamp = (delta: number, axis: "x" | "y") => {
     const values = bounds.map((board) => board[axis]);
     return Math.max(

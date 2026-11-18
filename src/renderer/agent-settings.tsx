@@ -1,17 +1,7 @@
-import { ArrowLeft, ChevronRight, Plus, Sparkles, Terminal, X } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { AgentAction, AgentKind, AgentProfile, AgentProfilesState } from "../shared/agents";
+import { Terminal, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type { AgentAction, AgentProfile, AgentProfilesState } from "../shared/agents";
 import chatGPTLogo from "./brand/chatgpt-white.svg";
-
-export const agentKinds = [
-  { kind: "codex", label: "Codex", detail: "OpenAI · ChatGPT plan", Icon: Terminal },
-  { kind: "claude", label: "Claude", detail: "Anthropic · API key", Icon: Sparkles },
-] as const;
-
-export function AgentIcon({ kind, size = 15 }: { kind: AgentKind; size?: number }) {
-  const Icon = kind === "codex" ? Terminal : Sparkles;
-  return <Icon size={size} aria-hidden="true" />;
-}
 
 export function agentStatus(profile: AgentProfile) {
   if (profile.state === "connected") return "Connected";
@@ -19,121 +9,110 @@ export function agentStatus(profile: AgentProfile) {
   return "Runtime required";
 }
 
-type Flow =
-  | { step: "choose" }
-  | { step: "connect"; kind: AgentKind; id?: string }
-  | { step: "edit" | "welcome"; id: string };
-
 export function AgentSettings({
   state,
   onChange,
+  onSigningIn,
 }: {
   state: AgentProfilesState | undefined;
   onChange(state: AgentProfilesState): void;
+  onSigningIn(active: boolean): void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const owner = useRef<HTMLElement>(null);
+  const owner = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef<HTMLButtonElement>(null);
+  const nameField = useRef<HTMLInputElement>(null);
   const cancelRequested = useRef(false);
-  const [flow, setFlow] = useState<Flow>();
+  const loginButton = useRef<HTMLButtonElement>(null);
+  const [editingId, setEditingId] = useState<string>();
   const [name, setName] = useState("");
-  const [key, setKey] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [pending, setPending] = useState<AgentAction["action"]>();
   const [error, setError] = useState("");
-  const profile =
-    flow && "id" in flow ? state?.profiles.find(({ id }) => id === flow.id) : undefined;
-  const kind = flow?.step === "connect" ? flow.kind : profile?.kind;
-  const label = kind === "codex" ? "Codex" : "Claude";
-  const runtime = kind === "codex" ? state?.codexInstalled : state?.claudeInstalled;
-  const title =
-    flow?.step === "choose"
-      ? "Add agent"
-      : flow?.step === "welcome"
-        ? "You’re using your ChatGPT plan"
-        : flow?.step === "edit"
-          ? `Edit ${label} agent`
-          : profile?.kind === "claude" && profile.state !== "reconnect"
-            ? "Change Anthropic API key"
-            : `${profile ? "Reconnect" : "Add"} ${label}`;
+  const profile = state?.profiles.find(({ id }) => id === editingId);
+  const signingIn = pending === "connect";
 
   useEffect(() => {
-    if (flow) {
-      if (!dialog.current?.open) dialog.current?.showModal();
-      dialog.current
-        ?.querySelector<HTMLElement>(".agent-provider-row, input[name=agent-name], .agent-finish")
-        ?.focus();
+    if (editingId && !dialog.current?.open) {
+      dialog.current?.showModal();
+      nameField.current?.focus();
     }
-  }, [flow]);
+  }, [editingId]);
 
-  function start(next: Flow, source: HTMLElement, initial = "") {
-    owner.current = source;
+  useEffect(() => {
+    if (pending || editingId) return;
+    restoreFocus.current?.focus();
+    restoreFocus.current = null;
+  }, [pending, editingId]);
+
+  function closeEditor() {
+    dialog.current?.close();
+    setEditingId(undefined);
     setError("");
-    setName(initial);
-    setKey("");
-    setFlow(next);
+    restoreFocus.current = owner.current;
   }
 
-  function close() {
-    dialog.current?.close();
-    setFlow(undefined);
-    setKey("");
-    owner.current?.focus();
+  function cancelLogin() {
+    cancelRequested.current = true;
+    void window.easyProto.agents({ action: "cancel" }).catch(() => undefined);
   }
 
   async function perform(action: AgentAction) {
-    setSaving(true);
+    setPending(action.action);
+    if (action.action === "connect") onSigningIn(true);
     setError("");
     cancelRequested.current = false;
     try {
       const next = await window.easyProto.agents(action);
       onChange(next);
+      if (action.action === "rename") closeEditor();
       if (action.action === "connect") {
-        const changed = action.id
+        const connected = action.id
           ? next.profiles.find(({ id }) => id === action.id)
           : next.profiles.find(({ id }) => !state?.profiles.some((entry) => entry.id === id));
-        if (changed?.welcome && changed.state === "connected")
-          setFlow({ step: "welcome", id: changed.id });
-        else if (changed?.kind === "codex" && changed.state === "reconnect") {
-          setFlow({ step: "edit", id: changed.id });
-          setError("Enable ChatGPT plan usage to use this agent.");
-        } else close();
-      } else if (action.action === "rename" || action.action === "welcome") close();
+        if (connected?.state === "reconnect") {
+          setError("Allow ChatGPT plan usage in your browser to connect Codex.");
+        } else if (editingId) closeEditor();
+      }
     } catch (reason) {
-      if (cancelRequested.current) close();
-      else
+      if (!cancelRequested.current)
         setError(
           reason instanceof Error
             ? reason.message.split("Error: ").at(-1) || "Could not update this agent."
             : "Could not update this agent.",
         );
     } finally {
-      setSaving(false);
-      if (action.action === "connect") setKey("");
+      setPending(undefined);
+      if (action.action === "connect") onSigningIn(false);
     }
   }
 
-  function cancel() {
-    if (!saving) close();
-    else if (flow?.step === "connect") {
-      cancelRequested.current = true;
-      void window.easyProto.agents({ action: "cancel" }).catch(() => undefined);
-    }
+  function login(existing?: AgentProfile) {
+    if (!existing) restoreFocus.current = loginButton.current;
+    const names = new Set(state?.profiles.map(({ name }) => name));
+    let suggested = "Codex";
+    for (let suffix = 2; names.has(suggested); suffix++) suggested = `Codex ${suffix}`;
+    void perform({
+      action: "connect",
+      kind: "codex",
+      id: existing?.id,
+      name: existing?.name ?? suggested,
+    });
   }
 
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!name.trim() || saving) return;
-    if (flow?.step === "connect")
-      void perform({
-        action: "connect",
-        kind: flow.kind,
-        name,
-        id: flow.id,
-        ...(flow.kind === "claude" ? { key } : {}),
-      });
-    else if (flow?.step === "edit") void perform({ action: "rename", id: flow.id, name });
-  }
+  const signInMessage = signingIn && (
+    <div className="agent-sign-in">
+      <p role="status">Finish signing in with ChatGPT in your browser.</p>
+      <button type="button" className="agent-button quiet" onClick={cancelLogin}>
+        Cancel sign-in
+      </button>
+    </div>
+  );
+  const errorMessage = error && (
+    <p className="agent-error" role="alert">
+      {error}
+    </p>
+  );
 
-  const isSetup = flow?.step === "connect";
   return (
     <section className="home-agents" aria-labelledby="agents-title">
       <div className="home-heading">
@@ -141,39 +120,41 @@ export function AgentSettings({
           Agents
         </h2>
         <button
+          ref={loginButton}
           type="button"
-          className="agent-button"
-          disabled={!state || Boolean(state.message)}
-          onClick={(event) => start({ step: "choose" }, event.currentTarget)}
+          className="agent-button chatgpt-connect"
+          disabled={!state || Boolean(state.message) || Boolean(pending)}
+          onClick={() => login()}
         >
-          <Plus size={15} aria-hidden="true" /> Add agent
+          <img src={chatGPTLogo} alt="" /> Log in with ChatGPT
         </button>
       </div>
-      {state?.message ? (
-        <p role="status">{state.message}</p>
-      ) : state?.profiles.length ? (
+      {state?.message && <p role="status">{state.message}</p>}
+      {!editingId && signInMessage}
+      {!editingId && errorMessage}
+      {Boolean(state?.profiles.length) && (
         <ul aria-label="Agent profiles">
-          {state.profiles.map((entry) => (
+          {state?.profiles.map((entry) => (
             <li key={entry.id}>
               <button
                 type="button"
-                disabled={entry.id === "local-demo" || entry.id === "codex-experiment"}
-                onClick={(event) =>
-                  start({ step: "edit", id: entry.id }, event.currentTarget, entry.name)
+                disabled={
+                  Boolean(pending) || entry.id === "local-demo" || entry.id === "codex-experiment"
                 }
+                onClick={(event) => {
+                  owner.current = event.currentTarget;
+                  setName(entry.name);
+                  setError("");
+                  setEditingId(entry.id);
+                }}
               >
-                <AgentIcon kind={entry.kind} />
-                <span className="home-agent-name">{entry.name}</span>
-                <span className="home-agent-kind">
-                  {entry.kind === "codex" ? "Codex" : "Claude"}
-                </span>
+                <Terminal size={15} aria-hidden="true" />
+                <span>{entry.name}</span>
                 <span className="home-agent-status">{agentStatus(entry)}</span>
               </button>
             </li>
           ))}
         </ul>
-      ) : (
-        <p>No agents yet</p>
       )}
       <dialog
         ref={dialog}
@@ -181,226 +162,97 @@ export function AgentSettings({
         aria-labelledby="agent-dialog-title"
         onCancel={(event) => {
           event.preventDefault();
-          cancel();
+          if (signingIn) cancelLogin();
+          else if (!pending) closeEditor();
         }}
       >
-        {flow && (
+        {profile && (
           <>
             <header className="agent-dialog-heading">
-              {isSetup && (
-                <button
-                  type="button"
-                  className="agent-icon-button"
-                  aria-label="Back"
-                  disabled={saving}
-                  onClick={() => {
-                    setError("");
-                    setKey("");
-                    setFlow(flow.id ? { step: "edit", id: flow.id } : { step: "choose" });
-                  }}
-                >
-                  <ArrowLeft size={16} aria-hidden="true" />
-                </button>
-              )}
-              <h2 id="agent-dialog-title">{title}</h2>
+              <h2 id="agent-dialog-title">Edit Codex agent</h2>
               <button
                 type="button"
                 className="agent-icon-button"
-                aria-label="Close agent setup"
-                onClick={cancel}
+                aria-label="Close agent settings"
+                disabled={Boolean(pending)}
+                onClick={closeEditor}
               >
                 <X size={16} aria-hidden="true" />
               </button>
             </header>
-            {flow.step === "choose" && (
-              <div className="agent-provider-list" role="group" aria-label="Providers">
-                {agentKinds.map(({ kind, label, detail, Icon }) => (
-                  <button
-                    key={kind}
-                    type="button"
-                    className="agent-provider-row"
-                    onClick={() => {
-                      const count =
-                        state?.profiles.filter((entry) => entry.kind === kind).length ?? 0;
-                      setName(count ? `${label} ${count + 1}` : label);
-                      setFlow({ step: "connect", kind });
-                    }}
-                  >
-                    <Icon size={16} aria-hidden="true" />
-                    <span>
-                      <strong>{label}</strong>
-                      <small>{detail}</small>
-                    </span>
-                    <ChevronRight size={15} aria-hidden="true" />
-                  </button>
-                ))}
+            <form
+              className="agent-fields"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (name.trim() && !pending)
+                  void perform({ action: "rename", id: profile.id, name });
+              }}
+            >
+              <label htmlFor="agent-name">Name</label>
+              <input
+                ref={nameField}
+                id="agent-name"
+                value={name}
+                maxLength={42}
+                required
+                disabled={Boolean(pending)}
+                onChange={(event) => setName(event.currentTarget.value)}
+              />
+              <div className="agent-connection">
+                <Terminal size={15} aria-hidden="true" />
+                <span>{profile.account ?? "ChatGPT plan"}</span>
+                <small>{agentStatus(profile)}</small>
               </div>
-            )}
-            {flow.step === "welcome" && (
-              <div className="agent-fields">
-                <p>
-                  Eligible Codex requests use your ChatGPT plan. You can review usage in ChatGPT
-                  settings.
-                </p>
-                <div className="agent-dialog-actions">
+              {profile.message && <p role="status">{profile.message}</p>}
+              {signInMessage}
+              {profile.state === "connected" && (
+                <button
+                  type="button"
+                  className="agent-button quiet agent-usage"
+                  disabled={Boolean(pending)}
+                  onClick={() => void perform({ action: "usage", id: profile.id })}
+                >
+                  Manage usage
+                </button>
+              )}
+              <div className="agent-dialog-actions">
+                {profile.state === "reconnect" ? (
                   <button
                     type="button"
-                    className="agent-button quiet"
-                    disabled={saving}
-                    onClick={() => void perform({ action: "usage", id: flow.id })}
+                    className="agent-button quiet leading"
+                    disabled={Boolean(pending)}
+                    onClick={() => login(profile)}
                   >
-                    Manage usage
+                    Reconnect
                   </button>
-                  <button
-                    type="button"
-                    className="agent-button primary agent-finish"
-                    disabled={saving}
-                    onClick={() => void perform({ action: "welcome", id: flow.id })}
-                  >
-                    Got it
-                  </button>
-                </div>
-              </div>
-            )}
-            {(isSetup || flow.step === "edit") && (
-              <form className="agent-fields" onSubmit={submit}>
-                <label htmlFor="agent-name">Name</label>
-                <input
-                  id="agent-name"
-                  name="agent-name"
-                  value={name}
-                  maxLength={42}
-                  required
-                  disabled={saving}
-                  onChange={(event) => setName(event.currentTarget.value)}
-                />
-                {isSetup ? (
-                  <>
-                    <div className="agent-connection">
-                      <AgentIcon kind={flow.kind} />
-                      <span>{flow.kind === "codex" ? "Codex" : "Claude Code"}</span>
-                      <small>{runtime ? "Installed locally" : "Install to use"}</small>
-                    </div>
-                    {flow.kind === "claude" ? (
-                      <>
-                        <label htmlFor="agent-api-key">Anthropic API key</label>
-                        <input
-                          id="agent-api-key"
-                          type="password"
-                          value={key}
-                          autoComplete="off"
-                          required
-                          disabled={saving}
-                          onChange={(event) => setKey(event.currentTarget.value)}
-                        />
-                      </>
-                    ) : (
-                      <p>Use your ChatGPT plan with Codex.</p>
-                    )}
-                    {saving && (
-                      <p role="status">
-                        {flow.kind === "codex"
-                          ? "Finish sign-in in your browser."
-                          : "Checking your Anthropic API key…"}
-                      </p>
-                    )}
-                  </>
                 ) : (
-                  profile && (
-                    <>
-                      <div className="agent-connection">
-                        <AgentIcon kind={profile.kind} />
-                        <span>
-                          {profile.account ??
-                            (profile.kind === "codex" ? "ChatGPT plan" : "Anthropic API key")}
-                        </span>
-                        <small>{agentStatus(profile)}</small>
-                      </div>
-                      {profile.message && <p role="status">{profile.message}</p>}
-                      {profile.kind === "claude" && profile.state !== "reconnect" && (
-                        <button
-                          type="button"
-                          className="agent-button quiet agent-usage"
-                          disabled={saving}
-                          onClick={() => {
-                            setError("");
-                            setFlow({ step: "connect", kind: profile.kind, id: profile.id });
-                          }}
-                        >
-                          Change API key
-                        </button>
-                      )}
-                      {profile.kind === "codex" && (
-                        <button
-                          type="button"
-                          className="agent-button quiet agent-usage"
-                          disabled={saving}
-                          onClick={() => void perform({ action: "usage", id: profile.id })}
-                        >
-                          Manage usage
-                        </button>
-                      )}
-                    </>
-                  )
-                )}
-                <div className="agent-dialog-actions">
-                  {!isSetup &&
-                    profile &&
-                    (profile.state === "reconnect" ? (
-                      <button
-                        type="button"
-                        className="agent-button quiet leading"
-                        disabled={saving}
-                        onClick={() => {
-                          setError("");
-                          setFlow({ step: "connect", kind: profile.kind, id: profile.id });
-                        }}
-                      >
-                        Reconnect
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="agent-button quiet leading"
-                        disabled={saving}
-                        onClick={() => void perform({ action: "disconnect", id: profile.id })}
-                      >
-                        Disconnect
-                      </button>
-                    ))}
                   <button
                     type="button"
-                    className="agent-button quiet"
-                    disabled={saving && !isSetup}
-                    onClick={cancel}
+                    className="agent-button quiet leading"
+                    disabled={Boolean(pending)}
+                    onClick={() => void perform({ action: "disconnect", id: profile.id })}
                   >
-                    Cancel
+                    Disconnect
                   </button>
-                  {isSetup && flow.kind === "codex" ? (
-                    <button
-                      type="submit"
-                      className="agent-button chatgpt-connect"
-                      disabled={saving || !runtime || !name.trim()}
-                    >
-                      <img src={chatGPTLogo} alt="" /> Continue with ChatGPT
-                    </button>
-                  ) : (
-                    <button
-                      type="submit"
-                      className="agent-button primary"
-                      disabled={saving || !name.trim() || (isSetup && !key.trim())}
-                    >
-                      {isSetup ? "Connect Claude" : "Save changes"}
-                    </button>
-                  )}
-                </div>
-              </form>
-            )}
-            {error && (
-              <p className="agent-error" role="alert">
-                {error}
-              </p>
-            )}
+                )}
+                <button
+                  type="button"
+                  className="agent-button quiet"
+                  disabled={Boolean(pending)}
+                  onClick={closeEditor}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="agent-button primary"
+                  disabled={Boolean(pending) || !name.trim()}
+                >
+                  Save changes
+                </button>
+              </div>
+            </form>
+            {errorMessage}
           </>
         )}
       </dialog>

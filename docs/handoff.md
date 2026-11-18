@@ -253,3 +253,33 @@ The real macOS save sheet wrote EasyProtoMocks revision 376 with 29 artboards, s
 The final `pnpm verify` run passed 43 tests. Two opt-in native agent runtime checks were skipped. An earlier run hit an intermittent resize test failure, and the next two full runs passed that check. [Final run](../evidence/save-a-copy/verify.log)
 
 Architecture and Reliability consulted on pinning the snapshot and reusing the atomic SQLite writer. The next bounded portability check is reopening both project formats in a packaged macOS build.
+
+## Direct ChatGPT login
+
+Home has one **Log in with ChatGPT** button. It opens the system browser and assigns the profile name automatically. The desktop uses Codex and hides stored Claude profiles. Codex `0.169.0` passed the scoped Responses fixture and Electron Apply/Undo checks. Desktop coverage also exercises the browser handoff, cancellation, the unsupported-runtime message, and automatic chat selection of a connected profile. The mock was updated before implementation at EasyProtoMocks revision 378. [Design](dogfooding.md#agents-on-home) · [Verification](../evidence/chatgpt-login/verify.log)
+
+## Project-wide chat
+
+The working changes based on `f445934` enable open-project chat without an artboard selection. Codex can answer questions about the project and propose page and artboard commands. Existing source edits use a paperclip attachment. Each proposal uses the existing revision-checked Apply and Undo, and dependent changes use successive turns. Architecture and Security consultations informed the bounded provider context and single-command approval. [Architecture](chat-architecture.md#project-wide-chat) · [Design](dogfooding.md#chat-dock-walkthrough)
+
+On Apple Silicon macOS 27.2.1 with Electron 45.3.2 and installed Codex 0.169.0, `EASY_PROTO_CHECK_CODEX_BIN="$(command -v codex)" pnpm verify` passed 44 checks and skipped the optional Claude executable check. The Codex fixture covered an unattached question, page create and rename, generated HTML/CSS, cross-page moves, attached content edits, stale and forged proposals, repeated Apply, cascade deletion and Undo. The fixture used a loopback Responses server. A separate live launch could not use the profile while the development service held it. The updated Electron service responded with EasyProtoMocks revision 380. The next verification is a live ChatGPT plan turn on a disposable profile using `node verify/chatgpt-live.mjs`. [Verification](../evidence/project-chat/verify.log) · [Desktop proposal](../evidence/project-chat/desktop-chat-project-proposal.png)
+
+Before the UI simplification, a live ChatGPT plan turn on `f445934` used a disposable project with Codex `0.167.0-alpha.4.1`. The proposal left revision 0 intact. Apply saved revision 1. Undo saved revision 2 and restored the exact original HTML/CSS. The temporary Codex profile was disconnected. The live check stopped before Claude connected when the user narrowed the scope. [Live results](../evidence/live-agent-setup/live-results.json)
+
+## Chat composer
+
+The composer has an agent picker and Send. Chat can edit existing HTML/CSS when the user names one artboard and Codex requests its source. Security consultation informed the one-board scope and the check against the current message and project revision. MCP captures at EasyProtoMocks revisions 381 and 382 informed the simplified composer. [Architecture](chat-architecture.md#project-wide-chat) · [Design](dogfooding.md#chat-dock-walkthrough)
+
+The focused macOS Electron check used installed Codex 0.169.0 with a loopback Responses fixture. It edited a named artboard with the canvas selection cleared and rejected mismatched, partial, and ambiguous source targets. Page actions and a named cross-page move used project metadata. The check used zero OpenAI inference tokens. [Focused verification](../evidence/chat-composer/codex-fixture.log) · [Desktop composer](../evidence/chat-composer/desktop-chat-project-proposal.png)
+
+The final `pnpm verify` run passed 44 checks and skipped the optional Claude runtime check. The development window is open on EasyProtoMocks with Chat visible. Live ChatGPT inference for source reads remains an opt-in check. [Full verification](../evidence/chat-composer/verify.log)
+
+## Markdown replies
+
+Chat renders Markdown in current and archived agent replies. The installed Codex fixture verified headings, list formatting, inline and fenced code, tables, and retention of Markdown in the next turn's context. The renderer discarded raw markup and displayed link and image labels as text. The test observed zero external resource requests and used zero OpenAI inference tokens. The design was tested through the revision 383 EasyProtoMocks capture and the Electron reply screenshot. [Architecture](chat-architecture.md#markdown-replies) · [Desktop reply](../evidence/chat-markdown/desktop-chat-markdown.png)
+
+On Apple Silicon macOS 27.2.1, the full suite passed 44 checks and skipped the optional Claude runtime check. The rebuilt development service responded from Home. Native automation could not select the window after restart, so the disposable Electron run is the evidence for rendered replies. [Verification](../evidence/chat-markdown/verify.log)
+
+The compact EasyProtoMocks fixture reopens at revision 373 with its original project identity and one saved snapshot. It packages the login and chat artboards alongside the existing mockups.
+
+Release review prompted a one-time source approval inside Chat and cancellation of pending reads at the start of a project switch. The composer still has an agent picker and Send. The profile editor restores keyboard focus to the profile row, and move proposals show the displacement the canvas can save. [Project chat](chat-architecture.md#project-wide-chat)

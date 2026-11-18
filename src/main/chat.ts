@@ -1,8 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { parse, type DefaultTreeAdapterTypes } from "parse5";
 import type { ChatDecision, ChatMessage, ChatRequest, ChatState, ChatTurn } from "../shared/chat";
-import { source } from "../shared/model";
+import { source, type Command } from "../shared/model";
 import { ProjectError, type Project } from "./project";
+import {
+  namedArtboard,
+  prepareProjectChange,
+  projectChatInput,
+  requestedSource,
+  type ProjectAnswer,
+  type ProjectChatInput,
+} from "./project-chat";
 
 function headlineIn(html: string) {
   const tree = parse(html, { sourceCodeLocationInfo: true });
@@ -38,7 +46,7 @@ function headlineIn(html: string) {
       for (let index = node.childNodes.length - 1; index >= 0; index--)
         pending.push(node.childNodes[index]);
   }
-  throw new Error("Attach an artboard with a heading to edit.");
+  throw new Error("Choose an artboard name with an editable heading.");
 }
 
 function demoHeadline(prompt: string) {
@@ -78,12 +86,24 @@ function draftHeadline(
 const demoResponse = "I prepared a headline change. Review it before applying.";
 const batchLength = 9;
 
-export type ChatProvider = {
-  backend: "codex" | "chatgpt" | "claude";
-  run(
-    input: { headline: string; request: string },
-    signal: AbortSignal,
-  ): Promise<{ headline: string; reply: string }>;
+export type ChatProvider =
+  | {
+      backend: "claude";
+      run(
+        input: { headline: string; request: string },
+        signal: AbortSignal,
+      ): Promise<{ headline: string; reply: string }>;
+    }
+  | {
+      backend: "codex" | "chatgpt";
+      runProject(input: ProjectChatInput, signal: AbortSignal): Promise<ProjectAnswer>;
+    };
+
+type AgentResult = {
+  reply: string;
+  command?: Command;
+  proposal?: ChatTurn["proposal"];
+  change?: ChatTurn["change"];
 };
 
 export type ChatMemory = { agentId?: string; history: Map<string, ChatMessage[]> };
@@ -92,7 +112,8 @@ export class ProjectChat {
   #state: ChatState;
   #running?: AbortController;
   #timer?: NodeJS.Timeout;
-  #pending?: { artboardId: string; html: string; before: string; after: string };
+  #pending?: Command;
+  #approveSource?: () => void;
 
   constructor(
     private readonly project: Project,
@@ -106,7 +127,7 @@ export class ProjectChat {
     const agentId = memory.agentId ?? defaultAgent;
     this.#state = {
       sequence: 0,
-      backend: "demo",
+      backend: (agentId && provider(agentId)?.backend) || "demo",
       agentId,
       history: memory.history.get(agentId ?? "") ?? [],
     };
@@ -127,18 +148,15 @@ export class ProjectChat {
   #archive() {
     const { agentId, turn } = this.#state;
     if (!agentId || !turn) return;
-    const { id, prompt, response, artboardName } = turn;
+    const { id, prompt, response } = turn;
     const existing = this.memory.history.get(agentId) ?? [];
     if (existing.at(-1)?.id !== id)
-      this.memory.history.set(
-        agentId,
-        [...existing, { id, prompt, response, artboardName }].slice(-12),
-      );
+      this.memory.history.set(agentId, [...existing, { id, prompt, response }].slice(-12));
   }
 
   #assertIdle() {
     const phase = this.#state.turn?.phase;
-    if (phase === "streaming" || phase === "proposal" || phase === "applying")
+    if (phase === "streaming" || phase === "source" || phase === "proposal" || phase === "applying")
       throw new Error("Finish this turn before switching agents or starting another.");
   }
 
@@ -165,6 +183,14 @@ export class ProjectChat {
     this.#running?.abort();
     this.#running = undefined;
     this.#pending = undefined;
+    this.#approveSource = undefined;
+  }
+
+  stopUnresolved() {
+    const turn = this.#state.turn;
+    if (!turn || !["streaming", "source", "proposal"].includes(turn.phase)) return;
+    this.#cancel();
+    this.#send({ ...turn, phase: "stopped", sourceRequest: undefined });
   }
 
   #send(turn: ChatTurn) {
@@ -173,68 +199,143 @@ export class ProjectChat {
     this.publish(this.#state);
   }
 
-  start({ artboardId, expectedRevision, prompt }: ChatRequest) {
+  start(request: ChatRequest) {
     if (this.signal.aborted) throw new Error("The project selection changed.");
     this.#assertIdle();
     const agentId = this.#state.agentId;
     if (!agentId) throw new Error("Choose an agent before sending a message.");
+    const { expectedRevision, prompt } = request;
     const snapshot = this.project.snapshot;
     if (snapshot.manifest.revision !== expectedRevision)
       throw new Error("The project changed. Try sending again with its current revision.");
-    const board = snapshot.manifest.artboards.find(({ id }) => id === artboardId);
-    const content = snapshot.sources.get(artboardId);
-    if (!board || !content) throw new Error("The attached artboard is no longer in this project.");
-    const heading = headlineIn(content.html);
     const provider = this.provider(agentId);
-    if (!provider)
-      this.#pending = { artboardId, ...draftHeadline(content, heading, demoHeadline(prompt)) };
     const turn: ChatTurn = {
       id: randomUUID(),
-      artboardName: board.name,
       baseRevision: expectedRevision,
       prompt,
       response: "",
       phase: "streaming",
     };
+    const identity = {
+      projectId: snapshot.manifest.projectId,
+      commandId: turn.id,
+      expectedRevision,
+    };
     this.#archive();
+    const history = this.memory.history.get(agentId) ?? [];
+    let run: ((signal: AbortSignal) => Promise<AgentResult>) | undefined;
+    let demo: AgentResult | undefined;
+    if (provider && "runProject" in provider) {
+      const context = projectChatInput(this.project, request, history);
+      run = async (signal) => {
+        let input: ProjectChatInput = context;
+        let result = await provider.runProject(input, signal);
+        signal.throwIfAborted();
+        try {
+          if (result.operation === "read_artboard") {
+            if (this.project.snapshot !== snapshot)
+              throw new Error("The project changed. Send your request again.");
+            const { board, artboardSource } = requestedSource(context, result, snapshot);
+            const page = context.project.pages.find(({ id }) => id === board.pageId);
+            await this.#waitForSource(turn, { artboard: board.name, page: page?.name }, signal);
+            signal.throwIfAborted();
+            if (this.project.snapshot !== snapshot)
+              throw new Error("The project changed. Send your request again.");
+            input = { ...context, artboardSource };
+            result = await provider.runProject(input, signal);
+            signal.throwIfAborted();
+            if (result.operation === "read_artboard")
+              throw new Error(
+                "Chat can read one artboard per message. Send a new request for another.",
+              );
+          }
+          return prepareProjectChange(result, input, identity);
+        } catch (error) {
+          if (error instanceof Error && error.name === "Error") throw error;
+          throw new Error("The agent returned an invalid project change. Try asking again.");
+        }
+      };
+    } else {
+      const boards = snapshot.manifest.artboards;
+      const board =
+        namedArtboard(prompt, boards) ?? (!provider && boards.length === 1 ? boards[0] : undefined);
+      const content = board && snapshot.sources.get(board.id);
+      if (!board || !content) {
+        if (provider) throw new Error("Name one artboard in your message.");
+        demo = {
+          reply: "Try naming an artboard and asking to change its headline.",
+        };
+      } else {
+        turn.artboardName = board.name;
+        const heading = headlineIn(content.html);
+        const draft = (headline: string, reply: string): AgentResult => {
+          const { html, before, after } = draftHeadline(content, heading, headline);
+          return {
+            reply,
+            command: {
+              ...identity,
+              operation: "update_artboard",
+              arguments: { artboardId: board.id, patch: { html } },
+            },
+            proposal: { before, after },
+          };
+        };
+        if (provider)
+          run = async (signal) => {
+            const result = await provider.run(
+              { headline: heading.before, request: prompt },
+              signal,
+            );
+            return draft(result.headline, result.reply);
+          };
+        else demo = draft(demoHeadline(prompt), demoResponse);
+      }
+    }
     this.#state = {
       ...this.#state,
       backend: provider?.backend ?? "demo",
-      history: this.memory.history.get(agentId) ?? [],
+      history,
     };
     this.#send(turn);
-    if (provider) {
-      const running = new AbortController();
-      this.#running = running;
-      void this.#runAgent(provider, running, turn, artboardId, content, heading);
-    } else {
-      this.#schedule(turn, batchLength);
-    }
+    if (run) void this.#runAgent(run, turn);
+    else if (demo) this.#schedule(turn, demo, batchLength);
     return this.state;
   }
 
-  async #runAgent(
-    provider: ChatProvider,
-    running: AbortController,
+  #finish(turn: ChatTurn, result: AgentResult) {
+    this.#pending = result.command;
+    this.#send({
+      ...turn,
+      response: result.reply,
+      phase: result.command ? "proposal" : "answered",
+      proposal: result.proposal,
+      change: result.change,
+    });
+  }
+
+  #waitForSource(
     turn: ChatTurn,
-    artboardId: string,
-    content: { html: string; css: string },
-    heading: ReturnType<typeof headlineIn>,
+    sourceRequest: NonNullable<ChatTurn["sourceRequest"]>,
+    signal: AbortSignal,
   ) {
+    return new Promise<void>((resolve, reject) => {
+      const abort = () => reject(signal.reason);
+      signal.addEventListener("abort", abort, { once: true });
+      this.#approveSource = () => {
+        signal.removeEventListener("abort", abort);
+        resolve();
+      };
+      this.#send({ ...turn, phase: "source", sourceRequest });
+    });
+  }
+
+  async #runAgent(run: (signal: AbortSignal) => Promise<AgentResult>, turn: ChatTurn) {
+    const running = new AbortController();
+    this.#running = running;
     try {
-      const result = await provider.run(
-        { headline: heading.before, request: turn.prompt },
-        running.signal,
-      );
+      const result = await run(running.signal);
       if (this.#running !== running) return;
-      const { html, before, after } = draftHeadline(content, heading, result.headline);
-      this.#pending = { artboardId, html, before, after };
-      this.#send({
-        ...turn,
-        response: result.reply,
-        phase: "proposal",
-        proposal: { before, after },
-      });
+      this.#finish(turn, result);
     } catch (error) {
       if (this.#running !== running) return;
       const message =
@@ -247,20 +348,13 @@ export class ProjectChat {
     }
   }
 
-  #schedule(turn: ChatTurn, length: number) {
+  #schedule(turn: ChatTurn, demo: AgentResult, length: number) {
     this.#timer = setTimeout(() => {
-      if (!this.#pending || this.signal.aborted) return;
-      if (length >= demoResponse.length) {
-        const { before, after } = this.#pending;
-        this.#send({
-          ...turn,
-          response: demoResponse,
-          phase: "proposal",
-          proposal: { before, after },
-        });
-      } else {
-        this.#send({ ...turn, response: demoResponse.slice(0, length) });
-        this.#schedule(turn, length + batchLength);
+      if (this.signal.aborted) return;
+      if (length >= demo.reply.length) this.#finish(turn, demo);
+      else {
+        this.#send({ ...turn, response: demo.reply.slice(0, length) });
+        this.#schedule(turn, demo, length + batchLength);
       }
     }, 165);
     this.#timer.unref();
@@ -271,31 +365,35 @@ export class ProjectChat {
     if (this.signal.aborted || !turn || turn.id !== turnId)
       throw new Error("This chat turn is no longer active.");
     if (decision === "apply" && turn.phase === "applied") return this.state;
-    if (decision === "stop" && (turn.phase === "streaming" || turn.phase === "proposal")) {
-      this.#cancel();
-      this.#send({ ...turn, phase: "stopped" });
+    if (decision === "stop") {
+      this.stopUnresolved();
+    } else if (decision === "allow_source" && turn.phase === "source" && this.#approveSource) {
+      const approve = this.#approveSource;
+      this.#approveSource = undefined;
+      this.#send({ ...turn, phase: "streaming", sourceRequest: undefined });
+      approve();
     } else if (decision === "discard" && turn.phase === "proposal") {
       this.#cancel();
       this.#send({ ...turn, phase: "discarded" });
     } else if (decision === "apply" && turn.phase === "proposal" && this.#pending) {
-      const { artboardId, html } = this.#pending;
+      const command = this.#pending;
       this.#send({ ...turn, phase: "applying", error: undefined });
       let appliedRevision: number;
       try {
-        const receipt = await this.project.execute({
-          projectId: this.project.snapshot.manifest.projectId,
-          commandId: turn.id,
-          expectedRevision: turn.baseRevision,
-          operation: "update_artboard",
-          arguments: { artboardId, patch: { html } },
-        });
+        const receipt = await this.project.execute(command);
         appliedRevision = receipt.revision;
       } catch (error) {
         if (error instanceof ProjectError && error.code === "REVISION_CONFLICT") {
           this.#cancel();
           this.#send({ ...turn, phase: "stale" });
         } else {
-          this.#send({ ...turn, error: "Could not save the edit. Try Apply again." });
+          this.#send({
+            ...turn,
+            error:
+              error instanceof ProjectError && error.code !== "SAVE_FAILED"
+                ? error.message
+                : "Could not save the edit. Try Apply again.",
+          });
         }
         return this.state;
       }

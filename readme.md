@@ -51,14 +51,13 @@ On macOS, you can also choose the file from **Open project** in Settings. The so
 
 ## Try the chat drawer
 
-On **Home → Agents → Add agent**, choose a provider and give the connection a name. You can add multiple profiles for either provider.
+On **Home → Agents**, click **Log in with ChatGPT** and approve eligible plan usage in your browser. Easy Proto names each new connection automatically. Click an existing connection on Home to rename it, reconnect, disconnect, or manage usage.
 
-- **Codex** uses the installed Codex CLI. Choose **Continue with ChatGPT** and approve eligible plan usage in your browser. The qualified build is `codex-cli 0.167.0-alpha.4.1` on macOS. Set `EASY_PROTO_CODEX_BIN` if Easy Proto cannot find the executable.
-- **Claude** uses installed Claude Code 2.1.259 or later in the 2.x series and an Anthropic API key. Set `EASY_PROTO_CLAUDE_BIN` if Easy Proto cannot find the executable.
+The desktop uses the installed Codex CLI. Qualified macOS builds are `0.169.0` and `0.167.0-alpha.4.1`. Set `EASY_PROTO_CODEX_BIN` to the absolute executable path if needed.
 
-Open a project and choose a profile from the picker in **Chat**. Select an artboard with a plain-text heading, attach it with the paperclip, and ask for a rewrite. Send shares the prompt and current headline with the selected provider. **Apply edit** and **Undo edit** use the standard project history. The app remembers each project's selected profile and keeps its conversations separate for the current app session. Use **Manage agents** to return to Home and rename, reconnect, or disconnect a profile. [Account and provider details](docs/chat-architecture.md#home-agent-profiles)
+Open a project and open **Chat**. Try “Create a page called Explorations” or “Change the headline on Field notes”. OpenAI receives your message, recent chat, and project details. If Codex needs an artboard’s HTML/CSS, Chat asks you to approve that read. Review each edit with **Apply change** or **Discard**. **Undo edit** uses the project’s undo history. For a request with dependent changes, apply the first proposal and ask chat to continue. [Project chat details](docs/chat-architecture.md#project-wide-chat)
 
-Run `pnpm build` and `node verify/chatgpt-live.mjs` to exercise a real Codex turn in a disposable Electron profile. Complete the browser sign-in in the test window. The check sends one synthetic headline request, tests Apply and Undo, then disconnects. The OAuth and model fixtures run in `pnpm verify`. Set `EASY_PROTO_TEST_CLAUDE_BIN` to a compatible Claude executable to also run the native Claude integration against a local fixture.
+Run `pnpm build` and `node verify/chatgpt-live.mjs` to exercise a real Codex turn in a disposable Electron profile. Complete browser sign-in from the test window. The check requests a new page, tests Apply and Undo, then disconnects. To test against a local synthetic provider with the installed Codex runtime, run `EASY_PROTO_CHECK_CODEX_BIN="$(command -v codex)" pnpm verify`.
 
 ## Try browser sharing
 

@@ -25,11 +25,8 @@ try {
   const initial = await revision();
   const button = (name) => page.getByRole("button", { name, exact: true });
   await button("Easy Proto Home").click();
-  await button("Add agent").click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: /Codex OpenAI/ }).click();
-  await dialog.getByLabel("Name").fill("Codex live check");
-  await dialog.getByRole("button", { name: "Continue with ChatGPT", exact: true }).waitFor();
+  const login = button("Log in with ChatGPT");
+  await login.waitFor();
   await page.waitForFunction(
     () => document.querySelector(".chatgpt-connect img")?.naturalWidth > 0,
   );
@@ -43,54 +40,54 @@ try {
       ?.focus();
   });
   console.log(
-    "The disposable project is ready. Complete Continue with ChatGPT in the app and approve in the browser.",
+    "The disposable project is ready. Click Log in with ChatGPT and approve in the browser.",
   );
-  const welcome = page.getByRole("button", { name: "Got it", exact: true });
-  const accountError = dialog.getByRole("alert");
-  await welcome
+  const connected = button("Codex Connected");
+  const accountError = page.getByRole("region", { name: "Agents" }).getByRole("alert");
+  await connected
     .or(accountError)
     .first()
     .waitFor({ timeout: 15 * 60_000 });
-  if (!(await welcome.isVisible())) throw new Error(await accountError.first().innerText());
-  await welcome.click();
-  await page.getByRole("button", { name: /Codex live check Codex Connected/ }).waitFor();
+  if (!(await connected.isVisible())) throw new Error(await accountError.first().innerText());
   await button("ChatGPT sign-in test").click();
   await button("Chat").click();
   const dock = page.getByRole("region", { name: "Chat", exact: true });
-  await dock.getByRole("button", { name: "Agent: Choose an agent", exact: true }).click();
-  await page.getByRole("menuitemradio", { name: "Codex live check", exact: true }).click();
-  console.log("ChatGPT plan was enabled. Starting one synthetic headline turn.");
-  await page
-    .locator(".react-flow__node")
-    .filter({
-      has: page.getByRole("button", { name: "Rename artboard Field notes", exact: true }),
-    })
-    .click({ position: { x: 32, y: 32 } });
-  await dock.getByRole("button", { name: "Attach Field notes", exact: true }).click();
+  await dock.getByRole("button", { name: "Agent: Codex", exact: true }).waitFor();
+  console.log("ChatGPT plan was enabled. Starting one project turn.");
   await dock
     .getByRole("textbox", { name: "Message" })
-    .fill('Replace the headline with exactly "A quieter morning."');
+    .fill('Create a page named exactly "Explorations".');
   await dock.getByRole("button", { name: "Send", exact: true }).click();
-  const proposal = dock.getByRole("button", { name: "Apply edit", exact: true });
-  await proposal.or(dock.getByRole("alert")).first().waitFor({ timeout: 55_000 });
+  const proposal = dock.getByRole("button", { name: "Apply change", exact: true });
+  await proposal.or(dock.getByRole("alert")).first().waitFor({ timeout: 100_000 });
   if (!(await proposal.isVisible()))
     throw new Error(await dock.getByRole("alert").first().innerText());
   assert.match(
-    await dock.getByRole("region", { name: "Proposed headline change" }).innerText(),
-    /A quieter morning[.]/,
+    await dock.getByRole("region", { name: "Proposed project change" }).innerText(),
+    /Create page “Explorations”/,
   );
   assert.equal(await revision(), initial);
   assert.equal((await heading.innerText()).replace(/\s+/g, " ").trim(), original);
   await proposal.click();
-  await heading.filter({ hasText: "A quieter morning." }).waitFor();
+  const scene = () => page.evaluate(() => window.easyProto.getScene());
+  await dock.getByRole("button", { name: "Undo edit", exact: true }).waitFor();
   assert.equal(await revision(), initial + 1);
+  assert.equal(
+    (await scene()).pages.some(({ name }) => name === "Explorations"),
+    true,
+  );
   await dock.getByRole("button", { name: "Undo edit", exact: true }).click();
-  await heading.filter({ hasText: /Make room/ }).waitFor();
+  await dock.getByText("Edit undone.").waitFor();
   assert.equal((await heading.innerText()).replace(/\s+/g, " ").trim(), original);
   assert.equal(await revision(), initial + 2);
+  assert.equal(
+    (await scene()).pages.some(({ name }) => name === "Explorations"),
+    false,
+  );
   const result = {
     environment: process.platform + " " + process.arch,
     liveChatGPTPlan: true,
+    operation: "create_page",
     initial,
     applied: initial + 1,
     undone: initial + 2,
@@ -102,7 +99,7 @@ try {
   if (page) {
     const home = page.getByRole("button", { name: "Easy Proto Home", exact: true });
     if (await home.isVisible().catch(() => false)) await home.click().catch(() => undefined);
-    const connected = page.getByRole("button", { name: /Codex live check Codex Connected/ });
+    const connected = page.getByRole("button", { name: "Codex Connected", exact: true });
     if (await connected.isVisible().catch(() => false)) {
       await connected.click().catch(() => undefined);
       const dialog = page.getByRole("dialog");

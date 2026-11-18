@@ -1,7 +1,7 @@
 import { Check, ChevronDown, Settings } from "lucide-react";
 import { useId, useRef, useState, type KeyboardEvent } from "react";
 import type { AgentProfile } from "../shared/agents";
-import { agentKinds, agentStatus } from "./agent-settings";
+import { agentStatus } from "./agent-settings";
 
 export function AgentPicker({
   profiles,
@@ -20,7 +20,7 @@ export function AgentPicker({
   const panel = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const label = selected?.name ?? "Choose an agent";
+  const label = selected?.name ?? "Agent";
 
   function dismiss(action: () => void) {
     panel.current?.hidePopover();
@@ -85,38 +85,22 @@ export function AgentPicker({
         }}
       >
         {profiles.length === 0 && <p className="menu-caption">No agents connected</p>}
-        {agentKinds.map(({ kind, label }) => {
-          const group = profiles.filter((profile) => profile.kind === kind);
+        {profiles.map((profile) => {
+          const chosen = selected?.id === profile.id;
           return (
-            group.length > 0 && (
-              <div key={kind} role="group" aria-label={label}>
-                <div className="menu-caption" aria-hidden="true">
-                  {label}
-                </div>
-                {group.map((profile) => {
-                  const chosen = selected?.id === profile.id;
-                  return (
-                    <button
-                      key={profile.id}
-                      type="button"
-                      className="menu-row"
-                      role="menuitemradio"
-                      aria-checked={chosen}
-                      disabled={profile.state !== "connected"}
-                      onClick={() => dismiss(() => onPick(profile.id))}
-                    >
-                      <Check
-                        size={14}
-                        aria-hidden="true"
-                        className={chosen ? "" : "chat-check-hidden"}
-                      />
-                      <span className="chat-agent-name">{profile.name}</span>
-                      {profile.state !== "connected" && <small>{agentStatus(profile)}</small>}
-                    </button>
-                  );
-                })}
-              </div>
-            )
+            <button
+              key={profile.id}
+              type="button"
+              className="menu-row"
+              role="menuitemradio"
+              aria-checked={chosen}
+              disabled={profile.state !== "connected"}
+              onClick={() => dismiss(() => onPick(profile.id))}
+            >
+              <Check size={14} aria-hidden="true" className={chosen ? "" : "chat-check-hidden"} />
+              <span className="chat-agent-name">{profile.name}</span>
+              {profile.state !== "connected" && <small>{agentStatus(profile)}</small>}
+            </button>
           );
         })}
         <div className="menu-section chat-manage-agents">

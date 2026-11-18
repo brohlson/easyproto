@@ -1,7 +1,7 @@
 {
   "schemaVersion": 5,
   "projectId": "7b0e9c81-1d0c-4c89-afe9-67751a5298a5",
-  "revision": 369,
+  "revision": 373,
   "pageLayout": {
     "defaultPageId": "455820b5-06fd-8619-85c7-5ca32301e99c",
     "pages": [
@@ -227,28 +227,28 @@
       "cssRef": "570d4f7c-c350-45e3-abbc-4166c601eede.css"
     },
     {
-      "name": "Chat dock · 1 Attach",
+      "name": "Chat dock · 1 Project chat",
       "x": 0,
       "y": 0,
       "width": 1180,
       "height": 738,
       "id": "d46893c9-2101-4719-83fa-fd7a81b1dab7",
       "pageId": "17c2b51f-16c0-4e8d-84df-a8f188eef4fb",
-      "sourceRevision": 353,
-      "sourceDigest": "c6782dd55392cc484520810a272b9431dd3d22550fba61f1f074119c59800604",
+      "sourceRevision": 371,
+      "sourceDigest": "0da373982f7a513e93ce3945696aa7b105afa5273fb2d88a67510601a6b5bfd8",
       "htmlRef": "d46893c9-2101-4719-83fa-fd7a81b1dab7.html",
       "cssRef": "d46893c9-2101-4719-83fa-fd7a81b1dab7.css"
     },
     {
-      "name": "Chat dock · 2 Review",
+      "name": "Chat dock · 2 Project proposal",
       "x": 1250,
       "y": 0,
       "width": 1180,
       "height": 738,
       "id": "fd58e5dc-af8b-470c-8c2a-d2c45e9228a9",
       "pageId": "17c2b51f-16c0-4e8d-84df-a8f188eef4fb",
-      "sourceRevision": 354,
-      "sourceDigest": "751a791ef938a28396e6164d49867cd6e67b719d02a9a95e093b4a2305bc9894",
+      "sourceRevision": 372,
+      "sourceDigest": "cc2ab5448ee96cec6f08fe1113d2bfa283ef83de0eb7f36ce37f6c0934587a84",
       "htmlRef": "fd58e5dc-af8b-470c-8c2a-d2c45e9228a9.html",
       "cssRef": "fd58e5dc-af8b-470c-8c2a-d2c45e9228a9.css"
     },
@@ -331,15 +331,15 @@
       "cssRef": "46894f5a-67fb-4398-8c5d-1bde2218cfcd.css"
     },
     {
-      "name": "Agents · Connect Codex",
+      "name": "Agents · Log in with ChatGPT",
       "x": 1240,
       "y": 800,
       "width": 1180,
       "height": 738,
       "id": "b0545e93-c868-4454-96c5-082a5092405f",
       "pageId": "e6bc7b4c-c8de-4e5d-8259-fee8c6425784",
-      "sourceRevision": 361,
-      "sourceDigest": "23c7937e301f6cf8d1a5ee583d7f886beeb97b4429f84e201950146e9e0f89cc",
+      "sourceRevision": 370,
+      "sourceDigest": "ed7dfb79306f142516c2e01c49e6d875b1bd422cdf1c4a84215fce7cd2a44eac",
       "htmlRef": "b0545e93-c868-4454-96c5-082a5092405f.html",
       "cssRef": "b0545e93-c868-4454-96c5-082a5092405f.css"
     },
@@ -390,11 +390,100 @@
       "height": 480,
       "id": "a619dc52-a3dd-4366-8bfa-0f5819cfb151",
       "pageId": "e6bc7b4c-c8de-4e5d-8259-fee8c6425784",
-      "sourceRevision": 369,
-      "sourceDigest": "c7c1edc256c2dd41862c8ef14131f193fb69847232add124ba24f525419e947b",
+      "sourceRevision": 373,
+      "sourceDigest": "b8b5eb765490acfc15097e821f5fe4d1706da7748cc14469ca82d2583511baf1",
       "htmlRef": "a619dc52-a3dd-4366-8bfa-0f5819cfb151.html",
       "cssRef": "a619dc52-a3dd-4366-8bfa-0f5819cfb151.css"
     }
   ],
-  "commands": []
+  "commands": [
+    {
+      "digest": "dfbf3213d58d38315c8e2f3822072921e6b1c424d6f73ae2b89a8ecff316e4d5",
+      "result": {
+        "status": "committed",
+        "projectId": "7b0e9c81-1d0c-4c89-afe9-67751a5298a5",
+        "commandId": "3329e347-35d3-4836-9917-f513baf77cc9",
+        "revision": 370,
+        "artboard": {
+          "name": "Agents · Log in with ChatGPT",
+          "x": 1240,
+          "y": 800,
+          "width": 1180,
+          "height": 738,
+          "id": "b0545e93-c868-4454-96c5-082a5092405f",
+          "pageId": "e6bc7b4c-c8de-4e5d-8259-fee8c6425784",
+          "sourceRevision": 370,
+          "sourceDigest": "ed7dfb79306f142516c2e01c49e6d875b1bd422cdf1c4a84215fce7cd2a44eac",
+          "htmlRef": "b0545e93-c868-4454-96c5-082a5092405f.html",
+          "cssRef": "b0545e93-c868-4454-96c5-082a5092405f.css"
+        }
+      }
+    },
+    {
+      "digest": "d635eb0b100ed483caa62f03180d043293cb8863d891bf87ecd0501c0998b400",
+      "result": {
+        "status": "committed",
+        "projectId": "7b0e9c81-1d0c-4c89-afe9-67751a5298a5",
+        "commandId": "a14c6aa4-6ece-45b3-bc24-172e1e8e7ec7",
+        "revision": 371,
+        "artboard": {
+          "name": "Chat dock · 1 Project chat",
+          "x": 0,
+          "y": 0,
+          "width": 1180,
+          "height": 738,
+          "id": "d46893c9-2101-4719-83fa-fd7a81b1dab7",
+          "pageId": "17c2b51f-16c0-4e8d-84df-a8f188eef4fb",
+          "sourceRevision": 371,
+          "sourceDigest": "0da373982f7a513e93ce3945696aa7b105afa5273fb2d88a67510601a6b5bfd8",
+          "htmlRef": "d46893c9-2101-4719-83fa-fd7a81b1dab7.html",
+          "cssRef": "d46893c9-2101-4719-83fa-fd7a81b1dab7.css"
+        }
+      }
+    },
+    {
+      "digest": "26616dc475e850ef94758b96245e02295955345d4ca9ed8422a07e43f85f3d49",
+      "result": {
+        "status": "committed",
+        "projectId": "7b0e9c81-1d0c-4c89-afe9-67751a5298a5",
+        "commandId": "f49dc62b-6715-4df2-a423-96872ea3dce6",
+        "revision": 372,
+        "artboard": {
+          "name": "Chat dock · 2 Project proposal",
+          "x": 1250,
+          "y": 0,
+          "width": 1180,
+          "height": 738,
+          "id": "fd58e5dc-af8b-470c-8c2a-d2c45e9228a9",
+          "pageId": "17c2b51f-16c0-4e8d-84df-a8f188eef4fb",
+          "sourceRevision": 372,
+          "sourceDigest": "cc2ab5448ee96cec6f08fe1113d2bfa283ef83de0eb7f36ce37f6c0934587a84",
+          "htmlRef": "fd58e5dc-af8b-470c-8c2a-d2c45e9228a9.html",
+          "cssRef": "fd58e5dc-af8b-470c-8c2a-d2c45e9228a9.css"
+        }
+      }
+    },
+    {
+      "digest": "70389a8fbc51f9cb0cfbb3815301baadc8c9cef67911337731f7206691a31496",
+      "result": {
+        "status": "committed",
+        "projectId": "7b0e9c81-1d0c-4c89-afe9-67751a5298a5",
+        "commandId": "4b5c12a7-b1bf-4ccd-87e1-ee06f81c647f",
+        "revision": 373,
+        "artboard": {
+          "name": "Chat · No agents",
+          "x": 1240,
+          "y": 2400,
+          "width": 660,
+          "height": 480,
+          "id": "a619dc52-a3dd-4366-8bfa-0f5819cfb151",
+          "pageId": "e6bc7b4c-c8de-4e5d-8259-fee8c6425784",
+          "sourceRevision": 373,
+          "sourceDigest": "b8b5eb765490acfc15097e821f5fe4d1706da7748cc14469ca82d2583511baf1",
+          "htmlRef": "a619dc52-a3dd-4366-8bfa-0f5819cfb151.html",
+          "cssRef": "a619dc52-a3dd-4366-8bfa-0f5819cfb151.css"
+        }
+      }
+    }
+  ]
 }
