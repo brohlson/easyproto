@@ -49,15 +49,11 @@ pnpm start "--project=$PWD/mocks/.workspace/EasyProtoMocks.easyproto"
 
 On macOS, you can also choose the file from **Open project** in Settings. The source folder and its historical snapshots remain available. New projects still start as folders. [SQLite pilot and recovery](docs/decisions/0006-sqlite-project-pilot.md)
 
-## Try the chat drawer
+## Run the standalone Mac app
 
-On **Home → Agents**, click **Log in with ChatGPT** and approve eligible plan usage in your browser. Easy Proto names each new connection automatically. Click an existing connection on Home to rename it, reconnect, disconnect, or manage usage.
+On an Apple Silicon Mac, follow the installation steps above, then run `pnpm desktop:package`. Open `apps/desktop/dist/package/Easy Proto-darwin-arm64/` in Finder, copy **Easy Proto.app** to your Applications folder, and open it from there. The standalone app has its own recent projects. Use **Open project…** to open an existing project, or use **Create project** and choose a device preset from the artboard’s dimensions menu.
 
-The desktop uses the installed Codex CLI. Qualified macOS builds are `0.169.0` and `0.167.0-alpha.4.1`. Set `EASY_PROTO_CODEX_BIN` to the absolute executable path if needed.
-
-Open a project and open **Chat**. Try “Create a page called Explorations” or “Change the headline on Field notes”. OpenAI receives your message, recent chat, and project details. If Codex needs an artboard’s HTML/CSS, Chat asks you to approve that read. Review each edit with **Apply change** or **Discard**. **Undo edit** uses the project’s undo history. For a request with dependent changes, apply the first proposal and ask chat to continue. [Project chat details](docs/chat-architecture.md#project-wide-chat)
-
-Run `pnpm desktop:build` and `pnpm desktop:verify:chatgpt-live` to exercise a real Codex turn in a disposable Electron profile. Complete browser sign-in from the test window. The check requests a new page, tests Apply and Undo, then disconnects. To test against a local synthetic provider with the installed Codex runtime, run `EASY_PROTO_CHECK_CODEX_BIN="$(command -v codex)" pnpm verify`.
+Run `pnpm desktop:verify:package` to test the built bundle, or pass the path to the installed `.app` as an argument. The check uses a disposable project and profile. It creates and captures a 402 × 874 HTML/CSS artboard, quits, and checks the saved artboard after relaunch. This is a locally signed build for Apple Silicon. Distribution signing, notarization, and in-app updates are future work.
 
 ## Try browser sharing
 
@@ -75,17 +71,23 @@ pnpm start "--project=$PWD/My prototype" &
 codex
 ```
 
-The app must be running before Codex connects. Restart the client if it was already open. Approve Easy Proto tool calls when Codex prompts. Set `EASY_PROTO_PORT` and update the configured URL together to change the port. With no token, the desktop opens without an MCP endpoint. [Codex MCP setup](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+The app must be running before Codex connects. Codex desktop and the CLI share MCP configuration. Run the chat locally and make the bearer environment variable available to the client process. Restart the client after changing its MCP setup. Set `EASY_PROTO_PORT` and update the configured URL together to change the port. With no token, the desktop opens without an MCP endpoint. [Codex MCP setup](https://learn.chatgpt.com/docs/extend/mcp?surface=app)
 
-Ask Codex to get the Easy Proto context, create a 480 × 320 artboard next to the starter at canvas coordinates (620, 0), then capture it. Ask it to change the title and background and capture the new revision. Press Shift+0 to bring both boards into view. Drag a board, return Home, and reopen the project to see the saved position.
+For the standalone Mac app, run the installed bundle's executable from the same environment in place of `pnpm start`. Quit any running copy before changing its launch environment. If you installed it in your personal Applications folder, use `"$HOME/Applications/Easy Proto.app/Contents/MacOS/Easy Proto"`.
+
+Open a project, then ask Codex to get the Easy Proto context, create a page, make a few dashboard variants on it, and capture their contact sheet. Switch to the new page and use Shift+0 to bring the artboards into view.
 
 - `get_context` returns the selected project's name, ID, activation ID, revision, pages, default page ID and artboards across all pages. Legacy artboards without a `pageId` belong to the default page. Home returns `NO_PROJECT` and revokes the previous activation. Include both `projectId` and `activationId` in every other tool call. Call `get_context` again after a project switch, reopen or restart. The same MCP connection can discover the newly selected project.
 - `get_artboard` takes `projectId` and `artboardId` and returns source plus metadata.
 - `get_tokens` takes `projectId` and `activationId` and returns the committed JSON document, CSS, resolved rows, revision and token digests when present.
 - `replace_project_tokens` takes `projectId`, `activationId`, `commandId`, `expectedRevision` and `document`, a complete DTCG JSON string. Use the revision returned by `get_tokens`. Every artboard can refer to the published variables.
 - `create_artboard` takes `projectId`, a new UUID `commandId`, `expectedRevision` and `arguments` containing `name`, `x`, `y`, `width`, `height`, `html` and `css`. Include `pageId` in `arguments` to choose the destination. With no destination, it uses the project's default page.
+- `create_artboards` uses that envelope with `arguments: { pageId?, artboards }`. The array takes two to six complete artboards. It returns one atomic revision and an ordered `artboards` receipt. Each board has independently editable source.
+- `create_page`, `rename_page`, and `delete_page` use the same envelope with `arguments: { name }`, `{ pageId, name }`, and `{ pageId }`, respectively.
+- `move_artboards_to_page` uses the same envelope with `arguments: { artboardIds, pageId }`.
 - `update_artboard` takes the same envelope with `arguments: { artboardId, patch }`. Supply any subset of the layout and source fields.
 - `capture_artboard` takes `projectId`, `artboardId` and the current `revision`. It returns PNG image content and metadata, including token digests and unresolved resources when present.
+- `capture_artboards` takes the project and activation IDs, the current `revision`, and two to six distinct `artboardIds`. It returns one PNG contact sheet and cell details in request order. Each cell reports the original viewport, source revision, and unresolved resources.
 - `set_artboard_activity` takes `projectId`, `activationId`, `artboardId`, a caller-generated UUID as `activityId`, and `status` of `working` or `idle`. Send `working` before drafting changes to an existing board. Renew with the same ID before the two-minute lease expires and send `idle` with that ID when done. The tool returns the board's combined `working` state, including other active work.
 
 The canvas shows **Agent working** with three animated dots and gently pulses the affected artboard's opacity during an explicit activity lease or an in-flight MCP update or capture. With reduced motion enabled, the dots stay still and the artboard stays fully opaque. An agent must report activity to cover time spent drafting between calls. Overlapping activities clear independently. Switching projects drops the previous activation's activity, including when reopening the same folder. Activity never changes the project revision, saves to disk, or appears in captured artboard images.

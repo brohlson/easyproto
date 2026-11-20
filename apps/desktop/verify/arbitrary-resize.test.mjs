@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { _electron as electron } from "playwright";
+import { launchDesktop } from "./launch-desktop.mjs";
 import { Project } from "../dist/project.js";
 
 test(
@@ -58,7 +58,7 @@ test(
       await app?.close();
       await rm(root, { recursive: true, force: true });
     });
-    app = await electron.launch({ args: [process.cwd(), "--project=" + folder], env });
+    app = await launchDesktop({ args: [process.cwd(), "--project=" + folder], env });
     const page = await app.firstWindow();
     page.setDefaultTimeout(5000);
     const scene = () => page.evaluate(() => window.easyProto.getScene());
@@ -281,7 +281,7 @@ test(
     );
     await client.close();
     await app.close();
-    app = await electron.launch({ args: [process.cwd(), "--project=" + folder], env });
+    app = await launchDesktop({ args: [process.cwd(), "--project=" + folder], env });
     const reopened = await app.firstWindow();
     await reopened.getByRole("button", { name: "Device size, 375 × 667", exact: true }).waitFor();
   },

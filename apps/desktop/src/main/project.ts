@@ -670,9 +670,10 @@ export class Project {
     return this.#snapshot;
   }
 
-  execute(input: unknown): Promise<Commit> {
+  execute(input: unknown, admit?: () => void): Promise<Commit> {
     const command = commandSchema.parse(input);
     return this.#enqueue(async () => {
+      admit?.();
       const { manifest, sources } = this.authorize(command.projectId);
       const fingerprint = digest(canonical(command));
       const previous = manifest.commands.find(
@@ -816,11 +817,16 @@ export class Project {
       } else {
         let inputs: BoardInput[];
         let destination = defaultPageId;
-        if (operation === "create_artboard") {
-          const { pageId = defaultPageId, ...input } = command.arguments;
+        if (operation === "create_artboard" || operation === "create_artboards") {
+          const { pageId = defaultPageId } = command.arguments;
           requirePage(pageId);
           destination = pageId;
-          inputs = [input];
+          if (operation === "create_artboard") {
+            const { pageId: _pageId, ...input } = command.arguments;
+            inputs = [input];
+          } else {
+            inputs = command.arguments.artboards;
+          }
         } else {
           let originals: ArtboardState[];
           if (operation === "paste_artboard") {
@@ -970,10 +976,11 @@ export class Project {
     });
   }
 
-  rename(previous: string, name: string) {
+  rename(previous: string, name: string, admit?: () => void) {
     const label = projectLabel.parse({ name });
     const bytes = prepareBytes(label);
     return this.#enqueue(async () => {
+      admit?.();
       if (this.name === label.name) return;
       if (this.name !== previous)
         throw new ProjectError("NAME_CHANGED", "The project was renamed while you were editing.");

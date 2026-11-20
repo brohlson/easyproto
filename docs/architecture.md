@@ -52,9 +52,9 @@ The first product supports arranging, resizing, duplicating, and previewing artb
 
 The project now uses the design recorded in [project commits](decisions/0002-project-commits.md) and [preview and MCP isolation](decisions/0003-preview-and-mcp.md). The desktop launches from the Vite build with Electron. Electron Forge packaging stays in Milestone 4. See the [current handoff](handoff.md) for verification and remaining gates.
 
-## Local agent chat
+## External coding agents
 
-The desktop chat dock exercises the project authority and approval boundaries with a deterministic local provider and an opt-in Codex adapter. The [local agent chat architecture review](chat-architecture.md) records provider choices, review findings, and runtime qualification gates.
+Codex and other local agents use the authenticated MCP interface to edit the open project. Agents can organize pages, create independently editable artboards in batches, and verify them with Chromium contact sheets. The desktop owns the command and preview boundaries. The [former chat architecture review](chat-architecture.md) is retained as a historical record.
 
 ## Browser sharing
 

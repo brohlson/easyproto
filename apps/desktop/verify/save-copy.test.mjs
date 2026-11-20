@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { _electron as electron } from "playwright";
+import { launchDesktop } from "./launch-desktop.mjs";
 import { Project } from "../dist/project.js";
 
 const pixel = Buffer.from(
@@ -76,7 +76,7 @@ for (const format of ["folder", "sqlite"]) {
         await app?.close();
         await rm(root, { recursive: true, force: true });
       });
-      app = await electron.launch({ args: [process.cwd(), "--project=" + source], env });
+      app = await launchDesktop({ args: [process.cwd(), "--project=" + source], env });
       const page = await app.firstWindow();
       page.setDefaultTimeout(6500);
       const button = (name) => page.getByRole("button", { name, exact: true });

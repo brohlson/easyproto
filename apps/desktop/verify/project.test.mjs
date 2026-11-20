@@ -472,7 +472,9 @@ test("pages and group moves use one history and retain legacy retries after upgr
     projectId,
     artboards: [first],
   } = project.snapshot.manifest;
-  const second = (await project.execute(command(projectId))).artboard;
+  const createSecond = command(projectId);
+  createSecond.arguments = { ...createSecond.arguments, pageId: project.pageLayout.defaultPageId };
+  const second = (await project.execute(createSecond)).artboard;
   const edit = (operation, args) => ({
     projectId,
     commandId: randomUUID(),
@@ -925,6 +927,61 @@ test("SQLite rolls back a write that would exceed the saved history capacity", a
 });
 
 for (const storage of ["folder", "sqlite"]) {
+  test(`a batch preserves independent source and retry receipts in ${storage}`, async (t) => {
+    const { folder, root } = await fixture(t);
+    const path = storage === "sqlite" ? join(root, "Variants.easyproto") : folder;
+    if (storage === "sqlite") await Project.importFolder(folder, path);
+    const project = await Project.open(path);
+    const { revision, projectId } = project.snapshot.manifest;
+    const input = {
+      projectId,
+      commandId: randomUUID(),
+      expectedRevision: revision,
+      operation: "create_artboards",
+      arguments: { artboards: [args, { ...args, name: "Variant 2", x: 430 }] },
+    };
+    await assert.rejects(
+      project.execute({ ...input, arguments: { ...input.arguments, pageId: randomUUID() } }),
+      { code: "PAGE_NOT_FOUND" },
+    );
+    assert.equal(project.snapshot.manifest.revision, revision);
+    const saved = await project.execute(input);
+    assert.equal(saved.revision, revision + 1);
+    assert.equal(saved.artboards.length, 2);
+    const [first, second] = saved.artboards;
+    assert.notEqual(first.htmlRef, second.htmlRef);
+    assert.notEqual(first.cssRef, second.cssRef);
+    const reopened = await Project.open(path);
+    assert.deepEqual(await reopened.execute(input), saved);
+    await assert.rejects(
+      reopened.execute({
+        ...input,
+        arguments: { artboards: [args, { ...args, name: "Different" }] },
+      }),
+      { code: "COMMAND_ID_REUSED" },
+    );
+    await assert.rejects(reopened.execute({ ...input, commandId: randomUUID() }), {
+      code: "REVISION_CONFLICT",
+    });
+    assert.equal(reopened.snapshot.manifest.revision, saved.revision);
+    await reopened.execute({
+      projectId,
+      commandId: randomUUID(),
+      expectedRevision: saved.revision,
+      operation: "update_artboard",
+      arguments: {
+        artboardId: first.id,
+        patch: { html: "<h1>Independent</h1>", css: "body { color: black; }" },
+      },
+    });
+    const sources = (await Project.open(path)).snapshot.sources;
+    assert.deepEqual(sources.get(first.id), {
+      html: "<h1>Independent</h1>",
+      css: "body { color: black; }",
+    });
+    assert.deepEqual(sources.get(second.id), { html: args.html, css: args.css });
+  });
+
   test(`page deletion restores layout, sources, default and tokens with undo in ${storage}`, async (t) => {
     const { folder, root } = await fixture(t);
     const path = storage === "sqlite" ? join(root, "Pages.easyproto") : folder;

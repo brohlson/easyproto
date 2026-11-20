@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { _electron as electron } from "playwright";
+import { launchDesktop } from "./launch-desktop.mjs";
 
 const onePixel = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
@@ -91,7 +91,7 @@ test(
     });
 
     async function launch() {
-      app = await electron.launch({
+      app = await launchDesktop({
         args: [process.cwd(), `--project=${project}`],
         env: {
           ...process.env,
@@ -185,11 +185,16 @@ test(
     const list = await client.listTools();
     assert.deepEqual(list.tools.map(({ name }) => name).sort(), [
       "capture_artboard",
+      "capture_artboards",
       "create_artboard",
+      "create_artboards",
+      "create_page",
       "delete_page",
       "get_artboard",
       "get_context",
       "get_tokens",
+      "move_artboards_to_page",
+      "rename_page",
       "replace_project_tokens",
       "set_artboard_activity",
       "update_artboard",
@@ -1541,7 +1546,7 @@ test(
       await new Promise((resolve) => reservation.listen(0, "127.0.0.1", resolve));
       port = reservation.address().port;
       await new Promise((resolve) => reservation.close(resolve));
-      app = await electron.launch({
+      app = await launchDesktop({
         args: [process.cwd()],
         env: {
           ...process.env,
@@ -2745,477 +2750,216 @@ test(
 );
 
 test(
-  "the desktop chat reviews one real project edit and retires it on Home",
-  { timeout: 55_000 },
+  "external MCP creates pages and editable variants and captures a scoped contact sheet",
+  { timeout: 30_000 },
   async (t) => {
-    const root = await mkdtemp(join(tmpdir(), "easy-proto-chat-"));
-    const folder = join(root, "Original");
-    const copy = join(root, "Copy");
+    const root = await mkdtemp(join(tmpdir(), "easy-proto-external-agent-"));
+    const project = join(root, "MCP variants");
+    const profile = join(root, "profile");
+    const reservation = createServer();
+    await new Promise((resolve) => reservation.listen(0, "127.0.0.1", resolve));
+    const port = reservation.address().port;
+    await new Promise((resolve) => reservation.close(resolve));
     const token = randomBytes(32).toString("base64url");
-    const reserve = createServer();
-    await new Promise((resolve) => reserve.listen(0, "127.0.0.1", resolve));
-    const port = reserve.address().port;
-    await new Promise((resolve) => reserve.close(resolve));
-    const app = await electron.launch({
-      args: [process.cwd(), "--project=" + folder],
+    const retainedProfile = join(profile, "agent-profiles.bin");
+    const retainedHistory = join(profile, "chat-history", "old-thread.json");
+    await mkdir(join(profile, "chat-history"), { recursive: true });
+    await writeFile(retainedProfile, "retired encrypted profile fixture");
+    await writeFile(retainedHistory, "old transcript fixture");
+    let app, client;
+    t.after(async () => {
+      try {
+        await client?.close();
+        await app?.close();
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+    const packagedExecutable = process.env.EASY_PROTO_CHECK_APP_EXECUTABLE;
+    app = await launchDesktop({
+      ...(packagedExecutable ? { executablePath: packagedExecutable } : {}),
+      args: [...(packagedExecutable ? [] : [process.cwd()]), `--project=${project}`],
       env: {
         ...process.env,
-        EASY_PROTO_PROFILE: join(root, "profile"),
-        EASY_PROTO_CHAT_DEMO: "1",
+        EASY_PROTO_PROFILE: profile,
         EASY_PROTO_TOKEN: token,
         EASY_PROTO_PORT: String(port),
       },
     });
-    const client = new Client({ name: "chat-desktop-verification", version: "1.0.0" });
-    t.after(async () => {
-      await client.close();
-      await app.close();
-      await rm(root, { recursive: true, force: true });
-    });
-    const page = await app.firstWindow();
-    page.setDefaultTimeout(6500);
-    const button = (name) => page.getByRole("button", { name, exact: true });
-    const dock = page.getByRole("region", { name: "Chat", exact: true });
-    const field = dock.getByRole("textbox", { name: "Message" });
-    const scene = () => page.evaluate(() => window.easyProto.getScene());
-    const heading = page.frameLocator('iframe[title="Field notes"]').getByRole("heading");
-    await heading.waitFor();
-    const original = await heading.textContent();
-    const originalLabel = (await heading.innerText()).replace(/\s+/g, " ").trim();
-    const initial = await scene();
-    const board = initial.artboards.find(({ name }) => name === "Field notes");
-    const initialCamera = await page.evaluate(() => {
-      const viewport = new DOMMatrix(
-        getComputedStyle(document.querySelector(".react-flow__viewport")).transform,
-      );
-      return {
-        width: document.querySelector(".canvas").clientWidth,
-        x: viewport.e,
-        zoom: viewport.a,
-      };
-    });
-    await button("Chat").click();
-    assert.equal(await button("Chat").getAttribute("aria-expanded"), "true");
-    await page.waitForFunction(({ width, x, zoom }) => {
-      const currentWidth = document.querySelector(".canvas").clientWidth;
-      const viewport = new DOMMatrix(
-        getComputedStyle(document.querySelector(".react-flow__viewport")).transform,
-      );
-      return (
-        currentWidth < width &&
-        viewport.a === zoom &&
-        Math.abs(viewport.e - (x + (currentWidth - width) / 2)) < 0.5
-      );
-    }, initialCamera);
-    assert.equal(await field.evaluate((element) => document.activeElement === element), true);
-    assert.equal(await dock.getByRole("button", { name: "Send" }).isDisabled(), true);
-    const send = async (replacement) => {
-      await field.fill(`Change the headline to “${replacement}”`);
-      await field.press("Meta+Enter");
-      await dock.getByRole("button", { name: "Stop", exact: true }).waitFor();
-    };
-
-    await send("Cancelled edit");
-    await dock.getByRole("button", { name: "Stop", exact: true }).click();
-    await dock.getByText("Stopped. The artboard is unchanged.", { exact: true }).waitFor();
-    assert.equal((await scene()).revision, initial.revision);
-    assert.equal(await heading.textContent(), original);
-
-    await send("Stop at proposal");
-    await dock.getByRole("button", { name: "Apply edit", exact: true }).waitFor();
-    const stopped = await page.evaluate(async (generation) => {
-      const { turn } = await window.easyProto.getChat(generation);
-      await window.easyProto.decideChat(generation, turn.id, "stop");
-      return window.easyProto.decideChat(generation, turn.id, "apply");
-    }, initial.generation);
-    assert.equal(stopped.turn.phase, "stopped");
-    assert.equal((await scene()).revision, initial.revision);
-    assert.equal(await heading.textContent(), original);
-
-    await send("<b>Time for focus</b>");
-    await dock.getByRole("button", { name: "Close chat" }).click();
-    assert.equal(await button("Chat").getAttribute("aria-expanded"), "false");
-    assert.equal(
-      await button("Chat").evaluate((element) => document.activeElement === element),
-      true,
+    const desktop = await app.firstWindow();
+    const button = (name) => desktop.getByRole("button", { name, exact: true });
+    const pagePicker = (name) =>
+      desktop.getByRole("group", { name: "Pages" }).getByRole("button", { name, exact: true });
+    await button("Tokens").waitFor();
+    assert.equal(await button("Chat").count(), 0);
+    assert.deepEqual(
+      await desktop.evaluate(() =>
+        ["agents", "getChat", "startChat"].filter((key) => key in window.easyProto),
+      ),
+      [],
     );
-    await button("Chat").click();
-    const apply = dock.getByRole("button", { name: "Apply edit", exact: true });
-    await apply.waitFor();
-    assert.equal((await scene()).revision, initial.revision);
-    assert.equal(await heading.textContent(), original);
-    const turn = await page.evaluate(async () => {
-      const state = await window.easyProto.getScene();
-      return (await window.easyProto.getChat(state.generation)).turn;
-    });
-    assert.deepEqual(turn.proposal, { before: originalLabel, after: "<b>Time for focus</b>" });
-    assert.equal(
-      await dock
-        .getByRole("form", { name: "Chat composer" })
-        .evaluate(
-          (form) =>
-            form.getBoundingClientRect().bottom ===
-            form.closest(".chat-dock").getBoundingClientRect().bottom,
-        ),
-      true,
-    );
-    if (evidence) await page.screenshot({ path: join(evidence, "desktop-chat-review.png") });
-    await apply.click();
-    const applied = await waitForRevision(page, initial.revision + 1);
-    await heading.filter({ hasText: "<b>Time for focus</b>" }).waitFor();
-    assert.equal(await heading.locator("b").count(), 0);
-    await page.evaluate(
-      ({ generation, turnId }) => window.easyProto.decideChat(generation, turnId, "apply"),
-      { generation: applied.generation, turnId: turn.id },
-    );
-    assert.equal((await scene()).revision, applied.revision);
-    await dock.getByRole("button", { name: "Undo edit", exact: true }).click();
-    await waitForRevision(page, applied.revision + 1);
-    await heading.filter({ hasText: original }).waitFor();
-
+    client = new Client({ name: "external-agent-verification", version: "1.0.0" });
     await client.connect(
       new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
         requestInit: { headers: { Authorization: "Bearer " + token } },
       }),
     );
-    const context = (await client.callTool({ name: "get_context" })).structuredContent;
-    await send("Stale edit");
-    await apply.waitFor();
-    const change = await client.callTool({
-      name: "update_artboard",
-      arguments: {
-        projectId: context.projectId,
-        activationId: context.activationId,
-        commandId: randomUUID(),
-        expectedRevision: context.revision,
-        arguments: { artboardId: board.id, patch: { x: board.x + 20 } },
-      },
-    });
-    assert.equal(change.isError, undefined, JSON.stringify(change.content));
-    await waitForRevision(page, context.revision + 1);
-    await dock
-      .getByText("The project changed. Discard this proposal and send a new turn.", { exact: true })
-      .waitFor();
-    assert.equal(await apply.isDisabled(), true);
-    const stale = await page.evaluate(async () => {
-      const state = await window.easyProto.getScene();
-      const { turn } = await window.easyProto.getChat(state.generation);
-      return window.easyProto.decideChat(state.generation, turn.id, "apply");
-    });
-    assert.equal(stale.turn.phase, "stale");
-    assert.equal(await heading.textContent(), original);
-
-    await cp(folder, copy, { recursive: true });
-    await send("Retired edit");
-    const retiring = await page.evaluate(
-      async (generation) => (await window.easyProto.getChat(generation)).turn.id,
-      initial.generation,
-    );
-    await button("Easy Proto Home").click();
-    await page.getByRole("heading", { name: "Projects" }).waitFor();
-    assert.equal((await scene()).view, "home");
-    assert.equal(await button("Chat").count(), 0);
-    await assert.rejects(
-      page.evaluate(
-        ({ generation, retiring }) => window.easyProto.decideChat(generation, retiring, "apply"),
-        { generation: initial.generation, retiring },
-      ),
-      /project selection changed/,
-    );
-
-    await app.evaluate(({ dialog }, copy) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [copy] });
-    }, copy);
-    const settings = button("Settings");
-    const footer = page.locator("main > footer");
-    assert.equal(await settings.evaluate((control) => control.closest("footer") !== null), true);
-    assert.ok((await settings.boundingBox()).x < 40);
-    await settings.click();
-    const menu = page.getByRole("group", { name: "Settings" });
-    await menu.waitFor();
-    assert.ok((await menu.boundingBox()).y < (await footer.boundingBox()).y);
-    await menu.getByRole("button", { name: "Open project…", exact: true }).click();
-    await heading.filter({ hasText: original }).waitFor();
-    await button("Chat").click();
-    await dock.getByText("Try asking for a headline edit.").waitFor();
-    const copied = await scene();
-    assert.equal(copied.projectId, initial.projectId);
-    assert.equal(copied.revision, context.revision + 1);
-    assert.notEqual(copied.generation, initial.generation);
-
-    const { projectId, activationId } = (await client.callTool({ name: "get_context" }))
-      .structuredContent;
-    let currentRevision = copied.revision;
-    for (const html of [
-      '<h1><a href="#details"><em>Keep this link</em></a></h1>',
-      "<h1>Keep </span>this markup</h1>",
-      "<h1>Keep this heading<h2>Second heading</h2>",
-    ]) {
-      const update = await client.callTool({
-        name: "update_artboard",
-        arguments: {
-          projectId,
-          activationId,
-          commandId: randomUUID(),
-          expectedRevision: currentRevision,
-          arguments: { artboardId: board.id, patch: { html } },
-        },
-      });
-      assert.equal(update.isError, undefined, JSON.stringify(update.content));
-      currentRevision = update.structuredContent.revision;
-      await assert.rejects(
-        page.evaluate(
-          ({ generation, expectedRevision }) =>
-            window.easyProto.startChat(generation, {
-              expectedRevision,
-              prompt: "Change the headline to New",
-            }),
-          {
-            generation: copied.generation,
-            expectedRevision: currentRevision,
-          },
-        ),
-        /plain text and line breaks only/,
+    const call = (name, args = {}) => client.callTool({ name, arguments: args });
+    async function checked(name, args) {
+      const response = await call(name, args);
+      assert.equal(response.isError, undefined, JSON.stringify(response.content));
+      return response.structuredContent;
+    }
+    async function rejects(name, args, code) {
+      const response = await call(name, args);
+      assert.equal(response.isError, true);
+      assert.equal(response.structuredContent.code, code);
+      assert.equal(
+        response.content.some(({ type }) => type === "image"),
+        false,
       );
-      const stored = await client.callTool({
-        name: "get_artboard",
-        arguments: { projectId, activationId, artboardId: board.id },
-      });
-      assert.equal(stored.structuredContent.html, html);
-      assert.equal(stored.structuredContent.revision, currentRevision);
     }
-  },
-);
-
-test(
-  "Home manages agent profiles and the chat composer scopes selection and history by project",
-  { timeout: 35_000 },
-  async (t) => {
-    const root = await mkdtemp(join(tmpdir(), "easy-proto-agent-home-"));
-    const profile = join(root, "profile");
-    const folder = join(root, "Writing");
-    const copy = join(root, "Other");
-    const runtime = join(root, "codex-fixture");
-    await writeFile(runtime, '#!/bin/sh\nprintf "%s\\n" "codex-cli 0.0.0"\n', { mode: 0o700 });
-    const env = {
-      ...process.env,
-      EASY_PROTO_PROFILE: profile,
-      EASY_PROTO_PORT: "0",
-      EASY_PROTO_CHAT_DEMO: "1",
-      EASY_PROTO_CODEX_BIN: runtime,
-    };
-    const codex = randomUUID();
-    const claude = randomUUID();
-    const writer = randomUUID();
-    let app;
-    t.after(async () => {
-      await app?.close();
-      await rm(root, { recursive: true, force: true });
+    const context = await checked("get_context");
+    const { projectId, activationId } = context;
+    const scope = { projectId, activationId };
+    const mutation = (expectedRevision, args) => ({
+      ...scope,
+      expectedRevision,
+      commandId: randomUUID(),
+      arguments: args,
     });
-    app = await electron.launch({ args: [process.cwd(), "--project=" + folder], env });
-    await (
-      await app.firstWindow()
-    )
-      .getByRole("button", { name: "Rename project Writing" })
-      .waitFor();
-    await cp(folder, copy, { recursive: true });
-    await app.evaluate(
-      ({ safeStorage }, { file, codex, claude, writer }) => {
-        const host = "50d39975-854b-4f2f-9b00-23d3bd074c21";
-        const record = JSON.stringify({
-          version: 1,
-          host,
-          profiles: [
-            { id: codex, name: "Codex fixture", kind: "codex", record: JSON.stringify({ host }) },
-            {
-              id: writer,
-              name: "Codex drafting",
-              kind: "codex",
-              record: JSON.stringify({
-                host,
-                registration: {
-                  client: "oaiapp_fixture_writer",
-                  identity: { subject: "synthetic", email: "fixture@example.test" },
-                  tokens: {
-                    access: "synthetic-access",
-                    expiry: Date.now() + 3600_000,
-                    scopes: ["resource.invoke", "chatgpt.tokens.use.direct"],
-                  },
-                },
-              }),
-            },
-            {
-              id: claude,
-              name: "Claude fixture",
-              kind: "claude",
-              model: "claude-fixture",
-              key: "fixture-only",
-            },
-          ],
-        });
-        process
-          .getBuiltinModule("fs")
-          .writeFileSync(file, safeStorage.encryptString(record), { mode: 0o600 });
+    const created = await checked(
+      "create_page",
+      mutation(context.revision, { name: "Dashboards" }),
+    );
+    const renamed = await checked(
+      "rename_page",
+      mutation(created.revision, { pageId: created.page.id, name: "Dashboard variants" }),
+    );
+    assert.equal(renamed.page.id, created.page.id);
+    const artboards = [
+      {
+        name: "Fear",
+        x: 0,
+        y: 0,
+        width: 402,
+        height: 874,
+        html: "<h1>Fear</h1>",
+        css: "body { background: #f2debf }",
       },
-      { file: join(profile, "agent-profiles.bin"), codex, claude, writer },
+      {
+        name: "Greed",
+        x: 450,
+        y: 0,
+        width: 402,
+        height: 874,
+        html: "<h1>Greed</h1>",
+        css: "body { background: #cdf5de }",
+      },
+    ];
+    const batchRequest = mutation(renamed.revision, { pageId: renamed.page.id, artboards });
+    const batch = await checked("create_artboards", batchRequest);
+    assert.equal(batch.revision, renamed.revision + 1);
+    assert.deepEqual(await checked("create_artboards", batchRequest), batch);
+    const [fear, greed] = batch.artboards;
+    const edited = await checked(
+      "update_artboard",
+      mutation(batch.revision, { artboardId: fear.id, patch: { html: "<h1>Fear · edited</h1>" } }),
     );
-    await app.close();
-
-    app = await electron.launch({ args: [process.cwd()], env });
-    const page = await app.firstWindow();
-    page.setDefaultTimeout(5500);
-    const button = (name) => page.getByRole("button", { name, exact: true });
-    const dialog = page.getByRole("dialog");
-    await page.getByRole("heading", { name: "Agents", exact: true }).waitFor();
-    const login = button("Log in with ChatGPT");
-    await login.waitFor();
-    assert.equal(await dialog.isVisible(), false);
-    assert.equal(await page.getByText("Claude fixture", { exact: true }).count(), 0);
-    await login.press("Enter");
-    await page
-      .getByRole("alert")
-      .getByText("Install a Codex build verified for Easy Proto.")
+    assert.equal(
+      (await checked("get_artboard", { ...scope, artboardId: greed.id })).html,
+      artboards[1].html,
+    );
+    const sheetRequest = { ...scope, revision: edited.revision, artboardIds: [greed.id, fear.id] };
+    await rejects(
+      "capture_artboards",
+      { ...sheetRequest, revision: batch.revision },
+      "REVISION_CONFLICT",
+    );
+    await rejects(
+      "capture_artboards",
+      { ...sheetRequest, artboardIds: [fear.id, randomUUID()] },
+      "ARTBOARD_NOT_FOUND",
+    );
+    const sheet = await call("capture_artboards", sheetRequest);
+    assert.equal(
+      sheet.isError,
+      undefined,
+      JSON.stringify(sheet.content.filter(({ type }) => type === "text")),
+    );
+    assert.equal(sheet.structuredContent.revision, edited.revision);
+    assert.deepEqual(sheet.structuredContent.cells, [
+      {
+        artboardId: greed.id,
+        sourceRevision: greed.sourceRevision,
+        width: 402,
+        height: 874,
+        unresolved: [],
+      },
+      {
+        artboardId: fear.id,
+        sourceRevision: edited.artboard.sourceRevision,
+        width: 402,
+        height: 874,
+        unresolved: [],
+      },
+    ]);
+    const image = sheet.content.find(({ type }) => type === "image");
+    assert.equal(image.mimeType, "image/png");
+    const png = Buffer.from(image.data, "base64");
+    assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [560, 416]);
+    assert.deepEqual([sheet.structuredContent.width, sheet.structuredContent.height], [560, 416]);
+    await button("Pages, current page Page 1").click();
+    await pagePicker("Dashboard variants").click();
+    const canvas = desktop.getByRole("region", { name: "Artboard canvas", exact: true });
+    await canvas.waitFor();
+    await desktop
+      .frameLocator('iframe[title="Fear"]')
+      .getByRole("heading", { name: "Fear · edited" })
       .waitFor();
-    assert.equal(await dialog.isVisible(), false);
-    await writeFile(runtime, '#!/bin/sh\nprintf "%s\\n" "codex-cli 0.169.0"\n');
-    await app.evaluate(({ shell }) => {
-      shell.openExternal = async (value) => {
-        globalThis.signInTarget = new URL(value).origin;
-      };
-    });
-    await login.press("Enter");
-    const signingIn = page
-      .getByRole("status")
-      .getByText("Finish signing in with ChatGPT in your browser.");
-    await signingIn.waitFor();
-    assert.equal(await button("Writing").isDisabled(), true);
-    const deadline = Date.now() + 4500;
-    while (Date.now() < deadline && !(await app.evaluate(() => globalThis.signInTarget))) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(
+      await canvas.evaluate((node) => node.clientWidth === document.documentElement.clientWidth),
+      true,
+    );
+    if (evidence) {
+      await mkdir(evidence, { recursive: true });
+      await writeFile(join(evidence, "mcp-contact-sheet.png"), png);
+      await desktop.screenshot({
+        path: join(evidence, "project-no-chat.png"),
+        animations: "disabled",
+      });
     }
-    assert.equal(await app.evaluate(() => globalThis.signInTarget), "https://auth.openai.com");
-    await button("Cancel sign-in").click();
-    await signingIn.waitFor({ state: "hidden" });
-    assert.equal(await login.isEnabled(), true);
-    assert.equal(await page.getByRole("alert").count(), 0);
-    await assert.rejects(
-      page.evaluate(() =>
-        window.easyProto.agents({
-          action: "connect",
-          kind: "claude",
-          name: "Hidden",
-          key: "fixture-only",
-        }),
-      ),
-      /Claude is unavailable/,
+    const moved = await checked(
+      "move_artboards_to_page",
+      mutation(edited.revision, { pageId: context.defaultPageId, artboardIds: [greed.id] }),
     );
-    await button("Codex drafting Connected").click();
-    const agentName = dialog.getByRole("textbox", { name: "Name" });
-    assert.equal(await agentName.evaluate((field) => field === document.activeElement), true);
-    await agentName.fill("Codex writing");
-    await dialog.getByRole("button", { name: "Save changes" }).click();
-    await button("Codex writing Connected").waitFor();
-    assert.equal(
-      await button("Codex writing Connected").evaluate((row) => row === document.activeElement),
-      true,
-    );
-    if (evidence) await page.screenshot({ path: join(evidence, "agents-home.png") });
-
-    await button("Writing").click();
-    const board = page.frameLocator('iframe[title="Field notes"]').getByRole("heading");
-    await board.waitFor();
-    await assert.rejects(
-      page.evaluate((id) => window.easyProto.agents({ action: "disconnect", id }), claude),
-      /from Home/,
-    );
-    await button("Chat").click();
-    const agentTrigger = button("Agent: Local demo");
-    assert.equal(await agentTrigger.innerText(), "Local demo");
-    assert.equal(await agentTrigger.locator("svg").count(), 1);
-    assert.equal(
-      await agentTrigger.evaluate((trigger) => getComputedStyle(trigger).borderWidth),
-      "0px",
-    );
-    await agentTrigger.click();
-    const picker = page.getByRole("menu", { name: "Agents" });
-    await picker.waitFor();
-    assert.equal(
-      await picker.getByRole("menuitemradio", { name: /Codex fixture/ }).isDisabled(),
-      true,
-    );
-    assert.equal(
-      await picker.getByRole("menuitemradio", { name: "Codex writing" }).isEnabled(),
-      true,
-    );
-    assert.equal(await picker.getByText("Claude fixture").count(), 0);
-    await assert.rejects(
-      page.evaluate(async (id) => {
-        const { generation } = await window.easyProto.getScene();
-        await window.easyProto.selectChatAgent(generation, id);
-      }, claude),
-      /no longer available/,
-    );
-    assert.ok(
-      (await picker.boundingBox()).y + (await picker.boundingBox()).height <=
-        (await button("Agent: Local demo").boundingBox()).y,
-    );
-    assert.ok(
-      (await button("Agent: Local demo").boundingBox()).x < (await button("Send").boundingBox()).x,
-    );
-    assert.equal(await page.getByRole("button", { name: /attach/i }).count(), 0);
-    if (evidence) await page.screenshot({ path: join(evidence, "chat-agent-picker.png") });
-    await page.keyboard.press("Escape");
-    await picker.waitFor({ state: "hidden" });
-
-    const prompt = "Change the headline to Local draft";
-    await page.getByRole("textbox", { name: "Message" }).fill(prompt);
-    await button("Send").click();
-    await button("Apply edit").waitFor();
-    assert.equal(await button("Agent: Local demo").isDisabled(), true);
-    await button("Apply edit").click();
-    await board.filter({ hasText: "Local draft" }).waitFor();
-
-    await button("Agent: Local demo").click();
-    await picker.getByRole("menuitemradio", { name: "Codex writing" }).click();
-    await button("Agent: Codex writing").waitFor();
-    assert.equal(await page.getByText(prompt, { exact: true }).count(), 0);
-    await button("Agent: Codex writing").click();
-    await picker.getByRole("menuitemradio", { name: "Local demo" }).click();
-    await page.getByText(prompt, { exact: true }).waitFor();
-
-    await button("Agent: Local demo").click();
-    await picker.getByRole("menuitemradio", { name: "Codex writing" }).click();
-    await button("Agent: Codex writing").click();
-    await picker.getByRole("menuitem", { name: "Manage agents" }).click();
-    await page.waitForFunction(() => document.activeElement?.id === "agents-title");
-
-    await app.evaluate(({ dialog }, folder) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
-    }, copy);
-    await button("Settings").click();
-    await button("Open project…").click();
-    await page.getByRole("button", { name: "Rename project Other" }).waitFor();
-    await button("Chat").click();
-    await button("Agent: Local demo").waitFor();
-    assert.equal(await page.getByText(prompt, { exact: true }).count(), 0);
+    assert.equal(moved.artboard.pageId, context.defaultPageId);
     await button("Easy Proto Home").click();
-    await button("Writing").click();
-    await button("Chat").click();
-    await button("Agent: Codex writing").waitFor();
-    assert.equal(await page.getByText(prompt, { exact: true }).count(), 0);
-    await button("Agent: Codex writing").click();
-    await picker.getByRole("menuitemradio", { name: "Local demo" }).click();
-    await page.getByText(prompt, { exact: true }).waitFor();
-    await app.close();
-    app = await electron.launch({
-      args: [process.cwd(), "--project=" + folder],
-      env: { ...env, EASY_PROTO_CHAT_DEMO: "0" },
-    });
-    const reopened = await app.firstWindow();
-    await reopened.getByRole("button", { name: "Chat", exact: true }).click();
-    await reopened.getByRole("button", { name: "Agent: Codex writing", exact: true }).waitFor();
-    await reopened
-      .getByText("Chat asks before sharing artboard source.", { exact: false })
-      .waitFor();
+    await desktop.getByRole("heading", { name: "Projects", exact: true }).waitFor();
+    assert.equal(await desktop.getByRole("heading", { name: "Agents", exact: true }).count(), 0);
+    assert.equal(await button("Log in with ChatGPT").count(), 0);
+    assert.equal(await readFile(retainedProfile, "utf8"), "retired encrypted profile fixture");
+    assert.equal(await readFile(retainedHistory, "utf8"), "old transcript fixture");
+    if (evidence)
+      await desktop.screenshot({
+        path: join(evidence, "home-projects-only.png"),
+        animations: "disabled",
+      });
+    await rejects(
+      "capture_artboards",
+      { ...sheetRequest, revision: moved.revision },
+      "PROJECT_SCOPE",
+    );
+    await button("MCP variants").click();
+    await button("Tokens").waitFor();
+    const reopened = await checked("get_context");
+    assert.equal(reopened.revision, moved.revision);
+    assert.notEqual(reopened.activationId, activationId);
+    await rejects("create_artboards", batchRequest, "PROJECT_SCOPE");
+    await rejects(
+      "capture_artboards",
+      { ...sheetRequest, revision: moved.revision },
+      "PROJECT_SCOPE",
+    );
   },
 );

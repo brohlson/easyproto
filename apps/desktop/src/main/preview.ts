@@ -373,6 +373,84 @@ export class Preview {
     return job;
   }
 
+  async captureSheet(
+    project: Project,
+    snapshot: Snapshot,
+    boards: Artboard[],
+    admit: () => void,
+    signal: AbortSignal,
+  ) {
+    const columns = Math.min(3, boards.length);
+    const cellWidth = 280;
+    const cellHeight = 416;
+    const width = columns * cellWidth;
+    const height = Math.ceil(boards.length / columns) * cellHeight;
+    const sheet = Buffer.alloc(width * height * 4, Buffer.from([45, 45, 45, 255]));
+    const cells = [];
+    const deadline = AbortSignal.timeout(45_000);
+    const captureSignal = AbortSignal.any([signal, deadline]);
+    for (const [index, board] of boards.entries()) {
+      admit();
+      let captured;
+      try {
+        captured = await this.capture(project, snapshot, board, captureSignal);
+      } catch (error) {
+        if (deadline.aborted && !signal.aborted)
+          throw new ProjectError(
+            "CAPTURE_TIMEOUT",
+            "The contact sheet did not finish rendering in time.",
+          );
+        throw error;
+      }
+      admit();
+      const {
+        artboardId,
+        sourceRevision,
+        width: viewportWidth,
+        height: viewportHeight,
+        unresolved,
+      } = captured.details;
+      const scale = Math.min(
+        1,
+        (cellWidth - 16) / viewportWidth,
+        (cellHeight - 16) / viewportHeight,
+      );
+      const tile = nativeImage.createFromBuffer(captured.png).resize({
+        width: Math.max(1, Math.round(viewportWidth * scale)),
+        height: Math.max(1, Math.round(viewportHeight * scale)),
+      });
+      const size = tile.getSize();
+      const pixels = tile.toBitmap();
+      const stride = size.width * 4;
+      if (
+        !stride ||
+        !size.height ||
+        size.width > cellWidth ||
+        size.height > cellHeight ||
+        pixels.length !== stride * size.height
+      )
+        throw new ProjectError("CAPTURE_FAILED", "A contact sheet image could not be prepared.");
+      const x = (index % columns) * cellWidth + Math.floor((cellWidth - size.width) / 2);
+      const y =
+        Math.floor(index / columns) * cellHeight + Math.floor((cellHeight - size.height) / 2);
+      for (let row = 0; row < size.height; row++) {
+        const destination = ((y + row) * width + x) * 4;
+        pixels.copy(sheet, destination, row * stride, (row + 1) * stride);
+      }
+      cells.push({
+        artboardId,
+        sourceRevision,
+        width: viewportWidth,
+        height: viewportHeight,
+        unresolved,
+      });
+    }
+    const png = nativeImage.createFromBitmap(sheet, { width, height }).toPNG();
+    if (!png.length || png.length > 5 * 1024 * 1024)
+      throw new ProjectError("CAPTURE_FAILED", "The contact sheet could not be prepared.");
+    return { revision: snapshot.manifest.revision, columns, width, height, cells, png };
+  }
+
   async #capture(project: Project, snapshot: Snapshot, board: Artboard, signal: AbortSignal) {
     const key = randomUUID();
     const { width, height } = board;

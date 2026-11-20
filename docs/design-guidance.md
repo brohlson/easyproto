@@ -25,3 +25,5 @@ Use the shared [Select component](../packages/ui/select.tsx) for single-choice f
 ## Fold mark
 
 Use the shared [Brand component](../packages/ui/brand.tsx) in application headers. Fold uses the foreground color in both themes and pairs with the Easy Proto wordmark. The clipped corner and inset step come from the Easy Proto logo workshop. Use the same [Fold vector](../packages/ui/fold.svg) for the favicon.
+
+The standalone Mac app places Fold in white on a charcoal tile. Keep the existing mark geometry and check legibility on both light and dark backgrounds at Dock sizes. Edit the [app icon vector](../apps/desktop/assets/app-icon.svg), export a transparent 1024 px PNG, and use macOS `iconutil` with 1× and 2× images at 16, 32, 128, 256, and 512 points to rebuild the [bundled icon](../apps/desktop/assets/app-icon.icns). [Forge icon configuration](https://www.electronforge.io/guides/create-and-add-icons)

@@ -1,5 +1,5 @@
 import { Brand } from "@easy-proto/ui";
-import { Folder, MessageSquare, MoveDiagonal2, Plus } from "lucide-react";
+import { Folder, MoveDiagonal2, Plus } from "lucide-react";
 import {
   createContext,
   memo,
@@ -39,9 +39,6 @@ import type {
 import "@xyflow/react/dist/style.css";
 import "virtual:desktop-design-tokens.css";
 import "./styles.css";
-import type { AgentProfilesState } from "../shared/agents";
-import { AgentSettings } from "./agent-settings";
-import { ChatDock } from "./chat";
 import { DevicePresets } from "./device-presets";
 import { EditableName } from "./editable-name";
 import { MoveToPage, PagePicker } from "./pages";
@@ -285,9 +282,7 @@ function FitShortcut() {
         event.ctrlKey ||
         event.altKey ||
         (event.target instanceof Element &&
-          event.target.closest(
-            "input, select, textarea, [contenteditable], [popover], .chat-dock",
-          )) ||
+          event.target.closest("input, select, textarea, [contenteditable], [popover]")) ||
         document.querySelector(":popover-open, dialog[open]")
       )
         return;
@@ -303,41 +298,8 @@ function FitShortcut() {
 function App() {
   const { notify, dismiss } = useToast();
   const [desktop, setDesktop] = useState<DesktopState>();
-  const [agents, setAgents] = useState<AgentProfilesState>();
-  const [agentSigningIn, setAgentSigningIn] = useState(false);
-  const focusAgents = useRef(false);
-  useEffect(() => {
-    let current = true;
-    const dispose = window.easyProto.onAgents(setAgents);
-    void window.easyProto.agents({ action: "status" }).then(
-      (value) => {
-        if (current) setAgents(value);
-      },
-      () => {
-        if (current)
-          setAgents({
-            profiles: [],
-            codexInstalled: false,
-            claudeInstalled: false,
-            message: "Could not load agent profiles.",
-          });
-      },
-    );
-    return () => {
-      current = false;
-      dispose();
-    };
-  }, []);
-  useEffect(() => {
-    if (desktop?.view === "home" && focusAgents.current) {
-      focusAgents.current = false;
-      document.getElementById("agents-title")?.focus();
-    }
-  }, [desktop?.view]);
   const scene = desktop?.view === "project" ? desktop : undefined;
-  const [openChatGeneration, setOpenChatGeneration] = useState<number>();
-  const chatTrigger = useRef<HTMLButtonElement>(null);
-  const chatOpen = scene !== undefined && openChatGeneration === scene.generation;
+  const projectNameEditor = useRef<HTMLDivElement>(null);
   const [nodes, setNodes] = useNodesState<BoardNode>([]);
   const [message, setMessage] = useState("");
   const [activePageId, setActivePageId] = useState<string>();
@@ -532,7 +494,7 @@ function App() {
       savingGeneration.current === null &&
       !(
         target instanceof Element &&
-        target.closest("input, select, textarea, [contenteditable], [popover], .chat-dock")
+        target.closest("input, select, textarea, [contenteditable], [popover]")
       ) &&
       !document.querySelector(":popover-open, dialog[open]")
     );
@@ -747,7 +709,7 @@ function App() {
     }
   }
 
-  const busy = !desktop || choosing || saving || agentSigningIn;
+  const busy = !desktop || choosing || saving;
   const page = scene?.pages.find(({ id }) => id === activePageId);
   const otherPages = scene?.pages.filter(({ id }) => id !== activePageId) ?? [];
   function navigatePage(pageId: string) {
@@ -763,11 +725,6 @@ function App() {
       return;
     showPage(current, pageId);
   }
-  function closeChat() {
-    setOpenChatGeneration(undefined);
-    chatTrigger.current?.focus();
-  }
-
   const artboardCount =
     scene?.artboards.filter(({ pageId }) => pageId === activePageId).length ?? 0;
   const choose = (mode: "create" | "open") =>
@@ -802,7 +759,7 @@ function App() {
         {scene && (
           <>
             <span className="divider" />
-            <div className="folder">
+            <div className="folder" ref={projectNameEditor}>
               <EditableName
                 key={scene.generation}
                 kind="project"
@@ -853,18 +810,6 @@ function App() {
           </>
         )}
         {scene && <TokenManager key={scene.generation} scene={scene} disabled={busy} />}
-        {scene && (
-          <button
-            type="button"
-            ref={chatTrigger}
-            className="chat-toggle"
-            aria-controls="chat-dock"
-            aria-expanded={chatOpen}
-            onClick={() => (chatOpen ? closeChat() : setOpenChatGeneration(scene.generation))}
-          >
-            <MessageSquare size={15} aria-hidden="true" /> Chat
-          </button>
-        )}
       </header>
       {desktop?.view === "home" && (
         <div className="home">
@@ -900,127 +845,98 @@ function App() {
               </ul>
             )}
           </section>
-          <AgentSettings state={agents} onChange={setAgents} onSigningIn={setAgentSigningIn} />
         </div>
       )}
       {scene && activePageId && (
-        <div className="workspace-body" data-chat-open={chatOpen}>
-          <section
-            className="canvas"
-            aria-label="Artboard canvas"
-            onKeyDownCapture={moveWithKeyboard}
-          >
-            {scene && (
-              <ArtboardEditing.Provider value={editing}>
-                <ReactFlow
-                  key={`${scene.generation}:${activePageId}`}
-                  colorMode={colorMode}
-                  nodes={nodes}
-                  edges={[]}
-                  nodeTypes={nodeTypes}
-                  fitView={!cameras.current.has(activePageId)}
-                  defaultViewport={cameras.current.get(activePageId)}
-                  fitViewOptions={{ padding: 0.4, maxZoom: 1 }}
-                  onViewportChange={(viewport) => {
-                    if (
-                      latest.current?.generation === scene.generation &&
-                      visiblePage.current === activePageId
-                    )
-                      cameras.current.set(activePageId, viewport);
-                  }}
-                  minZoom={0.08}
-                  maxZoom={3}
-                  nodesDraggable={!saving && !choosing}
-                  nodesConnectable={false}
-                  elementsSelectable={!saving && !choosing}
-                  proOptions={{ hideAttribution: true }}
-                  disableKeyboardA11y={false}
-                  deleteKeyCode={null}
-                  selectionKeyCode={null}
-                  multiSelectionKeyCode="Shift"
-                  selectionOnDrag
-                  selectionMode={SelectionMode.Partial}
-                  panOnScroll
-                  zoomOnScroll={false}
-                  zoomOnPinch
-                  panOnDrag={[1, 2]}
-                  panActivationKeyCode="Space"
-                  onNodeClick={(event, node) => {
-                    if (
-                      event.shiftKey ||
-                      !node.selected ||
-                      savingGeneration.current !== null ||
-                      (event.target instanceof Element && event.target.closest(".nodrag"))
-                    )
-                      return;
-                    setNodes((current) =>
-                      current.map((item) =>
-                        item.selected && item.id !== node.id ? { ...item, selected: false } : item,
-                      ),
-                    );
-                  }}
-                  onNodesChange={(changes) => {
-                    const accepted = changes.filter((change) => {
-                      if (change.type === "select" && savingGeneration.current !== null)
-                        return false;
-                      return change.type !== "position" || Boolean(drag.current);
-                    });
-                    setNodes((current) => applyNodeChanges(accepted, current));
-                  }}
-                  onNodeDragStart={(_, _node, dragged) => {
-                    if (latest.current && savingGeneration.current === null)
-                      drag.current = {
-                        ids: new Set(dragged.map(({ id }) => id)),
-                        scene: latest.current,
-                      };
-                  }}
-                  onNodeDragStop={(_, _node, dragged) => endDrag(dragged)}
-                >
-                  <Background gap={24} size={1.25} color="var(--grid)" />
-                  <GroupOutline selection={selection} />
-                  <FitShortcut />
-                </ReactFlow>
-              </ArtboardEditing.Provider>
-            )}
-            {artboardCount === 0 && <p className="empty-page">No artboards on this page</p>}
-            {pageMove && (
-              <div className="page-move-notice">
-                <span role="status">
-                  Moved {pageMove.count} {pageMove.count === 1 ? "artboard" : "artboards"} to{" "}
-                  <strong>{pageMove.page.name}</strong>
-                </span>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => navigatePage(pageMove.page.id)}
-                >
-                  Go to page
-                </button>
-              </div>
-            )}
-          </section>
-          <ChatDock
-            key={scene.generation}
-            scene={scene}
-            pageId={activePageId}
-            open={chatOpen}
-            busy={busy}
-            onClose={closeChat}
-            profiles={agents?.profiles ?? []}
-            onManage={() => {
-              focusAgents.current = true;
-              void navigate(() => window.easyProto.goHome());
-            }}
-            onUndo={() => {
-              const current = latest.current;
-              return current &&
-                current.generation === scene.generation &&
-                current.revision === scene.revision
-                ? saveCommand({ operation: "undo", arguments: {} }, current)
-                : Promise.resolve(false);
-            }}
-          />
-        </div>
+        <section
+          className="canvas"
+          aria-label="Artboard canvas"
+          onKeyDownCapture={moveWithKeyboard}
+        >
+          {scene && (
+            <ArtboardEditing.Provider value={editing}>
+              <ReactFlow
+                key={`${scene.generation}:${activePageId}`}
+                colorMode={colorMode}
+                nodes={nodes}
+                edges={[]}
+                nodeTypes={nodeTypes}
+                fitView={!cameras.current.has(activePageId)}
+                defaultViewport={cameras.current.get(activePageId)}
+                fitViewOptions={{ padding: 0.4, maxZoom: 1 }}
+                onViewportChange={(viewport) => {
+                  if (
+                    latest.current?.generation === scene.generation &&
+                    visiblePage.current === activePageId
+                  )
+                    cameras.current.set(activePageId, viewport);
+                }}
+                minZoom={0.08}
+                maxZoom={3}
+                nodesDraggable={!saving && !choosing}
+                nodesConnectable={false}
+                elementsSelectable={!saving && !choosing}
+                proOptions={{ hideAttribution: true }}
+                disableKeyboardA11y={false}
+                deleteKeyCode={null}
+                selectionKeyCode={null}
+                multiSelectionKeyCode="Shift"
+                selectionOnDrag
+                selectionMode={SelectionMode.Partial}
+                panOnScroll
+                zoomOnScroll={false}
+                zoomOnPinch
+                panOnDrag={[1, 2]}
+                panActivationKeyCode="Space"
+                onNodeClick={(event, node) => {
+                  if (
+                    event.shiftKey ||
+                    !node.selected ||
+                    savingGeneration.current !== null ||
+                    (event.target instanceof Element && event.target.closest(".nodrag"))
+                  )
+                    return;
+                  setNodes((current) =>
+                    current.map((item) =>
+                      item.selected && item.id !== node.id ? { ...item, selected: false } : item,
+                    ),
+                  );
+                }}
+                onNodesChange={(changes) => {
+                  const accepted = changes.filter((change) => {
+                    if (change.type === "select" && savingGeneration.current !== null) return false;
+                    return change.type !== "position" || Boolean(drag.current);
+                  });
+                  setNodes((current) => applyNodeChanges(accepted, current));
+                }}
+                onNodeDragStart={(_, _node, dragged) => {
+                  if (latest.current && savingGeneration.current === null)
+                    drag.current = {
+                      ids: new Set(dragged.map(({ id }) => id)),
+                      scene: latest.current,
+                    };
+                }}
+                onNodeDragStop={(_, _node, dragged) => endDrag(dragged)}
+              >
+                <Background gap={24} size={1.25} color="var(--grid)" />
+                <GroupOutline selection={selection} />
+                <FitShortcut />
+              </ReactFlow>
+            </ArtboardEditing.Provider>
+          )}
+          {artboardCount === 0 && <p className="empty-page">No artboards on this page</p>}
+          {pageMove && (
+            <div className="page-move-notice">
+              <span role="status">
+                Moved {pageMove.count} {pageMove.count === 1 ? "artboard" : "artboards"} to{" "}
+                <strong>{pageMove.page.name}</strong>
+              </span>
+              <button type="button" disabled={busy} onClick={() => navigatePage(pageMove.page.id)}>
+                Go to page
+              </button>
+            </div>
+          )}
+        </section>
       )}
       <footer className="workspace-footer">
         <div className="footer-start">
@@ -1030,6 +946,9 @@ function App() {
             busy={busy}
             choose={choose}
             saveCopy={scene ? saveProjectCopy : undefined}
+            renameProject={
+              scene ? () => projectNameEditor.current?.querySelector("button")?.click() : undefined
+            }
             goHome={scene ? () => void navigate(() => window.easyProto.goHome()) : undefined}
           />
           {scene && (

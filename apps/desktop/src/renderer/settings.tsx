@@ -5,6 +5,7 @@ import {
   House,
   Monitor,
   Moon,
+  Pencil,
   Plus,
   Settings as Cog,
   Sun,
@@ -26,6 +27,7 @@ export function Settings({
   goHome,
   choose,
   saveCopy,
+  renameProject,
 }: {
   theme: Theme;
   changeTheme: (theme: Theme) => void;
@@ -33,6 +35,7 @@ export function Settings({
   goHome?: () => void;
   choose: (mode: "create" | "open") => void;
   saveCopy?: () => void;
+  renameProject?: () => void;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -92,6 +95,16 @@ export function Settings({
           >
             <FolderOpen aria-hidden="true" size={15} /> Open project…
           </button>
+          {renameProject && (
+            <button
+              type="button"
+              className="menu-row"
+              disabled={busy}
+              onClick={() => invoke(renameProject)}
+            >
+              <Pencil aria-hidden="true" size={15} /> Rename project
+            </button>
+          )}
           {saveCopy && (
             <button
               type="button"

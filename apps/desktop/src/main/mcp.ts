@@ -5,10 +5,15 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
+  artboardBatchLimit,
   createArtboardInput,
+  createArtboardsInput,
+  createPageInput,
   boardPatch,
   envelope,
   id,
+  moveArtboardsToPageInput,
+  renamePageInput,
   revision,
   type Command,
 } from "../shared/model";
@@ -193,6 +198,43 @@ function tools(
   );
 
   server.registerTool(
+    "create_artboards",
+    {
+      description:
+        "Commit two to six independently editable HTML/CSS artboards on one page in a single undoable revision.",
+      inputSchema: envelope.extend({ activationId: id, arguments: createArtboardsInput }),
+    },
+    (request) => call(() => commit({ ...request, operation: "create_artboards" })),
+  );
+
+  server.registerTool(
+    "create_page",
+    {
+      description: "Create a page and return its stable ID.",
+      inputSchema: envelope.extend({ activationId: id, arguments: createPageInput }),
+    },
+    (request) => call(() => commit({ ...request, operation: "create_page" })),
+  );
+
+  server.registerTool(
+    "rename_page",
+    {
+      description: "Rename a page while retaining its ID and artboards.",
+      inputSchema: envelope.extend({ activationId: id, arguments: renamePageInput }),
+    },
+    (request) => call(() => commit({ ...request, operation: "rename_page" })),
+  );
+
+  server.registerTool(
+    "move_artboards_to_page",
+    {
+      description: "Move artboards to a different page in one undoable revision.",
+      inputSchema: envelope.extend({ activationId: id, arguments: moveArtboardsToPageInput }),
+    },
+    (request) => call(() => commit({ ...request, operation: "move_artboards_to_page" })),
+  );
+
+  server.registerTool(
     "delete_page",
     {
       description:
@@ -251,6 +293,58 @@ function tools(
           .finally(() => {
             active(request.projectId, request.activationId);
           });
+        return {
+          structuredContent: details,
+          content: [
+            { type: "text" as const, text: JSON.stringify(details) },
+            { type: "image" as const, mimeType: "image/png", data: png.toString("base64") },
+          ],
+        };
+      }),
+  );
+  server.registerTool(
+    "capture_artboards",
+    {
+      description:
+        "Render two to six distinct artboards at the current committed revision. Return one PNG contact sheet and cell details in request order.",
+      inputSchema: {
+        ...projectScope,
+        revision,
+        artboardIds: z
+          .array(id)
+          .min(2)
+          .max(artboardBatchLimit)
+          .refine((ids) => new Set(ids).size === ids.length),
+      },
+    },
+    (request, { signal }) =>
+      call(async () => {
+        const { projectId, activationId } = request;
+        const scope = active(projectId, activationId);
+        const snapshot = scope.project.snapshot;
+        const captureSignal = AbortSignal.any([scope.signal, signal]);
+        const admit = () => {
+          const { project } = active(projectId, activationId);
+          if (project.snapshot.manifest.revision !== request.revision) {
+            throw new ProjectError(
+              "REVISION_CONFLICT",
+              "Capture requires the current committed revision.",
+              project.snapshot.manifest.revision,
+            );
+          }
+          captureSignal.throwIfAborted();
+        };
+        admit();
+        const boards = request.artboardIds.map((artboardId) => {
+          const board = snapshot.manifest.artboards.find(({ id }) => id === artboardId);
+          if (!board) throw new ProjectError("ARTBOARD_NOT_FOUND", "The artboard does not exist.");
+          return board;
+        });
+        const captured = await preview
+          .captureSheet(scope.project, snapshot, boards, admit, captureSignal)
+          .finally(admit);
+        const { png, ...sheet } = captured;
+        const details = { status: "captured", projectId, ...sheet };
         return {
           structuredContent: details,
           content: [

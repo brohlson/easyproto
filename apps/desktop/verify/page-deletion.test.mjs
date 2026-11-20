@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { _electron as electron } from "playwright";
+import { launchDesktop } from "./launch-desktop.mjs";
 import { Project } from "../dist/project.js";
 
 for (const storage of ["folder", "sqlite"]) {
@@ -64,7 +64,7 @@ for (const storage of ["folder", "sqlite"]) {
         await app?.close();
         await rm(root, { recursive: true, force: true });
       });
-      app = await electron.launch({ args: [process.cwd(), "--project=" + path], env });
+      app = await launchDesktop({ args: [process.cwd(), "--project=" + path], env });
       const page = await app.firstWindow();
       if (storage === "sqlite")
         await app.evaluate(({ BrowserWindow }) => {
@@ -316,7 +316,7 @@ for (const storage of ["folder", "sqlite"]) {
       assert.equal(retired.structuredContent.code, "PROJECT_SCOPE");
       await client.close();
       await app.close();
-      app = await electron.launch({ args: [process.cwd(), "--project=" + path], env });
+      app = await launchDesktop({ args: [process.cwd(), "--project=" + path], env });
       const reopened = await app.firstWindow();
       await reopened
         .getByRole("button", { name: "Pages, current page Explorations", exact: true })
