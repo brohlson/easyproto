@@ -26,6 +26,7 @@ import {
 import { ArtboardActivity } from "./activity";
 import { colorToHex, tokenByteLimit } from "../shared/token-types";
 import desktopTokens from "../renderer/design.tokens.json";
+import { environmentMcpSettings, readLocalMcpSettings } from "./local-mcp";
 import { listen, type ActiveProject } from "./mcp";
 import { chromeUrl, Preview, securePreferences } from "./preview";
 import { Project, ProjectError, readRegular } from "./project";
@@ -395,19 +396,36 @@ async function start() {
     }
   });
 
-  const token = process.env.EASY_PROTO_TOKEN;
-  if (token) {
-    if (!/^[A-Za-z0-9_-]{43,128}$/.test(token))
-      throw new Error("Set EASY_PROTO_TOKEN to a random URL-safe token of at least 43 characters.");
-    const port = z.coerce
-      .number()
-      .int()
-      .min(0)
-      .max(65535)
-      .parse(process.env.EASY_PROTO_PORT ?? "38645");
-    const endpoint = await listen(() => active, preview, changed, checkWritable, port, token);
-    console.log("Easy Proto MCP listening at", endpoint.url);
-    app.once("will-quit", endpoint.stop);
+  const useSavedSettings =
+    app.isPackaged &&
+    process.platform === "darwin" &&
+    !testProfile &&
+    process.env.EASY_PROTO_TOKEN === undefined &&
+    process.env.EASY_PROTO_PORT === undefined;
+  let connectionWarning: string | undefined;
+  try {
+    const connection = useSavedSettings
+      ? await readLocalMcpSettings(app.getPath("userData"))
+      : environmentMcpSettings(process.env);
+    if (connection) {
+      const endpoint = await listen(
+        () => active,
+        preview,
+        changed,
+        checkWritable,
+        connection.port,
+        connection.token,
+      );
+      console.log("Easy Proto MCP listening at", endpoint.url);
+      app.once("will-quit", endpoint.stop);
+    }
+  } catch (error) {
+    if (!useSavedSettings) throw error;
+    connectionWarning =
+      (error as NodeJS.ErrnoException).code === "EADDRINUSE"
+        ? "The configured MCP port is already in use. Quit the other listener and reopen Easy Proto."
+        : "Check the token, port, and file permissions in local-mcp.json, then reopen Easy Proto.";
+    console.warn("Local MCP is unavailable.", connectionWarning);
   }
 
   Menu.setApplicationMenu(
@@ -418,6 +436,12 @@ async function start() {
   });
   window.once("ready-to-show", () => window.show());
   await window.loadURL(chromeUrl);
+  if (connectionWarning && !window.isDestroyed())
+    void dialog.showMessageBox(window, {
+      type: "warning",
+      message: "Local MCP is unavailable",
+      detail: connectionWarning,
+    });
 }
 
 if (!app.requestSingleInstanceLock()) {

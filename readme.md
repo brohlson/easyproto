@@ -79,13 +79,29 @@ pnpm start "--project=$PWD/My prototype" &
 codex
 ```
 
-To use the installed Mac app with MCP, quit the installed copy first. In the shell where you exported `EASY_PROTO_TOKEN`, launch its executable and then start your client from that shell.
+### Open the installed app from Finder or the Dock
+
+The installed Mac app reads its optional local MCP settings at launch from `~/Library/Application Support/Easy Proto/local-mcp.json`. Use a fixed port and the same bearer token as your client. Once configured, open Easy Proto normally and select a project on Home. The client can connect on Home and gains project context when you open a project. Quit Easy Proto to stop the endpoint.
+
+For a first-time setup, with the matching token and port already available in your shell, run this once. It creates a file readable only by your account and stops if the file already exists.
 
 ```sh
-"$HOME/Applications/Easy Proto.app/Contents/MacOS/Easy Proto" &
+node --input-type=module <<'JS'
+import { mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+const token = process.env.EASY_PROTO_TOKEN;
+const port = Number(process.env.EASY_PROTO_PORT ?? 38645);
+if (!/^[A-Za-z0-9_-]{43,128}$/.test(token ?? "") || !Number.isInteger(port) || port < 1 || port > 65535)
+  throw new Error("Set the matching MCP token and a fixed port first.");
+const profile = join(homedir(), "Library", "Application Support", "Easy Proto");
+await mkdir(profile, { recursive: true, mode: 0o700 });
+await writeFile(join(profile, "local-mcp.json"), JSON.stringify({ token, port }), { flag: "wx", mode: 0o600 });
+JS
 ```
 
-The app must be running before Codex connects. Restart the client if it was already open. Approve Easy Proto tool calls when Codex prompts. Set `EASY_PROTO_PORT` and update the configured URL together to change the port. With no token, the desktop opens without an MCP endpoint. [Codex MCP setup](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+The file stays outside the app bundle and project folders, so rebuilding the app preserves the connection. Move the file out of that directory and relaunch to disable automatic startup. Development runs, disposable profiles, and explicit environment configuration retain the Terminal workflow. If another process holds the configured port, Easy Proto reports the issue and opens the canvas with MCP offline. Restart the client if it needs to rediscover a newly registered server.
 
 Ask Codex to get the Easy Proto context, create a 480 × 320 artboard next to the starter at canvas coordinates (620, 0), then capture it. Ask it to change the title and background and capture the new revision. Press Shift+0 to bring both boards into view. Drag a board, return Home, and reopen the project to see the saved position.
 
