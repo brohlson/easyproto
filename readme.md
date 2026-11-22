@@ -23,6 +23,18 @@ pnpm dev
 
 The runtime installer comes from the pinned Electron npm package and fetches the matching official Electron release. `pnpm dev` builds and launches the desktop app. Rebuild or rerun it after source changes. For a build already on disk, use `pnpm start`.
 
+### Update the installed Mac app
+
+From the checkout, run:
+
+```sh
+./scripts/install-mac
+```
+
+The command builds your current working tree, checks the signature and Home screen in a temporary profile, then installs and opens `~/Applications/Easy Proto.app` with the Fold icon. If the installed copy is running, the command quits it just before replacing it. Your development window can stay open. Each copy has its own recent projects and agent settings. Run the same command again whenever you want to try newer changes.
+
+The installer uses the pinned Node and pnpm versions above, macOS Command Line Tools (Swift), and local ad-hoc signing.
+
 Home shows the projects you have created or opened on this device. Click a row to reopen it, or use **Create project** and select an empty folder in the macOS picker. Click **Easy Proto** in the header to return Home. The footer’s **Settings** menu has project actions and **Appearance**. Use **Open project…** to add an existing project or find a folder that moved.
 
 Double-click the project name or an artboard title to edit it. Enter or clicking away saves, and Escape cancels. You can also focus the name and press Enter to start editing. Project titles travel with their folders. Artboard titles, dimensions, and activity labels stay the same screen size as you zoom. Select an artboard and press **⌘D** to save an offset copy with its own editable HTML and CSS. The copy becomes selected.

@@ -1,0 +1,75 @@
+#!/bin/bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+root="$PWD"
+desktop="$root/apps/desktop"
+name='Easy Proto'
+applications="$HOME/Applications"
+destination="$applications/$name.app"
+[[ "$(uname -s)" == Darwin ]] || { echo 'Requires macOS.' >&2; exit 1; }
+
+# Prefer the checkout's pinned Node when the account has several runtimes.
+version="$(cat .nvmrc)"
+for bin in "${NVM_DIR:-$HOME/.nvm}/versions/node/v$version/bin" "${VITE_PLUS_HOME:-$HOME/.vite-plus}/js_runtime/node/$version/bin"; do
+  if [[ -x "$bin/node" ]]; then export PATH="$bin:$PATH"; break; fi
+done
+
+mkdir -p "$applications"
+lock="$applications/.easy-proto-install.lock"
+shlock -f "$lock" -p "$$" || { echo 'Another Easy Proto install is in progress.' >&2; exit 1; }
+work=''
+cleanup() {
+  if [[ -n "$work" ]]; then rm -rf "$work"; fi
+  rm -f "$lock"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+work="$(mktemp -d "$applications/.easy-proto-install.XXXXXX")"
+mkdir -p "$work/bin" "$work/input" "$work/zips"
+corepack enable --install-directory "$work/bin" pnpm
+export PATH="$work/bin:$PATH"
+
+store="$(dirname "$(pnpm store path)")"
+if [[ -d "$root/.pnpm-store/v10" ]]; then store="$root/.pnpm-store"; fi
+pnpm --store-dir "$store" install --frozen-lockfile
+pnpm --filter @easy-proto/desktop exec install-electron --no
+pnpm desktop:build
+electron_version="$(node -p "require('./apps/desktop/node_modules/electron/package.json').version")"
+arch="$(node -p 'process.arch')"
+cp -R "$desktop/dist" "$work/input/"
+node --input-type=module - "$desktop/package.json" "$work/input/package.json" <<'JS'
+import fs from 'node:fs';
+const {version, type, main} = JSON.parse(fs.readFileSync(process.argv[2]));
+fs.writeFileSync(process.argv[3], JSON.stringify({name: 'easy-proto', productName: 'Easy Proto', version, type, main}));
+JS
+
+ditto --norsrc --noextattr -c -k "$desktop/node_modules/electron/dist" "$work/zips/electron-v$electron_version-darwin-$arch.zip"
+pnpm --filter @easy-proto/desktop exec electron-packager "$work/input" "$name" \
+  --out="$work/output" --tmpdir="$work/packager" --platform=darwin --arch="$arch" \
+  --electron-version="$electron_version" --electron-zip-dir="$work/zips" \
+  --app-bundle-id=local.easyproto.desktop --icon="$desktop/packaging/EasyProto.icns" --no-asar --no-prune
+
+candidate="$work/output/$name-darwin-$arch/$name.app"
+app="$candidate/Contents/Resources/app"
+# Install the locked production graph inside the bundle so pnpm's relative links
+# resolve there, including transitive ES module imports from style-dictionary.
+runtime="$app/runtime"
+mkdir -p "$runtime/apps/desktop" "$runtime/packages"
+cp package.json pnpm-lock.yaml pnpm-workspace.yaml "$runtime/"
+cp "$desktop/package.json" "$runtime/apps/desktop/"
+mkdir "$runtime/packages/ui"
+rsync -a --exclude node_modules --exclude dist packages/ui/ "$runtime/packages/ui/"
+pnpm --dir "$runtime" --store-dir "$store" --filter '@easy-proto/desktop...' install \
+  --prod --frozen-lockfile --ignore-scripts --prefer-offline --package-import-method=copy
+mv "$app/dist" "$runtime/apps/desktop/dist"
+ln -s runtime/apps/desktop/dist "$app/dist"
+
+codesign --force --deep --sign - "$candidate"
+codesign --verify --deep --strict "$candidate"
+cmp "$desktop/packaging/EasyProto.icns" "$candidate/Contents/Resources/$(plutil -extract CFBundleIconFile raw "$candidate/Contents/Info.plist")"
+node "$desktop/scripts/check-mac-install.mjs" "$candidate" "$work/profile"
+swift "$desktop/scripts/replace-mac-app.swift" "$candidate" "$destination"
+open "$destination"
+echo "Installed $destination"
