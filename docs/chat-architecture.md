@@ -1,3 +1,5 @@
+> Historical design for the retired built-in chat and agent connections. See [External agents](architecture.md#external-agents) for the current architecture.
+
 # Local agent chat architecture review
 
 ## Decision

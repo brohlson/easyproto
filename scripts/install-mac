@@ -38,7 +38,10 @@ pnpm --filter @easy-proto/desktop exec install-electron --no
 pnpm desktop:build
 electron_version="$(node -p "require('./apps/desktop/node_modules/electron/package.json').version")"
 arch="$(node -p 'process.arch')"
-cp -R "$desktop/dist" "$work/input/"
+# Include only the current runtime. Older checkouts may have retired bundles in dist.
+mkdir "$work/input/dist"
+cp "$desktop/dist/main.js" "$desktop/dist/preload.cjs" "$work/input/dist/"
+cp -R "$desktop/dist/ui" "$work/input/dist/"
 node --input-type=module - "$desktop/package.json" "$work/input/package.json" <<'JS'
 import fs from 'node:fs';
 const {version, type, main} = JSON.parse(fs.readFileSync(process.argv[2]));

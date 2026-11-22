@@ -31,7 +31,7 @@ From the checkout, run:
 ./scripts/install-mac
 ```
 
-The command builds your current working tree, checks the signature and Home screen in a temporary profile, then installs and opens `~/Applications/Easy Proto.app` with the Fold icon. If the installed copy is running, the command quits it just before replacing it. Your development window can stay open. Each copy has its own recent projects and agent settings. Run the same command again whenever you want to try newer changes.
+The command builds your current working tree, checks the signature and Home screen in a temporary profile, then installs and opens `~/Applications/Easy Proto.app` with the Fold icon. If the installed copy is running, the command quits it just before replacing it. Your development window can stay open. Each copy has its own recent projects. Run the same command again whenever you want to try newer changes.
 
 The installer uses the pinned Node and pnpm versions above, macOS Command Line Tools (Swift), and local ad-hoc signing.
 
@@ -61,21 +61,13 @@ pnpm start "--project=$PWD/mocks/.workspace/EasyProtoMocks.easyproto"
 
 On macOS, you can also choose the file from **Open project** in Settings. The source folder and its historical snapshots remain available. New projects still start as folders. [SQLite pilot and recovery](docs/decisions/0006-sqlite-project-pilot.md)
 
-## Try the chat drawer
-
-On **Home → Agents**, click **Log in with ChatGPT** and approve eligible plan usage in your browser. Easy Proto names each new connection automatically. Click an existing connection on Home to rename it, reconnect, disconnect, or manage usage.
-
-The desktop uses the installed Codex CLI. Qualified macOS builds are `0.169.0` and `0.167.0-alpha.4.1`. Set `EASY_PROTO_CODEX_BIN` to the absolute executable path if needed.
-
-Open a project and open **Chat**. Try “Create a page called Explorations” or “Change the headline on Field notes”. OpenAI receives your message, recent chat, and project details. If Codex needs an artboard’s HTML/CSS, Chat asks you to approve that read. Review each edit with **Apply change** or **Discard**. **Undo edit** uses the project’s undo history. For a request with dependent changes, apply the first proposal and ask chat to continue. [Project chat details](docs/chat-architecture.md#project-wide-chat)
-
-Run `pnpm desktop:build` and `pnpm desktop:verify:chatgpt-live` to exercise a real Codex turn in a disposable Electron profile. Complete browser sign-in from the test window. The check requests a new page, tests Apply and Undo, then disconnects. To test against a local synthetic provider with the installed Codex runtime, run `EASY_PROTO_CHECK_CODEX_BIN="$(command -v codex)" pnpm verify`.
-
 ## Try browser sharing
 
 Run `pnpm web:dev` and open [the local sharing prototype](http://127.0.0.1:8787). The pnpm workspace contains Electron in `apps/desktop/`, TanStack Router in `apps/web/`, and the shared Brand, Select, and Inter assets in `packages/ui/`. Run `pnpm build` to build both apps or `pnpm desktop:build` and `pnpm web:build` individually. The [web walkthrough](apps/web/README.md) covers the demo account, canvas and artboard links, and revocation.
 
-## Connect Codex
+## Connect an external agent
+
+Use an MCP client that supports Streamable HTTP and bearer authentication. Configure the client with the local endpoint and the token from the shell that launches Easy Proto. Open a project in the desktop to give the client access to its canvas. The example below uses Codex.
 
 In the same shell that will launch Codex, create a random token and save the non-secret configuration. The token stays in the shell environment.
 
@@ -85,6 +77,12 @@ codex mcp add easy-proto --url http://127.0.0.1:38645/mcp --bearer-token-env-var
 pnpm build
 pnpm start "--project=$PWD/My prototype" &
 codex
+```
+
+To use the installed Mac app with MCP, quit the installed copy first. In the shell where you exported `EASY_PROTO_TOKEN`, launch its executable and then start your client from that shell.
+
+```sh
+"$HOME/Applications/Easy Proto.app/Contents/MacOS/Easy Proto" &
 ```
 
 The app must be running before Codex connects. Restart the client if it was already open. Approve Easy Proto tool calls when Codex prompts. Set `EASY_PROTO_PORT` and update the configured URL together to change the port. With no token, the desktop opens without an MCP endpoint. [Codex MCP setup](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)

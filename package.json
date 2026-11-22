@@ -13,7 +13,6 @@
     "start": "pnpm --filter @easy-proto/desktop start",
     "desktop:build": "pnpm --filter @easy-proto/desktop build",
     "desktop:verify": "pnpm --filter @easy-proto/desktop verify",
-    "desktop:verify:chatgpt-live": "pnpm --filter @easy-proto/desktop verify:chatgpt-live",
     "project:import-sqlite": "pnpm --filter @easy-proto/desktop project:import-sqlite",
     "tokens:sync": "pnpm --filter @easy-proto/desktop tokens:sync",
     "lint": "oxlint --deny-warnings .",

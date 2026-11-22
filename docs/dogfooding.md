@@ -9,7 +9,7 @@ pnpm dev "--project=$PWD/mocks/.workspace/EasyProtoMocks"
 ```
 
 1. Read the [desktop design guidance](design-guidance.md) and define the task the screen needs to support. Reuse the relevant artboard for revisions. Create a second board when comparing meaningful alternatives.
-2. Open EasyProtoMocks and connect through the [local MCP workflow](../readme.md#connect-codex). Call `get_context` and confirm the open project before writing. Keep the HTML, CSS, and project assets portable. Use the canvas or MCP to save changes so revision checks and history are exercised.
+2. Open EasyProtoMocks and connect through the [local MCP workflow](../readme.md#connect-an-external-agent). Call `get_context` and confirm the open project before writing. Keep the HTML, CSS, and project assets portable. Use the canvas or MCP to save changes so revision checks and history are exercised.
 3. Capture the committed artboard and inspect the image. For responsive changes, compare representative viewport sizes in the app. For desktop styling changes, inspect the relevant light and dark states. Record the artboard name, revision, viewport, and any tool friction in the design handoff. Static mockup controls depict proposed interactions. Verify those interactions separately in the implementation.
 4. Carry the reviewed design into the product and run the relevant implementation checks. When updating the shared checkpoint, copy the working project's `project.json`, the single snapshot it names, the optional `.easy-proto/name.json`, and any `assets/` together. Replace the previous checked-in checkpoint as a set. Keep the working history under the ignored `mocks/.workspace/` directory. Put local screenshots and logs under `evidence/` and use repository-relative references in tracked files.
 
@@ -112,3 +112,7 @@ The **Agents · Log in with ChatGPT** board updates the existing sign-in artboar
 ## EasyProtoMocks organization
 
 The mock project now groups its screens under **Home & settings**, **Canvas**, **Pages**, **Design system**, and **Chat dock**. **Archive** contains the identical settings copy. **Eggs** is available as a separate page. The project layout was verified at revision 332 using its live MCP state. All 19 original artboards retained their names, viewports, and source digests. [Page and layout evidence](../evidence/mock-project-organization/layout.json)
+
+## Projects-only Home
+
+For the external-MCP-only desktop, the existing Home artboard in a working copy of EasyProtoMocks was updated through MCP and captured as **Home · Project launcher**, revision 374 at 1180 × 738. It shows project creation, recent projects, and Settings. The desktop check also exercises the empty state. The design client supplied the desktop workspace’s Electron executable explicitly because this checkout’s Playwright installation could not resolve it automatically. [Design capture](../evidence/mcp-only/home-design.png) · [Empty Home](../evidence/mcp-only/home-empty.png)

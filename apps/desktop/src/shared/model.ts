@@ -1,7 +1,5 @@
-import type { AgentAction, AgentProfilesState } from "./agents";
 import { z } from "zod";
 import { artboardSize } from "./artboard-size";
-import type { ChatDecision, ChatRequest, ChatState, ChatUpdate } from "./chat";
 import { tokenByteLimit, type TokenView } from "./token-types";
 
 export const id = z.uuid();
@@ -203,13 +201,6 @@ export type DesktopState =
 export type DesktopBridge = {
   getScene(): Promise<DesktopState>;
   onScene(listener: (scene: DesktopState) => void): () => void;
-  agents(action: AgentAction): Promise<AgentProfilesState>;
-  onAgents(handler: (state: AgentProfilesState) => void): () => void;
-  selectChatAgent(generation: number, id: string): Promise<ChatState>;
-  getChat(generation: number): Promise<ChatState>;
-  startChat(generation: number, request: ChatRequest): Promise<ChatState>;
-  decideChat(generation: number, turnId: string, decision: ChatDecision): Promise<ChatState>;
-  onChat(listener: (update: ChatUpdate) => void): () => void;
   arrangeArtboard(generation: number, command: DesktopArtboardCommand): Promise<Commit>;
   copyArtboards(generation: number, artboardIds: string[], clipboardId: string): Promise<void>;
   getTokens(generation: number): Promise<TokenView>;
@@ -226,13 +217,6 @@ export type DesktopBridge = {
 export const ipc = {
   scene: "project:scene",
   changed: "project:changed",
-  chat: "chat:state",
-  agents: "agents:action",
-  agentsChanged: "agents:changed",
-  chatSelect: "chat:select-agent",
-  chatStart: "chat:start",
-  chatDecide: "chat:decide",
-  chatChanged: "chat:changed",
   arrange: "project:arrange",
   copy: "project:copy-artboard",
   tokens: "project:tokens",

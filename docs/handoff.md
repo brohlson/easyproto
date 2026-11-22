@@ -56,7 +56,7 @@ The focused reports verify closure of the design, gesture, revision and geometry
 
 ## Minimal Home design and artboard activity
 
-EasyProtoMocks contains two Home states and a canvas activity mockup. The [design handoff](dogfooding.md) records their MCP capture revisions. The running desktop shows a steady **Agent working** label with three animated dots while the affected preview fades from full opacity to 80% and back over three seconds. The [MCP workflow](../readme.md#connect-codex) explains how an agent signals drafting between calls.
+EasyProtoMocks contains two Home states and a canvas activity mockup. The [design handoff](dogfooding.md) records their MCP capture revisions. The running desktop shows a steady **Agent working** label with three animated dots while the affected preview fades from full opacity to 80% and back over three seconds. The [MCP workflow](../readme.md#connect-an-external-agent) explains how an agent signals drafting between calls.
 
 The macOS verification used a real SDK connection. It observed the opacity cycle on only the active preview, staggered dots, reduced-motion behavior, overlapping and expiring activity, in-flight capture, and activity removal when another project opens. The artboard document stayed mounted, and explicitly setting activity kept the same saved pointer. The pinned capture retained its expected revision and pixels. The Light and Dark checks cover both the toolbar and the rendered canvas background. [Verification log](../evidence/artboard-opacity/verify.log) · [Observed stages](../evidence/artboard-opacity/desktop-stages.json) · [Light canvas](../evidence/artboard-opacity/artboard-activity.png) · [Dark canvas](../evidence/artboard-opacity/artboard-activity-dark.png)
 
@@ -295,3 +295,9 @@ On Apple Silicon macOS 27.2.1, both apps built after a frozen-lockfile install. 
 ## Local macOS install
 
 The working tree based on `f2f7ca6` adds `./scripts/install-mac` to rebuild, check, replace, and reopen the personal Applications copy. The installed app retains its bundle identifier and Fold icon. On Apple Silicon macOS the candidate passed strict signature verification and the disposable Home check. The command then replaced the existing install, and the updated application showed Projects and Agents on Home. Lint and formatting passed. The next packaging check is a first install on a clean Mac account.
+
+## External MCP only
+
+The working tree based on `c96c2fc` removes built-in sign-in, provider runtimes, chat UI, and their IPC methods. Existing encrypted profile files are unused and preserved. Manual canvas controls and the authenticated local MCP contract continue to use the same document command service. The Mac installer packages the current renderer, main process, and preload.
+
+On Apple Silicon macOS, external Codex CLI sessions created, updated, and captured a 320 × 240 artboard at revision 2 against both the development build and installed app. An independent SDK client checked the revision and capture, and Electron automation observed the edited heading. All 35 desktop and two web checks passed. This checkout required the desktop dependency directory on Node’s module search path for Playwright and a separately provisioned Chromium. Independent review is the next pre-commit step. [Installed external run](../evidence/mcp-only/installed-external.log) · [Canvas](../evidence/mcp-only/external-canvas.png) · [Suite](../evidence/mcp-only/test-results.log)

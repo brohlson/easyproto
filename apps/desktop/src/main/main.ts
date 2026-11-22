@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { realpath, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import {
   Menu,
@@ -7,16 +7,12 @@ import {
   app,
   BrowserWindow,
   clipboard,
-  safeStorage,
-  shell,
   dialog,
   ipcMain,
   session,
   type IpcMainInvokeEvent,
 } from "electron";
 import { z } from "zod";
-import { agentAction, agentId } from "../shared/agents";
-import { chatPromptLimit } from "../shared/chat";
 import {
   artboardIds,
   commandSchema,
@@ -28,9 +24,6 @@ import {
   type DesktopState,
 } from "../shared/model";
 import { ArtboardActivity } from "./activity";
-import { ProjectChat, type ChatMemory } from "./chat";
-import { AgentProfiles, demoAgentId, keyAgentId } from "./agents";
-import { configuredCodex, installedCodex } from "./codex";
 import { colorToHex, tokenByteLimit } from "../shared/token-types";
 import desktopTokens from "../renderer/design.tokens.json";
 import { listen, type ActiveProject } from "./mcp";
@@ -57,61 +50,7 @@ function allowSender(event: IpcMainInvokeEvent, window: BrowserWindow) {
 
 async function start() {
   const recent = await RecentProjects.load(join(app.getPath("userData"), "recent-projects.json"));
-  const profileDir = app.getPath("userData");
-  const agentsPath = join(profileDir, "agent-profiles.bin");
-  const legacyPath = join(profileDir, "chatgpt-account.bin");
-  const codex = await installedCodex();
-  async function decrypt(path: string) {
-    try {
-      return safeStorage.decryptString(await readFile(path));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-      throw error;
-    }
-  }
-  const agents = await AgentProfiles.load(
-    {
-      read: () => decrypt(agentsPath),
-      legacy: () => decrypt(legacyPath),
-      finishMigration: () => rm(legacyPath, { force: true }),
-      async write(record) {
-        if (!safeStorage.isEncryptionAvailable())
-          throw new Error("Unlock your macOS keychain to save an agent.");
-        const staging = agentsPath + "." + randomUUID();
-        try {
-          await writeFile(staging, safeStorage.encryptString(record), {
-            flag: "wx",
-            mode: 0o600,
-            flush: true,
-          });
-          await rename(staging, agentsPath);
-        } catch {
-          throw new Error("Could not save the agent profiles.");
-        } finally {
-          await rm(staging, { force: true }).catch(() => undefined);
-        }
-      },
-    },
-    {
-      codex,
-      demo: process.env.EASY_PROTO_CHAT_DEMO === "1",
-      experimental: configuredCodex(),
-      open: async (url) => {
-        await shell.openExternal(url).catch(() => {
-          throw new Error("Easy Proto could not open your browser.");
-        });
-      },
-    },
-  ).catch(() => undefined);
-  const agentState = () =>
-    agents?.status ?? {
-      profiles: [],
-      codexInstalled: false,
-      claudeInstalled: false,
-      message: "Agent profiles are unavailable. Unlock your macOS keychain and reopen Easy Proto.",
-    };
-  const conversations = new Map<string, ChatMemory>();
-  let active: (ActiveProject & { chat: ProjectChat }) | undefined;
+  let active: ActiveProject | undefined;
   if (projectOption) {
     try {
       active = activate(await Project.open(resolve(launchDirectory, projectOption)));
@@ -129,47 +68,14 @@ async function start() {
     ).catch(() => undefined);
     if (legacy) await remember(legacy);
   }
-  function activate(project: Project): ActiveProject & { chat: ProjectChat } {
+  function activate(project: Project): ActiveProject {
     const lifetime = new AbortController();
     const activationId = randomUUID();
-    const key = JSON.stringify([project.root, project.snapshot.manifest.projectId]);
-    const memory: ChatMemory = conversations.get(key) ?? { history: new Map() };
-    if (
-      memory.agentId &&
-      !agents?.status.profiles.some(
-        ({ id, state }) => id === memory.agentId && state === "connected",
-      )
-    )
-      delete memory.agentId;
-    conversations.delete(key);
-    conversations.set(key, memory);
-    if (conversations.size > 32) conversations.delete(conversations.keys().next().value!);
     return {
       project,
       activationId,
       signal: lifetime.signal,
       activity: new ArtboardActivity(lifetime.signal, changed),
-      chat: new ProjectChat(
-        project,
-        lifetime.signal,
-        (state) => {
-          if (active?.activationId !== activationId || window.isDestroyed()) return;
-          try {
-            window.webContents.send(ipc.chatChanged, { generation, ...state });
-          } catch {
-            // A reloaded renderer reads the current chat state when it mounts.
-          }
-        },
-        () => {
-          if (active?.activationId === activationId) changed();
-        },
-        memory,
-        (id) => {
-          if (!agents) throw new Error("Agent profiles are unavailable.");
-          return agents.provider(id);
-        },
-        agents?.defaultAgent,
-      ),
       retire: () => lifetime.abort(),
     };
   }
@@ -249,7 +155,6 @@ async function start() {
 
   async function switchTo(load: () => Promise<Project | undefined>, findMoved = false) {
     switching = true;
-    active?.chat.stopUnresolved();
     try {
       await active?.project.whenIdle();
       if (window.isDestroyed()) return;
@@ -394,55 +299,6 @@ async function start() {
     allowSender(event, window);
     return scene();
   });
-  ipcMain.handle(ipc.agents, async (event, raw: unknown) => {
-    allowSender(event, window);
-    const action = agentAction.safeParse(raw);
-    if (!action.success) throw new Error("Check the agent name and connection details.");
-    if (action.data.action === "status") return agentState();
-    if (!agents) throw new Error("Agent profiles are unavailable.");
-    if (active || switching) throw new Error("Manage agent connections from Home.");
-    try {
-      return await agents.action(action.data);
-    } finally {
-      if (!window.isDestroyed()) window.webContents.send(ipc.agentsChanged, agentState());
-    }
-  });
-  ipcMain.handle(ipc.chatSelect, (event, generation: unknown, input: unknown) => {
-    allowSender(event, window);
-    activeGeneration(generation);
-    return active!.chat.select(
-      z.union([agentId, z.literal(demoAgentId), z.literal(keyAgentId)]).parse(input),
-    );
-  });
-  ipcMain.handle(ipc.chat, (event, generation: unknown) => {
-    allowSender(event, window);
-    activeGeneration(generation);
-    return active!.chat.state;
-  });
-  ipcMain.handle(ipc.chatStart, (event, generation: unknown, input: unknown) => {
-    allowSender(event, window);
-    activeGeneration(generation);
-    return active!.chat.start(
-      z
-        .strictObject({
-          pageId: id.optional(),
-          expectedRevision: revision,
-          prompt: z.string().trim().min(1).max(chatPromptLimit),
-        })
-        .parse(input),
-    );
-  });
-  ipcMain.handle(
-    ipc.chatDecide,
-    (event, generation: unknown, turnId: unknown, decision: unknown) => {
-      allowSender(event, window);
-      activeGeneration(generation);
-      return active!.chat.decide(
-        id.parse(turnId),
-        z.enum(["apply", "discard", "stop", "allow_source"]).parse(decision),
-      );
-    },
-  );
   ipcMain.handle(ipc.tokens, (event, generation: unknown) => {
     allowSender(event, window);
     return activeGeneration(generation).tokenView;
@@ -559,7 +415,6 @@ async function start() {
   );
   window.on("closed", () => {
     active?.retire();
-    agents?.cancel();
   });
   window.once("ready-to-show", () => window.show());
   await window.loadURL(chromeUrl);
