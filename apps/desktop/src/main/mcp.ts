@@ -6,8 +6,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   createArtboardInput,
-  boardPatch,
+  artboardUpdate,
+  batchUpdateInput,
+  projectName,
   envelope,
+  guardedUndoInput,
   id,
   revision,
   type Command,
@@ -15,6 +18,7 @@ import {
 import { tokenByteLimit } from "../shared/token-types";
 import { activityLeaseMs, type ArtboardActivity } from "./activity";
 import { Project, ProjectError } from "./project";
+import { reviewSheet, thumbnail } from "./review-sheet";
 import type { Preview } from "./preview";
 
 const host = "127.0.0.1";
@@ -24,6 +28,7 @@ const projectScope = { projectId: id, activationId: id };
 export type ActiveProject = {
   project: Project;
   activationId: string;
+  activePageId?: string;
   signal: AbortSignal;
   activity: ArtboardActivity;
   retire: () => void;
@@ -70,14 +75,32 @@ function tools(
   async function commit({ activationId, ...command }: Command & { activationId: string }) {
     const { project, activity } = active(command.projectId, activationId);
     checkWritable();
-    const execute = () => project.execute(command);
-    const saved =
-      command.operation === "update_artboard"
-        ? await activity.run(command.arguments.artboardId, execute)
-        : await execute();
+    let targets: string[] = [];
+    if (command.operation === "update_artboard") targets = [command.arguments.artboardId];
+    if (command.operation === "update_artboards")
+      targets = command.arguments.updates.map((update) => update.artboardId);
+    const beforeRevision = project.snapshot.manifest.revision;
+    const saved = await project.execute(
+      command,
+      targets.length ? () => activity.begin(targets) : undefined,
+    );
     if (current()?.project === project) {
+      if (
+        command.operation === "create_artboard" &&
+        saved.revision > beforeRevision &&
+        "artboard" in saved
+      )
+        activity.begin([saved.artboard.id])();
       activity.pruneLeases((id) => project.snapshot.sources.has(id));
       changed();
+    }
+    if (command.operation === "update_artboards" && "artboard" in saved) {
+      const artboards = saved.artboards ?? [saved.artboard];
+      return result({
+        ...saved,
+        artboards,
+        changedArtboardIds: artboards.map((board) => board.id),
+      });
     }
     return result(saved);
   }
@@ -122,6 +145,9 @@ function tools(
           assetDigest: project.assetDigest,
           tokenDigest: project.snapshot.tokens?.stamp.documentDigest,
           ...project.pageLayout,
+          activePageId: project.pageLayout.pages.some((page) => page.id === scope.activePageId)
+            ? scope.activePageId
+            : project.pageLayout.defaultPageId,
           artboards,
         });
       }),
@@ -186,10 +212,55 @@ function tools(
       description: "Commit a patch to HTML, CSS or layout at the expected project revision.",
       inputSchema: envelope.extend({
         activationId: id,
-        arguments: z.strictObject({ artboardId: id, patch: boardPatch }),
+        arguments: artboardUpdate,
       }),
     },
     (request) => call(() => commit({ ...request, operation: "update_artboard" })),
+  );
+
+  server.registerTool(
+    "update_artboards",
+    {
+      description:
+        "Atomically patch up to 50 explicit artboards at one expected project revision. Returns changed IDs and board metadata in document order. One canvas Undo restores the whole batch. Retry with the original command ID and arguments.",
+      inputSchema: envelope.extend({ activationId: id, arguments: batchUpdateInput }),
+    },
+    (request) => call(() => commit({ ...request, operation: "update_artboards" })),
+  );
+
+  server.registerTool(
+    "undo",
+    {
+      description:
+        "Undo the most recent undoable edit in this project session. Supply its original command ID as arguments.targetCommandId, the current expectedRevision, and a fresh commandId for this undo request.",
+      inputSchema: envelope.extend({ activationId: id, arguments: guardedUndoInput }),
+    },
+    (request) => call(() => commit({ ...request, operation: "undo" })),
+  );
+
+  server.registerTool(
+    "create_page",
+    {
+      description:
+        "Create a page and return its page ID and committed revision. Use the ID as pageId when creating artboards.",
+      inputSchema: envelope.extend({
+        activationId: id,
+        arguments: z.strictObject({ name: projectName }),
+      }),
+    },
+    (request) => call(() => commit({ ...request, operation: "create_page" })),
+  );
+
+  server.registerTool(
+    "rename_page",
+    {
+      description: "Rename a page at the expected project revision.",
+      inputSchema: envelope.extend({
+        activationId: id,
+        arguments: z.strictObject({ pageId: id, name: projectName }),
+      }),
+    },
+    (request) => call(() => commit({ ...request, operation: "rename_page" })),
   );
 
   server.registerTool(
@@ -258,6 +329,101 @@ function tools(
             { type: "image" as const, mimeType: "image/png", data: png.toString("base64") },
           ],
         };
+      }),
+  );
+  server.registerTool(
+    "capture_artboards",
+    {
+      description:
+        "Capture an ordered review sheet of up to 12 artboards at one revision. Reports boards with unresolved fonts or assets. Optionally append full-resolution PNGs in the same order.",
+      inputSchema: {
+        ...projectScope,
+        revision,
+        artboardIds: z
+          .array(id)
+          .min(1)
+          .max(12)
+          .refine((ids) => new Set(ids).size === ids.length, "Use unique artboard IDs."),
+        includeFullResolution: z.boolean().default(false),
+      },
+    },
+    (request) =>
+      call(async () => {
+        const scope = active(request.projectId, request.activationId);
+        const snapshot = scope.project.snapshot;
+        if (snapshot.manifest.revision !== request.revision)
+          throw new ProjectError(
+            "REVISION_CONFLICT",
+            "Capture requires the current committed revision.",
+            snapshot.manifest.revision,
+          );
+        const boards = request.artboardIds.map((id) => {
+          const board = snapshot.manifest.artboards.find((item) => item.id === id);
+          if (!board)
+            throw new ProjectError("ARTBOARD_NOT_FOUND", `Artboard ${id} does not exist.`);
+          return board;
+        });
+        const captures = [];
+        const tiles = [];
+        const warnings = [];
+        const originals: CallToolResult["content"] = [];
+        let totalBytes = 0;
+        const finishActivity = scope.activity.begin(boards.map(({ id }) => id));
+        try {
+          for (const board of boards) {
+            const { details, png } = await preview.capture(
+              scope.project,
+              snapshot,
+              board,
+              scope.signal,
+            );
+            const warning = details.unresolved.length > 0;
+            if (warning)
+              warnings.push({
+                artboardId: board.id,
+                name: board.name,
+                unresolved: details.unresolved,
+              });
+            captures.push({ name: board.name, ...details });
+            tiles.push({
+              name: board.name,
+              warning,
+              image: thumbnail(png, board.width, board.height),
+            });
+            if (request.includeFullResolution) {
+              totalBytes += png.length;
+              if (totalBytes > 8 * 1024 * 1024)
+                throw new ProjectError(
+                  "CAPTURE_LIMIT",
+                  "Full-resolution PNGs exceed 8 MiB. Request fewer originals or omit includeFullResolution.",
+                );
+              originals.push({
+                type: "image",
+                mimeType: "image/png",
+                data: png.toString("base64"),
+              });
+            }
+          }
+          const sheet = await reviewSheet(tiles, scope.signal);
+          const data = {
+            status: warnings.length ? "captured_with_warnings" : "captured",
+            warnings,
+            projectId: request.projectId,
+            revision: request.revision,
+            captures,
+          };
+          return {
+            structuredContent: data,
+            content: [
+              { type: "text" as const, text: JSON.stringify(data) },
+              { type: "image" as const, mimeType: "image/png", data: sheet },
+              ...originals,
+            ],
+          };
+        } finally {
+          finishActivity();
+          active(request.projectId, request.activationId);
+        }
       }),
   );
   return server;

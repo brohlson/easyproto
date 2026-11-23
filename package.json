@@ -8,6 +8,8 @@
   },
   "packageManager": "pnpm@10.33.4",
   "scripts": {
+    "local:setup": "node scripts/local-web.mjs setup",
+    "local:dev": "node scripts/local-web.mjs dev",
     "build": "pnpm -r --if-present build",
     "dev": "pnpm --filter @easy-proto/desktop dev",
     "start": "pnpm --filter @easy-proto/desktop start",

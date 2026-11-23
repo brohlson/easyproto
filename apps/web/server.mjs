@@ -176,7 +176,8 @@ export async function startWeb(port = 8787) {
         }
         return send(response, body, { type: assetType[asset[2]] });
       }
-      if (!post && pathname === "/") {
+      if (!post && pathname === "/") return page({ kind: "landing" });
+      if (!post && pathname === "/demo") {
         return ownerSession
           ? redirect(response, "/publish")
           : page({ kind: "home", email: ownerEmail });

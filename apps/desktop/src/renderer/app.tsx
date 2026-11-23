@@ -22,6 +22,7 @@ import {
   getNodesBounds,
   applyNodeChanges,
   useNodesState,
+  useNodesInitialized,
   useReactFlow,
   useStore,
   type Node,
@@ -41,11 +42,15 @@ import "virtual:desktop-design-tokens.css";
 import "./styles.css";
 import { DevicePresets } from "./device-presets";
 import { EditableName } from "./editable-name";
-import { MoveToPage, PagePicker } from "./pages";
+import { ArtboardMenu, type MenuAnchor } from "./artboard-menu";
+import { PagePicker } from "./pages";
 import { Settings, type Theme } from "./settings";
 import { TokenManager } from "./tokens";
 import { ToastProvider, useToast } from "./toast";
 import { artboardSize } from "../shared/artboard-size";
+import { WorkingOverlay } from "./working-overlay";
+import desktopTokens from "./design.tokens.json";
+import { WebPreviewDialog } from "./web-preview";
 
 declare global {
   interface Window {
@@ -69,9 +74,8 @@ function ArtboardPreview({ board }: { board: Board }) {
   const [loaded, setLoaded] = useState(false);
 
   return (
-    <div className="artboard-preview" data-loaded={loaded}>
+    <div className="artboard-preview" data-loaded={loaded} aria-busy={board.agentWorking}>
       <iframe
-        className={board.agentWorking ? "artboard-preview-working" : undefined}
         title={board.name}
         src={board.previewUrl}
         sandbox=""
@@ -134,18 +138,6 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
           } as CSSProperties
         }
       >
-        <div className="artboard-activity" role="status">
-          {data.agentWorking && (
-            <span>
-              Agent working<span className="screen-reader-only"> on {data.name}</span>
-              <span className="activity-dots" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
-            </span>
-          )}
-        </div>
         <div className="artboard-label">
           <EditableName
             kind="artboard"
@@ -167,6 +159,11 @@ const ArtboardNode = memo(function ArtboardNode({ id, data, selected }: NodeProp
         </div>
       </div>
       <ArtboardPreview key={data.previewUrl} board={visible} />
+      <WorkingOverlay
+        working={data.agentWorking}
+        name={data.name}
+        scale={Math.min(1 / zoom, visible.width / 144, visible.height / 112)}
+      />
       {arbitrary && (
         <button
           ref={handle}
@@ -260,6 +257,26 @@ const arrows = new Map([
   ["ArrowRight", { x: 1, y: 0 }],
 ]);
 
+function FollowAgent({ request }: { request?: Scene["agentFocus"] }) {
+  const { fitView } = useReactFlow();
+  const initialized = useNodesInitialized();
+  const applied = useRef<number>(undefined);
+  useEffect(() => {
+    if (!request || !initialized || applied.current === request.sequence) return;
+    applied.current = request.sequence;
+    void fitView({
+      nodes: request.artboardIds.map((id) => ({ id })),
+      padding: 0.25,
+      minZoom: 0.08,
+      maxZoom: 1,
+      duration: matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? 0
+        : desktopTokens.desktop.motion["working-focus"].$value.value,
+    });
+  }, [request, initialized, fitView]);
+  return null;
+}
+
 function FitShortcut() {
   const { fitView, getViewport, setViewport } = useReactFlow();
   const width = useStore((state) => state.width);
@@ -302,9 +319,20 @@ function App() {
   const [nodes, setNodes] = useNodesState<BoardNode>([]);
   const [message, setMessage] = useState("");
   const [activePageId, setActivePageId] = useState<string>();
+  const [agentFocus, setAgentFocus] = useState<Scene["agentFocus"]>();
+  const followedActivity = useRef<number>(undefined);
   const [pageMove, setPageMove] = useState<{ page: Page; count: number }>();
+  const [menu, setMenu] = useState<{
+    key: string;
+    anchor: MenuAnchor;
+    ids: string[];
+    move: boolean;
+    scene: Scene;
+  }>();
   const [saving, setSaving] = useState(false);
+  const [exportingPage, setExportingPage] = useState<{ scene: Scene; pageId: string }>();
   const [choosing, setChoosing] = useState(false);
+  const choosingProject = useRef(false);
   const [theme, setTheme] = useState<Theme>("system");
   const [systemDark, setSystemDark] = useState(
     () => matchMedia("(prefers-color-scheme: dark)").matches,
@@ -345,7 +373,10 @@ function App() {
   }
 
   function showPage(current: Scene, pageId: string) {
+    setAgentFocus(undefined);
+    setMenu(undefined);
     visiblePage.current = pageId;
+    window.easyProto.reportVisiblePage(current.generation, pageId);
     pendingSelection.current = null;
     setActivePageId(pageId);
     setPageMove(undefined);
@@ -356,8 +387,16 @@ function App() {
     if (next.sceneVersion <= receivedVersion.current) return;
     receivedVersion.current = next.sceneVersion;
     const current = next.view === "project" ? next : null;
+    if (
+      current?.generation !== latest.current?.generation ||
+      current?.revision !== latest.current?.revision
+    )
+      setMenu(undefined);
     const reset = current?.generation !== latest.current?.generation;
     if (reset) {
+      setExportingPage(undefined);
+      followedActivity.current = undefined;
+      setAgentFocus(undefined);
       drag.current = null;
       pendingSelection.current = null;
       clipboard.current = null;
@@ -371,6 +410,29 @@ function App() {
     latest.current = current;
     setDesktop(next);
     if (current) {
+      const focus = current.agentFocus;
+      if (focus && followedActivity.current !== focus.sequence) {
+        followedActivity.current = focus.sequence;
+        const targets = current.artboards.filter(
+          (board) => focus.artboardIds.includes(board.id) && board.agentWorking,
+        );
+        // A user's current gesture or editor takes precedence over camera following.
+        const interacting =
+          drag.current ||
+          savingGeneration.current !== null ||
+          choosingProject.current ||
+          document.activeElement?.closest("input, select, textarea, [contenteditable]") ||
+          document.querySelector(":popover-open, dialog[open]");
+        if (targets.length && !interacting) {
+          const pageId = targets[0].pageId;
+          if (visiblePage.current !== pageId) showPage(current, pageId);
+          else setMenu(undefined);
+          setAgentFocus({
+            sequence: focus.sequence,
+            artboardIds: targets.filter((board) => board.pageId === pageId).map(({ id }) => id),
+          });
+        }
+      }
       if (!current.pages.some(({ id }) => id === visiblePage.current))
         showPage(current, current.defaultPageId);
       else reconcile(current);
@@ -486,6 +548,28 @@ function App() {
   }
 
   const selection = nodes.filter((node) => node.selected);
+  function openBoardMenu(target: Element, x: number, y: number) {
+    if (
+      !scene ||
+      busy ||
+      drag.current ||
+      savingGeneration.current !== null ||
+      target.closest("input, textarea, [contenteditable], [popover]")
+    )
+      return false;
+    const node = target.closest<HTMLElement>(".react-flow__node");
+    const id = node?.dataset.id;
+    const owner = node ?? target.closest<HTMLElement>(".react-flow__nodesselection-rect");
+    if (!owner) return false;
+    let ids = selection.map(({ id }) => id);
+    if (id && !ids.includes(id)) {
+      ids = [id];
+      setNodes((current) => current.map((item) => ({ ...item, selected: item.id === id })));
+    }
+    if (!ids.length) return false;
+    setMenu({ key: crypto.randomUUID(), anchor: { x, y, owner }, ids, move: false, scene });
+    return true;
+  }
   function canEditCanvas(target: EventTarget | null) {
     return (
       !choosing &&
@@ -676,6 +760,7 @@ function App() {
   };
 
   async function navigate(action: () => Promise<void>) {
+    choosingProject.current = true;
     setChoosing(true);
     setMessage("");
     try {
@@ -684,6 +769,7 @@ function App() {
       const detail = error instanceof Error ? error.message.split("Error: ").at(-1) : undefined;
       setMessage(detail || "The project could not be selected.");
     } finally {
+      choosingProject.current = false;
       setChoosing(false);
     }
   }
@@ -851,7 +937,27 @@ function App() {
         <section
           className="canvas"
           aria-label="Artboard canvas"
-          onKeyDownCapture={moveWithKeyboard}
+          onContextMenuCapture={(event) => {
+            if (
+              event.target instanceof Element &&
+              openBoardMenu(event.target, event.clientX, event.clientY)
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }}
+          onKeyDownCapture={(event) => {
+            if (
+              event.target instanceof Element &&
+              (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))
+            ) {
+              const rect = event.target.getBoundingClientRect();
+              if (openBoardMenu(event.target, rect.left + 12, rect.top + 12)) {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+            } else moveWithKeyboard(event);
+          }}
         >
           {scene && (
             <ArtboardEditing.Provider value={editing}>
@@ -921,6 +1027,7 @@ function App() {
                 <Background gap={24} size={1.25} color="var(--grid)" />
                 <GroupOutline selection={selection} />
                 <FitShortcut />
+                <FollowAgent request={agentFocus} />
               </ReactFlow>
             </ArtboardEditing.Provider>
           )}
@@ -946,6 +1053,11 @@ function App() {
             busy={busy}
             choose={choose}
             saveCopy={scene ? saveProjectCopy : undefined}
+            exportPage={
+              scene && activePageId
+                ? () => setExportingPage({ scene, pageId: activePageId })
+                : undefined
+            }
             goHome={scene ? () => void navigate(() => window.easyProto.goHome()) : undefined}
           />
           {scene && (
@@ -960,30 +1072,88 @@ function App() {
               {selection.length > 1
                 ? `${selection.length} artboards selected`
                 : selection.length === 1
-                  ? `${selection[0].data.name} · ${selection[0].data.width} × ${selection[0].data.height} · Delete to remove`
+                  ? `${selection[0].data.name} · ${selection[0].data.width} × ${selection[0].data.height}`
                   : "Scroll to pan · Pinch to zoom · Shift+0 to fit"}
             </span>
-            {selection.length > 0 && otherPages.length > 0 && (
-              <MoveToPage
-                pages={otherPages}
-                count={selection.length}
-                disabled={busy}
-                onMove={(pageId) => {
-                  const current = latest.current;
-                  if (current && !drag.current)
+            {selection.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  className="page-trigger selection-action"
+                  aria-haspopup="menu"
+                  aria-expanded={Boolean(menu?.move)}
+                  disabled={busy || !otherPages.length}
+                  onClick={(event) => {
+                    if (drag.current) return;
+                    const owner = event.currentTarget;
+                    const rect = owner.getBoundingClientRect();
+                    setMenu({
+                      key: crypto.randomUUID(),
+                      anchor: { x: rect.left, y: rect.top, owner },
+                      ids: selection.map(({ id }) => id),
+                      move: true,
+                      scene,
+                    });
+                  }}
+                >
+                  Move…
+                </button>
+                <button
+                  type="button"
+                  className="page-trigger selection-action"
+                  disabled={busy}
+                  onClick={() => {
+                    if (drag.current) return;
                     void saveCommand(
                       {
-                        operation: "move_artboards_to_page",
-                        arguments: { pageId, artboardIds: selection.map(({ id }) => id) },
+                        operation: "delete_artboards",
+                        arguments: { artboardIds: selection.map(({ id }) => id) },
                       },
-                      current,
+                      scene,
                     );
-                }}
-              />
+                  }}
+                >
+                  Delete
+                </button>
+              </>
             )}
           </div>
         )}
       </footer>
+      {exportingPage && (
+        <WebPreviewDialog
+          key={`${exportingPage.scene.generation}:${exportingPage.pageId}`}
+          scene={exportingPage.scene}
+          pageId={exportingPage.pageId}
+          close={() => setExportingPage(undefined)}
+        />
+      )}
+      {menu && (
+        <ArtboardMenu
+          key={menu.key}
+          anchor={menu.anchor}
+          startWithPages={menu.move}
+          pages={otherPages}
+          count={menu.ids.length}
+          disabled={busy}
+          dismiss={() => setMenu(undefined)}
+          rename={() =>
+            menu.anchor.owner.querySelector<HTMLButtonElement>(".editable-name")?.click()
+          }
+          remove={() =>
+            void saveCommand(
+              { operation: "delete_artboards", arguments: { artboardIds: menu.ids } },
+              menu.scene,
+            )
+          }
+          move={(pageId) =>
+            void saveCommand(
+              { operation: "move_artboards_to_page", arguments: { artboardIds: menu.ids, pageId } },
+              menu.scene,
+            )
+          }
+        />
+      )}
       {message && (
         <div className="error" role="alert">
           {message} <button onClick={() => setMessage("")}>Dismiss</button>

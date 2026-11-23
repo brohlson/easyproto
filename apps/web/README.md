@@ -1,35 +1,72 @@
-# Easy Proto local sharing preview
+# Easy Proto local web preview
 
-The TanStack Router viewer serves one synthetic Field Notes revision on loopback. The pnpm workspace builds its client with Vite and shares Brand and Select with the desktop. The local Node server owns session, share, and per-artboard authorization. It serves private page data to the router under the same authorization used for direct navigation.
+The landing page collects waitlist emails in local Cloudflare D1. A read-only page canvas at `/p/<id>` uses PNGs in local R2. Syncing a page again updates its existing URL. Visitors can pan, zoom, fit, and jump between artboards.
+
+## Start locally
+
+Use the repository’s pinned Node and pnpm toolchain:
 
 ```sh
 pnpm install --frozen-lockfile
+pnpm local:dev
+```
+
+This initializes D1, starts the Worker at `http://127.0.0.1:8787`, builds the desktop, and launches a development copy with a separate profile. The default project is a preserved working copy of the tracked EasyProtoMocks checkpoint under `.local/Mockups`. To open an existing project:
+
+```sh
+pnpm local:dev -- --project=mocks/.workspace/EasyProtoMocks.easyproto
+```
+
+Project paths are resolved from the repository root. Folders and `.easyproto` files work. Closing the development desktop stops the launcher’s web server. The installed Mac app is separate.
+
+To run only the website:
+
+```sh
+pnpm local:setup
 pnpm web:dev
 ```
 
-1. Open [the local preview](http://127.0.0.1:8787) and enter `owner@example.test`.
-2. Open the link from the local inbox in the same browser and confirm sign-in.
-3. Share **Project canvas**, or select **Today artboard** with **Phone** or **Overview artboard** with **Laptop**. Open the generated link in a private window, then choose **Open preview**. Drag to pan, use the zoom buttons to change the scale, or choose **Fit**.
-4. Back in the original window, go to **Manage links** and revoke the link. Reload the private window to see access denied.
+If a standalone server is already using port 8787, stop it before starting `local:dev`.
 
-The local inbox simulates email, and the owner and guest links are usable on the same machine. The synthetic HTML artboards are checked in, served in sandboxed iframes, and kept at their saved viewport through fit and zoom. The prototype holds challenges, sessions and shares in memory and resets when you restart. It uses loopback HTTP and a same-origin fixture route. The production design calls for HTTPS, Workers, private R2 snapshots, D1 access, and transactional mail. Actual project export, passwords, and deployed-browser verification are still pending. See the [web sharing architecture](../../docs/web-sharing-architecture.md).
+The launcher creates private `.local/web-preview.json` and ignored `apps/web/.dev.vars` with matching publisher capabilities. Existing matching configuration is preserved; mismatched keys are refused. The development desktop reads this configuration or the `EASY_PROTO_WEB_ORIGIN`/`EASY_PROTO_WEB_TOKEN` environment variables. Only HTTP loopback origins are accepted. The capability never reaches renderer code, preview links, or project files.
 
-## Check the workflow
+Local D1/R2 state persists in `apps/web/.cloudflare/state`. The development registry stays in `.local/cloudflare-registry`. Polling supports environments with restricted file watchers; set `CHOKIDAR_USEPOLLING=0` to prefer native watching. The configured D1 UUID is a local identifier; a hosted deployment needs its own resource and authentication configuration.
 
-With repo dependencies installed and Playwright Chromium available, run:
+Vite's file endpoint denies private local settings, `.dev.vars`, Cloudflare state, working mockups, managed project history, and `.easyproto` files, alongside Vite's standard credential-file exclusions. The regression check uses disposable fixtures and confirms public UI assets remain available.
+
+## Export the current page
+
+1. Choose **Settings → Export page to web preview…**.
+2. Check the page name, artboard count, and revision; choose **Sync page**.
+3. Use **Open preview** or **Copy link**.
+4. Sync again to update the same link; use **Refresh preview** in the browser.
+
+The export pins one committed revision and sends only the selected page’s presentation metadata and captured PNGs. It excludes HTML/CSS source, other pages, tokens, command history, local paths, and credentials. Unresolved capture dependencies stop the sync. Project edits during capture cannot mix source revisions. **Cancel export** aborts pending capture/upload work, as does retiring the project.
+
+Limits are 50 artboards, 8 MiB per PNG, and 32 MiB per multipart upload. The Worker verifies sizes, dimensions, and SHA-256 digests, writes R2 members, and publishes the pointer atomically in D1. Failed or stale uploads preserve the previous preview. Previously published image URLs remain pinned. Empty pages need an artboard before export.
+
+The canvas renders images, preserving board dimensions without running project HTML. It supports negative coordinates. With the canvas focused, arrows pan, `+`/`−` zoom, and `0`/Home fit.
+
+## Designs and verification
+
+Editable HTML studies are in `mocks/web-sync/`: `landing.html`, `viewer.html`, and `export.html`. Browser inspection was unavailable during implementation, so visual review remains open.
 
 ```sh
-pnpm exec playwright install chromium
 pnpm web:verify
+pnpm desktop:verify
 ```
 
-The test starts its own disposable server and browser profiles. Save the canvas, phone and laptop screenshots with:
+Worker tests use real SQLite queries and an R2 adapter. Desktop tests cover scoped, pinned exports, cancellation, and safe link construction. A live localhost smoke run also exercised the actual Worker with simulated D1/R2; its synthetic rows and images were removed afterward. [Smoke evidence](../../evidence/web-page-sync/local-http.json)
+
+If Playwright cannot resolve Electron from the monorepo, run native checks with `NODE_PATH="$PWD/apps/desktop/node_modules" pnpm desktop:verify` from the repository root. This only supplies the installed desktop dependency path; it does not bypass runtime permissions.
+
+The earlier login/share/revoke prototype is preserved separately:
 
 ```sh
-mkdir -p evidence/web-sharing
-EASY_PROTO_WEB_EVIDENCE="$PWD/evidence/web-sharing" pnpm web:verify
+pnpm --filter @easy-proto/web demo:build
+pnpm --filter @easy-proto/web demo:start
 ```
 
-`pnpm web:build` builds the static client and `pnpm web:start` starts Node with the last build. The browser checks cover same-browser single-use sign-in, sharing and revocation, the Fold favicon, and viewport identity in each device frame.
+Open `http://127.0.0.1:8787/demo` and sign in with `owner@example.test` using the local inbox. This Node demo uses ephemeral sessions and synthetic sandboxed HTML fixtures. `web:verify` retains its HTTP and Chromium tests after the new Worker checks. Playwright Chromium must be installed for the browser portion.
 
-Set `EASY_PROTO_WEB_PORT` if port 8787 is already in use for the interactive demo.
+Hosted publisher identity/ownership, real resources, waitlist abuse controls, retention/revocation, and the production pipeline are the next scope. See [sharing architecture](../../docs/web-sharing-architecture.md).

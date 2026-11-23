@@ -12,6 +12,7 @@ import { createRoot } from "react-dom/client";
 import { startCamera } from "./camera";
 import { type Frame, type Page, type Scope, frameLabels, scopeLabels } from "./page";
 import "./style.css";
+import { Landing, SharedCanvas } from "./shared-pages";
 
 const payload = document.querySelector<HTMLScriptElement>("#page-data");
 let firstPage = payload?.textContent
@@ -36,6 +37,7 @@ async function loadPage({
     credentials: "same-origin",
     signal: abortController.signal,
   });
+  if (!response.ok) return { kind: "unavailable" } as const;
   return (await response.json()) as Page;
 }
 
@@ -57,6 +59,8 @@ function Header({ meta }: { meta: string }) {
 }
 
 function Layout({ view }: { view: Page }) {
+  if (view.kind === "landing") return <Landing />;
+  if (view.kind === "page-preview") return <SharedCanvas view={view} />;
   const meta =
     view.kind === "viewer"
       ? `${view.title} · Revision ${view.revision}`
@@ -99,6 +103,10 @@ function Unavailable() {
 
 function Content({ view }: { view: Page }) {
   switch (view.kind) {
+    case "landing":
+      return <Landing />;
+    case "page-preview":
+      return <SharedCanvas view={view} />;
     case "home":
       return <Home view={view} />;
     case "inbox":
@@ -324,6 +332,8 @@ function pageRoute<const Path extends string>(path: Path) {
 
 const routeTree = rootRoute.addChildren([
   pageRoute("/"),
+  pageRoute("/demo"),
+  pageRoute("/p/$previewId"),
   pageRoute("/dev/inbox"),
   pageRoute("/auth/continue"),
   pageRoute("/publish"),

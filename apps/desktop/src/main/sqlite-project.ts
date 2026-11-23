@@ -3,7 +3,7 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from "
 import { link, mkdtemp, open, realpath, rm, unlink } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { artboardLimit, manifestSchema, type Manifest, type Source } from "../shared/model";
+import { manifestSchema, type Manifest, type Source } from "../shared/model";
 import { tokenByteLimit } from "../shared/token-types";
 import type { Asset, Snapshot } from "./project";
 
@@ -155,8 +155,7 @@ function verifyMetadataSize(db: DatabaseSync) {
 function verifyPayload(db: DatabaseSync) {
   const invalidRows = db
     .prepare(`SELECT 1 WHERE
-    (SELECT count(*) FROM board) > ? OR
-    (SELECT count(*) FROM source) > ? OR
+    (SELECT count(*) FROM source) > 2 * (SELECT count(*) FROM board) OR
     EXISTS (SELECT 1 FROM source WHERE octet_length(digest) != 64 OR octet_length(body) > ?) OR
     EXISTS (SELECT 1 FROM project WHERE octet_length(name) > 4096 OR
       octet_length(token_document) > ? OR octet_length(token_css) > ?) OR
@@ -168,15 +167,7 @@ function verifyPayload(db: DatabaseSync) {
       octet_length(html_digest) != 64 OR octet_length(css_digest) != 64) OR
     EXISTS (SELECT 1 FROM receipt WHERE octet_length(id) != 36 OR octet_length(digest) != 64)
   `)
-    .get(
-      artboardLimit,
-      artboardLimit * 2,
-      mebibyte,
-      tokenByteLimit,
-      tokenByteLimit,
-      8 * mebibyte,
-      32 * mebibyte,
-    );
+    .get(mebibyte, tokenByteLimit, tokenByteLimit, 8 * mebibyte, 32 * mebibyte);
   if (invalidRows) throw invalid();
   verifyMetadataSize(db);
 }

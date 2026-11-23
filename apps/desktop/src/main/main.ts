@@ -10,6 +10,7 @@ import {
   dialog,
   ipcMain,
   session,
+  shell,
   type IpcMainInvokeEvent,
 } from "electron";
 import { z } from "zod";
@@ -32,6 +33,7 @@ import { chromeUrl, Preview, securePreferences } from "./preview";
 import { Project, ProjectError, readRegular } from "./project";
 import { RecentProjects } from "./recent-projects";
 import { parseTokenDocument } from "./tokens";
+import { pageInfo, readWebPreviewSettings, syncPagePreview, webPreviewStatus } from "./web-preview";
 
 const projectOption = process.argv
   .find((arg) => arg.startsWith("--project="))
@@ -76,7 +78,11 @@ async function start() {
       project,
       activationId,
       signal: lifetime.signal,
-      activity: new ArtboardActivity(lifetime.signal, changed),
+      activity: new ArtboardActivity(
+        lifetime.signal,
+        changed,
+        desktopTokens.desktop.motion["working-minimum"].$value.value,
+      ),
       retire: () => lifetime.abort(),
     };
   }
@@ -112,6 +118,15 @@ async function start() {
     },
   });
   preview.protect(window.webContents);
+  const webSettings = await readWebPreviewSettings(
+    app.isPackaged ? undefined : resolve(app.getAppPath(), "../../.local/web-preview.json"),
+  ).catch(() => {
+    console.warn(
+      "Local web preview settings are unavailable. Check the development configuration.",
+    );
+    return undefined;
+  });
+  let pageExport: { generation: number; controller: AbortController } | undefined;
   function scene(): DesktopState {
     const projects = recent.list();
     if (!active) return { view: "home", sceneVersion, projects };
@@ -124,6 +139,7 @@ async function start() {
       view: "project",
       sceneVersion,
       name: project.name,
+      agentFocus: activity.focus,
       tokenDigest: project.snapshot.tokens?.stamp.documentDigest,
       canUndo: project.canUndo,
       canRedo: project.canRedo,
@@ -131,7 +147,7 @@ async function start() {
       artboards: snapshot.artboards.map((board) => ({
         ...board,
         pageId: board.pageId ?? pageLayout.defaultPageId,
-        agentWorking: activity.isWorking(board.id),
+        agentWorking: activity.isPresenting(board.id),
       })),
     };
   }
@@ -296,10 +312,69 @@ async function start() {
     changed();
   });
 
+  ipcMain.on(ipc.visiblePage, (event, selectedGeneration: unknown, pageId: unknown) => {
+    allowSender(event, window);
+    if (
+      active &&
+      selectedGeneration === generation &&
+      typeof pageId === "string" &&
+      active.project.pageLayout.pages.some((page) => page.id === pageId)
+    )
+      active.activePageId = pageId;
+  });
   ipcMain.handle(ipc.scene, (event) => {
     allowSender(event, window);
     return scene();
   });
+  ipcMain.handle(
+    ipc.webPreview,
+    async (
+      event,
+      action: unknown,
+      selectedGeneration: unknown,
+      selectedPage: unknown,
+      expectedRevision: unknown,
+    ) => {
+      allowSender(event, window);
+      const operation = z.enum(["status", "sync", "cancel", "open", "copy"]).parse(action);
+      const project = activeGeneration(selectedGeneration);
+      const pageId = id.parse(selectedPage);
+      if (operation === "cancel") {
+        if (pageExport?.generation === generation) pageExport.controller.abort();
+        return { configured: Boolean(webSettings), pageName: "", artboardCount: 0 };
+      }
+      const info = pageInfo(project, pageId, Boolean(webSettings));
+      if (!webSettings) {
+        if (operation === "status") return info;
+        throw new Error("Start the local web environment with pnpm local:dev, then try again.");
+      }
+      const lifetime = active!.signal;
+      if (operation === "sync") {
+        if (pageExport) throw new Error("A page export is already running.");
+        const exporting = { generation, controller: new AbortController() };
+        pageExport = exporting;
+        try {
+          return await syncPagePreview(
+            project,
+            revision.parse(expectedRevision),
+            pageId,
+            webSettings,
+            (snapshot, board, signal) => preview.capture(project, snapshot, board, signal),
+            AbortSignal.any([lifetime, exporting.controller.signal]),
+          );
+        } finally {
+          if (pageExport === exporting) pageExport = undefined;
+        }
+      }
+      const saved = await webPreviewStatus(project, pageId, webSettings, lifetime);
+      activeGeneration(selectedGeneration);
+      if (operation !== "status" && !saved.url)
+        throw new Error("Sync this page before opening its preview.");
+      if (operation === "open") await shell.openExternal(saved.url!);
+      if (operation === "copy") clipboard.writeText(saved.url!);
+      return saved;
+    },
+  );
   ipcMain.handle(ipc.tokens, (event, generation: unknown) => {
     allowSender(event, window);
     return activeGeneration(generation).tokenView;
@@ -376,6 +451,7 @@ async function start() {
     const command = commandSchema.parse(input);
     if (
       command.operation === "create_artboard" ||
+      command.operation === "update_artboards" ||
       (command.operation === "update_artboard" &&
         !desktopArtboardPatch.safeParse(command.arguments.patch).success)
     ) {

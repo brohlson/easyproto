@@ -158,3 +158,50 @@ figcaption span { color: var(--secondary); font-weight: 400; margin-left: 6px }
 }
 .controls button { color: var(--ink); background: transparent; min-height: 28px; padding: 3px 10px }
 .controls button:hover { background: var(--canvas) }
+
+.visually-hidden, .honeypot { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.landing-page { min-height: 100dvh; display: grid; grid-template-rows: 72px 1fr auto; background: var(--surface); }
+.site-header { height: 72px; padding-inline: 32px; }
+.site-header a { color: inherit; text-decoration: none; }
+.landing-main { display: grid; place-items: center; padding: 64px 24px; }
+.landing-hero { width: min(440px, 100%); text-align: center; }
+.landing-mark { width: 64px; height: 64px; margin-bottom: 26px; }
+.landing-hero h1 { font-size: 48px; line-height: 1.1; letter-spacing: -.045em; font-weight: 550; margin-bottom: 22px; }
+.landing-hero > p { line-height: 1.7; margin-bottom: 30px; }
+.waitlist-form { display: flex; gap: 8px; justify-items: stretch; align-items: stretch; margin-bottom: 14px; }
+.waitlist-form input { margin: 0; padding: 11px 13px; }
+.waitlist-form button { flex: none; padding-inline: 17px; white-space: nowrap; }
+.landing-hero .waitlist-note, .landing-hero .waitlist-error { font-size: 12px; margin: 0; min-height: 40px; }
+.waitlist-error { color: light-dark(#a32626, #f2a2a2); }
+.landing-footer { padding: 22px 32px; font-size: 11px; color: var(--secondary); }
+.shared-title { display: flex; align-items: center; gap: 20px; min-width: 0; }
+.project-breadcrumb { border-left: 1px solid var(--line); padding-left: 20px; font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.project-breadcrumb > span { color: var(--secondary); }
+.readonly-badge { flex: none; border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; font-size: 10px; letter-spacing: .02em; color: var(--secondary); }
+.shared-viewport { height: calc(100dvh - 72px); }
+.shared-viewport figure { user-select: none; }
+.shared-viewport figcaption { position: absolute; bottom: 100%; width: max-content; max-width: 600px; font-size: 12px; line-height: 24px; padding: 0 0 5px; transform: scale(calc(1 / var(--camera-zoom, 1))); transform-origin: bottom left; }
+.shared-viewport figcaption span { font-size: 11px; }
+.shared-viewport img { display: block; pointer-events: none; background: white; box-shadow: 0 0 0 1px var(--line), 0 3px 12px #00000009; }
+.shared-meta { position: fixed; bottom: 27px; left: 28px; font-size: 11px; color: var(--secondary); pointer-events: none; background: var(--canvas); padding: 2px 4px; }
+.shared-tools { position: fixed; top: 88px; right: 22px; display: flex; gap: 7px; }
+.shared-tools select { max-width: 180px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: var(--control); padding: 6px 8px; font: inherit; font-size: 12px; }
+.shared-tools button { font-size: 12px; }
+.controls output { display: flex; align-items: center; min-width: 42px; justify-content: center; color: var(--secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
+@media (prefers-color-scheme: dark) { .landing-mark { filter: invert(1); } }
+@media (max-width: 600px) {
+  .site-header { padding-inline: 16px; height: 62px; }
+  .landing-page { grid-template-rows: 62px 1fr auto; }
+  .landing-page .header-meta { display: none; }
+  .landing-hero h1 { font-size: 40px; }
+  .waitlist-form { flex-direction: column; }
+  .waitlist-form button { min-height: 42px; }
+  .landing-footer { padding-inline: 24px; }
+  .shared-title { gap: 10px; }
+  .project-breadcrumb { padding-left: 10px; max-width: 145px; }
+  .readonly-badge { font-size: 9px; }
+  .shared-viewport { height: calc(100dvh - 62px); }
+  .shared-tools { top: 77px; right: 14px; }
+  .shared-meta { left: 14px; bottom: 24px; max-width: 180px; }
+  .shared-meta > span { display: none; }
+}

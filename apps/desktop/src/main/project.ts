@@ -24,7 +24,6 @@ import {
 import { compileTokens, loadTokens, TokenError, type TokenBundle } from "./tokens";
 import {
   boardInput,
-  artboardLimit,
   commandSchema,
   coordinateLimit,
   id,
@@ -91,6 +90,7 @@ type HistoryEntry =
       };
     }
   | { tokens: { before?: TokenBundle; after: TokenBundle } };
+type HistoryItem = { commandId: string; entry: HistoryEntry };
 const historyLimit = 50;
 export type Asset = { bytes: Buffer; mime: string };
 const assetTypes = new Map([
@@ -512,8 +512,8 @@ async function publish(root: string, snapshot: Snapshot, onPhase?: (phase: Commi
 export class Project {
   #tail = Promise.resolve();
   #snapshot: Snapshot;
-  #undo: HistoryEntry[] = [];
-  #redo: HistoryEntry[] = [];
+  #undo: HistoryItem[] = [];
+  #redo: HistoryItem[] = [];
   #clipboard?: { id: string; originals: ArtboardState[] };
   readonly assetDigest: string;
 
@@ -670,7 +670,7 @@ export class Project {
     return this.#snapshot;
   }
 
-  execute(input: unknown): Promise<Commit> {
+  execute(input: unknown, onSaving?: () => () => void): Promise<Commit> {
     const command = commandSchema.parse(input);
     return this.#enqueue(async () => {
       const { manifest, sources } = this.authorize(command.projectId);
@@ -720,7 +720,18 @@ export class Project {
         const history = operation === "undo" ? this.#undo : this.#redo;
         const saved = history.at(-1);
         if (!saved) throw new ProjectError("HISTORY_EMPTY", `Nothing to ${operation}.`);
-        entry = saved;
+        if (
+          operation === "undo" &&
+          command.arguments.targetCommandId &&
+          saved.commandId !== command.arguments.targetCommandId
+        ) {
+          throw new ProjectError(
+            "UNDO_CONFLICT",
+            "Another edit is next in the undo history.",
+            manifest.revision,
+          );
+        }
+        entry = saved.entry;
       } else if (operation === "create_page") {
         entry = { page: { after: { id: randomUUID(), name: command.arguments.name } } };
       } else if (operation === "rename_page") {
@@ -793,26 +804,31 @@ export class Project {
             board: { ...before.board, ...translatedPosition(before.board, offset) },
           },
         }));
-      } else if (operation === "update_artboard") {
-        const { artboardId, patch } = command.arguments;
-        const [previous] = readBoards(this.#snapshot, [artboardId]);
-        const { name, x, y, width, height } = previous.before.board;
-        const input = boardInput.parse({
-          name,
-          x,
-          y,
-          width,
-          height,
-          ...previous.before.source,
-          ...patch,
+      } else if (operation === "update_artboard" || operation === "update_artboards") {
+        const updates =
+          operation === "update_artboard" ? [command.arguments] : command.arguments.updates;
+        const patches = new Map(updates.map(({ artboardId, patch }) => [artboardId, patch]));
+        const selected = readBoards(this.#snapshot, [...patches.keys()]);
+        entry = selected.flatMap((previous) => {
+          const { board, source } = previous.before;
+          const { name, x, y, width, height } = board;
+          const original = { name, x, y, width, height, ...source };
+          const patch = patches.get(board.id)!;
+          if (
+            operation === "update_artboards" &&
+            (Object.keys(patch) as (keyof BoardInput)[]).every(
+              (key) => original[key] === patch[key],
+            )
+          )
+            return [];
+          const next = metadata(board.id, atRevision, { ...original, ...patch }, board.pageId);
+          return [{ ...previous, after: { board: next.artboard, source: next.source } }];
         });
-        const { artboard, source } = metadata(
-          artboardId,
-          atRevision,
-          input,
-          previous.before.board.pageId,
-        );
-        entry = [{ ...previous, after: { board: artboard, source } }];
+        if (!entry.length)
+          throw new ProjectError(
+            "ARTBOARDS_UNCHANGED",
+            "All requested artboards already match their patches.",
+          );
       } else {
         let inputs: BoardInput[];
         let destination = defaultPageId;
@@ -848,11 +864,6 @@ export class Project {
           );
           inputs = originals.map((original) => copyInput(original, offset));
         }
-        if (boards.length + inputs.length > artboardLimit)
-          throw new ProjectError(
-            "PROJECT_CAPACITY",
-            `This slice supports up to ${artboardLimit} artboards.`,
-          );
         entry = inputs.map((input, index) => {
           const { artboard, source } = metadata(
             randomUUID(),
@@ -943,6 +954,7 @@ export class Project {
         sources: nextSources,
         tokens: nextTokens,
       };
+      const finishActivity = onSaving?.();
       try {
         if (this.sqlite)
           saveSqliteProject(this.root, this.sqlite, this.#snapshot, next, () =>
@@ -954,15 +966,18 @@ export class Project {
           "SAVE_FAILED",
           "The project could not be saved. The last committed revision is still open.",
         );
+      } finally {
+        finishActivity?.();
       }
       this.#snapshot = next;
       if (operation === "undo") {
-        this.#undo.pop();
-        this.#redo.push(entry);
+        this.#redo.push(this.#undo.pop()!);
       } else {
-        if (operation === "redo") this.#redo.pop();
-        else this.#redo.length = 0;
-        this.#undo.push(entry);
+        if (operation === "redo") this.#undo.push(this.#redo.pop()!);
+        else {
+          this.#redo.length = 0;
+          this.#undo.push({ commandId: command.commandId, entry });
+        }
         if (this.#undo.length > historyLimit) this.#undo.shift();
       }
       this.onPhase?.("pointerPublished");

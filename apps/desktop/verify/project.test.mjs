@@ -1060,3 +1060,95 @@ for (const storage of ["folder", "sqlite"]) {
     assert.deepEqual(await after.execute(input), receipt);
   });
 }
+
+test("a batch interrupted before publication preserves both sources and can be retried", async (t) => {
+  const { project, folder } = await fixture(t);
+  const {
+    projectId,
+    artboards: [first],
+  } = project.snapshot.manifest;
+  const second = (await project.execute(command(projectId))).artboard;
+  const before = (await Project.open(folder)).snapshot;
+  const batch = {
+    projectId,
+    commandId: randomUUID(),
+    expectedRevision: 1,
+    operation: "update_artboards",
+    arguments: {
+      updates: [
+        { artboardId: second.id, patch: { html: "<b>Brand</b>" } },
+        { artboardId: first.id, patch: { css: "body{color:blue}" } },
+      ],
+    },
+  };
+  await killAt(folder, batch, "snapshotWritten");
+  const recovered = await Project.open(folder);
+  assert.deepEqual(recovered.snapshot, before);
+  assert.equal(recovered.canUndo, false);
+  const receipt = await recovered.execute(batch);
+  assert.deepEqual(
+    receipt.artboards.map((b) => b.id),
+    [first.id, second.id],
+  );
+  const next = { ...batch, commandId: randomUUID(), expectedRevision: 2 };
+  await assert.rejects(recovered.execute(next), { code: "ARTBOARDS_UNCHANGED" });
+  assert.equal(recovered.snapshot.manifest.revision, 2);
+  const mixed = await recovered.execute({
+    ...next,
+    arguments: {
+      updates: [batch.arguments.updates[0], { artboardId: first.id, patch: { x: 999 } }],
+    },
+  });
+  assert.equal(mixed.artboard.id, first.id);
+  assert.equal(mixed.artboards, undefined);
+  assert.equal(mixed.artboard.sourceRevision, 2);
+});
+
+test("projects pass 50 boards and reopen large group edits in folder and SQLite storage", async (t) => {
+  const { project, folder, root } = await fixture(t);
+  const { projectId } = project.snapshot.manifest;
+  const execute = (target, operation, args) =>
+    target.execute({
+      projectId,
+      expectedRevision: target.snapshot.manifest.revision,
+      commandId: randomUUID(),
+      operation,
+      arguments: args,
+    });
+  for (let i = 1; i < 49; i++)
+    await execute(project, "create_artboard", {
+      ...args,
+      html: `<p>${i}</p>`,
+      css: `p{width:${i}px}`,
+    });
+  const { page } = await execute(project, "create_page", { name: "Experiments" });
+  for (let i = 49; i < 52; i++)
+    await execute(project, "create_artboard", {
+      ...args,
+      pageId: page.id,
+      html: `<p>${i}</p>`,
+      css: `p{width:${i}px}`,
+    });
+  const sqlite = join(root, "Large.easyproto");
+  await project.saveCopy(sqlite);
+  for (const path of [folder, sqlite]) {
+    const reopened = await Project.open(path);
+    const boards = reopened.snapshot.manifest.artboards;
+    assert.equal(boards.length, 52);
+    assert.equal(boards.filter((b) => b.pageId === page.id).length, 3);
+    assert.deepEqual(reopened.snapshot.sources, project.snapshot.sources);
+    const ids = boards.map((b) => b.id);
+    const added = await execute(reopened, "create_artboard", { ...args, pageId: page.id });
+    assert.equal(added.artboard.pageId, page.id);
+    const moved = await execute(reopened, "move_artboards", { artboardIds: ids, dx: 7, dy: 5 });
+    assert.deepEqual(
+      moved.artboards.map((b) => b.id),
+      ids,
+    );
+    const undone = await execute(reopened, "undo", {});
+    assert.deepEqual(undone.artboards, boards);
+    const saved = await Project.open(path);
+    assert.deepEqual(saved.snapshot.manifest.artboards, [...boards, added.artboard]);
+    assert.deepEqual(saved.snapshot.manifest.commands.at(-1).result, undone);
+  }
+});

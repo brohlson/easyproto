@@ -1,6 +1,7 @@
 import {
   Check,
   Copy,
+  Globe,
   FolderOpen,
   House,
   Monitor,
@@ -26,6 +27,7 @@ export function Settings({
   goHome,
   choose,
   saveCopy,
+  exportPage,
 }: {
   theme: Theme;
   changeTheme: (theme: Theme) => void;
@@ -33,6 +35,7 @@ export function Settings({
   goHome?: () => void;
   choose: (mode: "create" | "open") => void;
   saveCopy?: () => void;
+  exportPage?: () => void;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -100,6 +103,17 @@ export function Settings({
               onClick={() => invoke(saveCopy)}
             >
               <Copy aria-hidden="true" size={15} /> Save a Copy…
+            </button>
+          )}
+          {exportPage && (
+            <button
+              type="button"
+              className="menu-row"
+              disabled={busy}
+              onClick={() => invoke(exportPage)}
+            >
+              <Globe aria-hidden="true" size={15} />
+              Export page to web preview…
             </button>
           )}
         </div>

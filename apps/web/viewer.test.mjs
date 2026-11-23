@@ -84,7 +84,7 @@ test("Chromium owner publishes scoped canvas and framed artboards and revokes a 
   t.after(() => browser.close());
   const owner = await browser.newPage();
   owner.setDefaultTimeout(5000);
-  await owner.goto(origin);
+  await owner.goto(origin + "/demo");
   const mark = owner.locator("svg.ep-fold-mark path");
   await mark.waitFor();
   const icon = await owner.locator('link[rel="icon"]').getAttribute("href");
