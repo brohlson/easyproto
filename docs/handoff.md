@@ -495,3 +495,9 @@ Candidate `5fa8ffeff35ab0d204dcea8c8f800b3b8971c3eb` moves the homepage and shar
 Staging version `e4de2432-2259-4ad2-815f-6bcd47c9b4fe` and production version `9c095f2c-99b6-41e6-934e-d0591f7f8acb` use identical Worker code and assets. All 14 web checks and four local launcher checks passed. A loopback Worker served the export and its JavaScript. Chromium and WebKit verified stable first paint on both hosts. Pre-cutover homepage screenshots matched in desktop dark and mobile light. Both browsers unlocked the existing production demo and rendered its HTML, computed CSS, and image.
 
 A fresh desktop publish on staging reached its existing daily upload cap. Re-run that staging check after the window resets. The release keeps the current Cloudflare resources and limits. The checkout remains based on `6e7908d`.
+
+## Release automation
+
+The web workflow verifies and archives one build, checks its digest in both deployments, and gates the production job on the protected GitHub environment. The smoke check matches the staged and live Next.js build IDs and uses read-only requests. Tagged Apple silicon releases share the local installer's bundle assembly and add Developer ID signing, notarization, and a GitHub Release. The main-process updater offers a native restart prompt and lets the active project save queue drain before installing.
+
+EasyProtoMocks revision 406 contains the inspected **Restart to Update** dialog study. GitHub's web environments are restricted to `main`. Production promotion and Mac signing require approval. Mac release reviewers verify the tagged commit is on `main` before approving. Infrastructure owns credential provisioning and the first staged promotion. The desktop owner still needs evidence of a signed release updating to the next signed release.

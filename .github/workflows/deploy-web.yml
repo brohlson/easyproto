@@ -1,0 +1,74 @@
+name: Deploy web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/web/**
+      - packages/ui/**
+      - packages/preview/**
+      - scripts/deploy-web
+      - .github/workflows/deploy-web*.yml
+      - .nvmrc
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - tsconfig.base.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: easy-proto-web
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    outputs:
+      artifact: ${{ steps.upload.outputs.artifact-id }}
+      checksum: ${{ steps.archive.outputs.checksum }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: corepack enable && pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - run: pnpm --filter @easy-proto/web exec playwright install --with-deps chromium
+      - run: pnpm theme:build --check && pnpm web:verify
+      - id: archive
+        run: |
+          tar -czf "$RUNNER_TEMP/web-build.tar.gz" -C apps/web/.cloudflare/output v1
+          echo "checksum=$(sha256sum "$RUNNER_TEMP/web-build.tar.gz" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - id: upload
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: web-build
+          path: ${{ runner.temp }}/web-build.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+  staging:
+    needs: build
+    uses: ./.github/workflows/deploy-web-environment.yml
+    with:
+      target: staging
+      artifact: ${{ needs.build.outputs.artifact }}
+      checksum: ${{ needs.build.outputs.checksum }}
+
+  production:
+    needs: [build, staging]
+    uses: ./.github/workflows/deploy-web-environment.yml
+    with:
+      target: production
+      artifact: ${{ needs.build.outputs.artifact }}
+      checksum: ${{ needs.build.outputs.checksum }}

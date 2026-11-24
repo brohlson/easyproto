@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+output="${1:?Pass an absolute path for the finished app bundle}"
+flavor="${2:-local}"
+[[ "$output" == /*.app && ! -e "$output" ]]
+[[ "$flavor" == local || "$flavor" == release ]]
+[[ "$(uname -s)" == Darwin ]]
+
+cd "$(dirname "$0")/.."
+root="$PWD"
+desktop="$root/apps/desktop"
+name='Easy Proto'
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+mkdir -p "$work/input" "$work/zips"
+store="$(dirname "$(pnpm store path)")"
+if [[ -d "$root/.pnpm-store/v10" ]]; then store="$root/.pnpm-store"; fi
+
+electron_version="$(node -p "require('./apps/desktop/node_modules/electron/package.json').version")"
+arch="$(node -p 'process.arch')"
+# Include only the current runtime. Older checkouts may have retired bundles in dist.
+mkdir "$work/input/dist"
+cp "$desktop/dist/main.js" "$desktop/dist/preload.cjs" "$work/input/dist/"
+cp -R "$desktop/dist/ui" "$work/input/dist/"
+node --input-type=module - "$desktop/package.json" "$work/input/package.json" <<'JS'
+import fs from 'node:fs';
+const {version, type, main} = JSON.parse(fs.readFileSync(process.argv[2]));
+fs.writeFileSync(process.argv[3], JSON.stringify({name: 'easy-proto', productName: 'Easy Proto', version, type, main}));
+JS
+
+ditto --norsrc --noextattr -c -k "$desktop/node_modules/electron/dist" "$work/zips/electron-v$electron_version-darwin-$arch.zip"
+pnpm --filter @easy-proto/desktop exec electron-packager "$work/input" "$name" \
+  --out="$work/output" --tmpdir="$work/packager" --platform=darwin --arch="$arch" \
+  --electron-version="$electron_version" --electron-zip-dir="$work/zips" \
+  --app-bundle-id=local.easyproto.desktop --icon="$desktop/packaging/EasyProto.icns" --no-asar --no-prune
+
+candidate="$work/output/$name-darwin-$arch/$name.app"
+app="$candidate/Contents/Resources/app"
+# Install the locked production graph inside the bundle so pnpm's relative links
+# resolve there, including transitive ES module imports from style-dictionary.
+runtime="$app/runtime"
+mkdir -p "$runtime/apps/desktop" "$runtime/packages"
+cp package.json pnpm-lock.yaml pnpm-workspace.yaml "$runtime/"
+cp "$desktop/package.json" "$runtime/apps/desktop/"
+for package in ui preview; do
+  mkdir "$runtime/packages/$package"
+  rsync -a --exclude node_modules --exclude dist "packages/$package/" "$runtime/packages/$package/"
+done
+pnpm --dir "$runtime" --store-dir "$store" --filter '@easy-proto/desktop...' install \
+  --prod --frozen-lockfile --ignore-scripts --prefer-offline --package-import-method=copy
+mv "$app/dist" "$runtime/apps/desktop/dist"
+ln -s runtime/apps/desktop/dist "$app/dist"
+
+if [[ "$flavor" == release ]]; then
+  touch "$candidate/Contents/Resources/easy-proto-release"
+fi
+ditto "$candidate" "$output"

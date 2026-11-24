@@ -35,6 +35,12 @@ The command builds your current working tree, checks the signature and Home scre
 
 The installer uses the pinned Node and pnpm versions above, macOS Command Line Tools (Swift), and local ad-hoc signing.
 
+### Releasing the Mac app
+
+The [Release Mac app workflow](.github/workflows/release-mac.yml) accepts a stable `vX.Y.Z` tag on a commit from `main` with the matching version in `apps/desktop/package.json`. It builds and tests for Apple silicon, signs with Developer ID, notarizes the app and disk image, and publishes a DMG and update ZIP together in GitHub Releases.
+
+Configure the `mac-release` GitHub environment for `v*` tags with a required reviewer and administrator bypass disabled. Review the tagged commit and confirm it is on `main` before approving access to the signing credentials. Add the base64 Developer ID Application PKCS#12 export as `MAC_CERTIFICATE`, its password as `MAC_CERTIFICATE_PASSWORD`, and the base64 App Store Connect team API key as `APPLE_NOTARY_KEY` with its `APPLE_NOTARY_KEY_ID` and `APPLE_NOTARY_ISSUER_ID`. Install the first signed release from the DMG. That version checks for updates and offers **Restart to Update** or **Later** after a verified download. Install a later signed release through this prompt before announcing the update channel.
+
 Home shows the projects you have created or opened on this device. Click a row to reopen it, or use **Create project** and select an empty folder in the macOS picker. Click **Easy Proto** in the header to return Home. The footer’s **Settings** menu has project actions and **Appearance**. Use **Open project…** to add an existing project or find a folder that moved.
 
 Double-click the project name or an artboard title to edit it. Enter or clicking away saves, and Escape cancels. You can also focus the name and press Enter to start editing. Project titles travel with their folders. Artboard titles and dimensions stay the same screen size as you zoom. Select an artboard and press **⌘D** to save an offset copy with its own editable HTML and CSS. The copy becomes selected.

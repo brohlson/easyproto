@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+environment="${1:?Expected staging or production}"
+: "${CLOUDFLARE_ACCOUNT_ID:?Set CLOUDFLARE_ACCOUNT_ID in the deployment environment}"
+: "${WEB_DATABASE_ID:?Set WEB_DATABASE_ID in the deployment environment}"
+: "${CLOUDFLARE_API_TOKEN:?Set CLOUDFLARE_API_TOKEN in the deployment environment}"
+: "${WEB_BUILD_CHECKSUM:?Missing build checksum}"
+[[ "$WEB_BUILD_CHECKSUM" =~ ^[a-f0-9]{64}$ ]]
+
+cd "$(dirname "$0")/.."
+root="$PWD"
+archive="$RUNNER_TEMP/web-build.tar.gz"
+printf '%s  %s\n' "$WEB_BUILD_CHECKSUM" "$archive" | sha256sum --check
+mkdir -p apps/web/.cloudflare/output
+tar -xzf "$archive" -C apps/web/.cloudflare/output
+package="$(node apps/web/scripts/package-hosted.mjs "$environment" "$WEB_DATABASE_ID")"
+trap 'rm -rf "$package"' EXIT
+cd "$package"
+# The pinned CLI inherits the existing Worker's declared secret bindings.
+"$root/apps/web/node_modules/.bin/cf" deploy --prebuilt --no-provision --tag "$GITHUB_SHA"

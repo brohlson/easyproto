@@ -13,6 +13,7 @@ import { ArtboardActivity } from "../previews/activity";
 import { chromeUrl, Preview, securePreferences } from "../previews/preview";
 import { readWebPreviewSettings } from "../publishing/web-preview";
 import { registerIpc } from "./ipc";
+import { startUpdates } from "./updates";
 
 export async function start({
   projectOption,
@@ -63,7 +64,8 @@ export async function start({
   }
   let generation = 0;
   let sceneVersion = 0;
-  let switching = false;
+  let projectSwitch: Promise<void> | undefined;
+  let restartingForUpdate = false;
   const isolatedSession = session.fromPartition("easy-proto");
   const preview = new Preview(isolatedSession);
   await preview.install(join(app.getAppPath(), "dist", "ui"));
@@ -132,7 +134,12 @@ export async function start({
   }
 
   function checkWritable() {
-    if (switching)
+    if (restartingForUpdate)
+      throw new ProjectError(
+        "PROJECT_SWITCHING",
+        "Easy Proto is preparing to restart for an update.",
+      );
+    if (projectSwitch)
       throw new ProjectError(
         "PROJECT_SWITCHING",
         "The project is switching. Call get_context and try again.",
@@ -140,7 +147,11 @@ export async function start({
   }
 
   async function switchTo(load: () => Promise<Project | undefined>, findMoved = false) {
-    switching = true;
+    checkWritable();
+    let finishSwitch!: () => void;
+    projectSwitch = new Promise((resolve) => {
+      finishSwitch = resolve;
+    });
     try {
       await active?.project.whenIdle();
       if (window.isDestroyed()) return;
@@ -154,7 +165,8 @@ export async function start({
       if (next) await remember(next, findMoved);
       changed();
     } finally {
-      switching = false;
+      projectSwitch = undefined;
+      finishSwitch();
     }
   }
 
@@ -169,7 +181,7 @@ export async function start({
         return generation;
       },
       get switching() {
-        return switching;
+        return Boolean(projectSwitch) || restartingForUpdate;
       },
     },
     switchTo,
@@ -221,6 +233,23 @@ export async function start({
   });
   window.once("ready-to-show", () => window.show());
   await window.loadURL(chromeUrl);
+  startUpdates(
+    window,
+    testProfile,
+    async (install) => {
+      restartingForUpdate = true;
+      await projectSwitch;
+      await active?.project.whenIdle();
+      if (window.isDestroyed()) {
+        restartingForUpdate = false;
+        return;
+      }
+      install();
+    },
+    () => {
+      restartingForUpdate = false;
+    },
+  );
   if (connectionWarning && !window.isDestroyed())
     void dialog.showMessageBox(window, {
       type: "warning",

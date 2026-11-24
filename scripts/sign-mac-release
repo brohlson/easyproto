@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+bundle="${1:?Pass the path to the assembled release bundle}"
+[[ "$bundle" == /*.app && -f "$bundle/Contents/Resources/easy-proto-release" ]]
+: "${MAC_CERTIFICATE:?Set the base64 Developer ID Application certificate}"
+: "${MAC_CERTIFICATE_PASSWORD:?Set the certificate import password}"
+: "${APPLE_NOTARY_KEY:?Set the base64 Apple notarization API key}"
+: "${APPLE_NOTARY_KEY_ID:?Set the notarization API key ID}"
+: "${APPLE_NOTARY_ISSUER_ID:?Set the notarization API issuer ID}"
+[[ "$(uname -m)" == arm64 ]]
+version="$(node -p "require('./apps/desktop/package.json').version")"
+[[ "${GITHUB_REF_NAME:-}" == "v$version" ]]
+
+work="$(mktemp -d)"
+keychain="$work/release.keychain-db"
+cleanup() {
+  security delete-keychain "$keychain" >/dev/null 2>&1 || true
+  rm -rf "$work"
+}
+trap cleanup EXIT
+umask 077
+
+out="$RUNNER_TEMP/easy-proto-release"
+mkdir "$out"
+
+printf '%s' "$MAC_CERTIFICATE" | base64 -D > "$work/certificate.p12"
+printf '%s' "$APPLE_NOTARY_KEY" | base64 -D > "$work/AuthKey.p8"
+keychain_password="$(openssl rand -hex 32)"
+security create-keychain -p "$keychain_password" "$keychain"
+security unlock-keychain -p "$keychain_password" "$keychain"
+security import "$work/certificate.p12" -k "$keychain" -P "$MAC_CERTIFICATE_PASSWORD" -T /usr/bin/codesign >/dev/null
+security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+identity="$(security find-identity -v -p codesigning "$keychain" | awk '/Developer ID Application:/ {print $2}')"
+[[ "$identity" =~ ^[A-F0-9]{40}$ ]]
+unset MAC_CERTIFICATE MAC_CERTIFICATE_PASSWORD APPLE_NOTARY_KEY
+
+(
+  cd apps/desktop
+  node --input-type=module - "$bundle" "$identity" "$keychain" <<'JS'
+import { sign } from "@electron/osx-sign";
+
+const [app, identity, keychain] = process.argv.slice(2);
+await sign({ app, identity, keychain, hardenedRuntime: true });
+JS
+)
+codesign --verify --deep --strict "$bundle"
+
+notarize() {
+  xcrun notarytool submit "$1" --key "$work/AuthKey.p8" --key-id "$APPLE_NOTARY_KEY_ID" \
+    --issuer "$APPLE_NOTARY_ISSUER_ID" --wait
+}
+
+ditto -c -k --keepParent "$bundle" "$work/notarize.zip"
+notarize "$work/notarize.zip"
+xcrun stapler staple "$bundle"
+xcrun stapler validate "$bundle"
+spctl --assess --type execute "$bundle"
+node apps/desktop/scripts/check-mac-install.mjs "$bundle" "$work/profile"
+
+ditto -c -k --keepParent "$bundle" "$out/EasyProto-mac-arm64-$version.zip"
+mkdir "$work/image"
+ditto "$bundle" "$work/image/Easy Proto.app"
+ln -s /Applications "$work/image/Applications"
+dmg="$out/EasyProto-mac-arm64-$version.dmg"
+hdiutil create -volname "Easy Proto" -srcfolder "$work/image" -format UDZO "$dmg"
+codesign --sign "$identity" --keychain "$keychain" --timestamp "$dmg"
+notarize "$dmg"
+xcrun stapler staple "$dmg"
+xcrun stapler validate "$dmg"
