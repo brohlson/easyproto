@@ -452,6 +452,16 @@ Revision 394 updates **Web Home** to match the shared canvas header and adds **W
 
 Revision 395 removes the home tagline and footer on both mockups and updates the description and signup hint. The joined state still confirms signup. Both 1280 × 800 Dark captures were inspected with no unresolved dependencies. The live landing page uses the same copy, and all nine web checks passed, including Chromium assertions for the shared header, the new copy and the joined state.
 
+## Read-only tokens on shared pages
+
+EasyProtoMocks revision 397 adds the Tokens action to **Shared Page** and a **Shared Page · Tokens** mockup with the open dialog and row copy menu. Both 1280 × 800 Dark captures were inspected with no unresolved dependencies.
+
+The web viewer reads the existing published token stylesheet from the first artboard of the current snapshot. It resolves aliases for copying and keeps the stylesheet out of the viewer document. The publish payload and Worker routes are unchanged. Each row offers CSS, native color and duration formats when the value maps cleanly, and Copy all formats. CSS dimensions, font stacks and unitless values are CSS-only because the snapshot does not carry native unit or font-resource mappings or distinguish plain numbers from font weights.
+
+All eleven web checks passed, including a browser run that opened an older page without tokens, published a token stylesheet to the same URL, searched aliases, copied formats, checked the menu at 390 px, and returned focus to the viewer without modifying the artboard.
+
+EasyProtoMocks revisions 399–400 refine the compact token table. Browser verification also covers the resulting single-line column labels, an actionable fetch failure and keyboard retry, and CSS-only exports for ambiguous unitless values and their aliases.
+
 ## Animated home mark
 
 EasyProtoMocks revision 398 adds the desktop Edge runner to **Web Home** and **Web Home · Joined waitlist**. Revision 399 limits the home animation to two passes. Both 1280 × 800 Dark captures were inspected again with no unresolved dependencies. The web hero and desktop canvas activity overlay share the SVG and motion styles. Chromium checks the running highlight and its duration, a visible static mark with reduced motion, and the mark after signup. The focused Electron checks cover the desktop activity overlay.

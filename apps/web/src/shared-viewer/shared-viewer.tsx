@@ -6,6 +6,7 @@ import chrome from "../chrome.module.css";
 import canvas from "../canvas/canvas.module.css";
 import styles from "./shared-viewer.module.css";
 import type { SharedPage } from "./page";
+import { TokenDialog } from "./token-dialog";
 
 export function SharedCanvas({ view }: { view: SharedPage }) {
   const viewport = useRef<HTMLElement>(null);
@@ -21,7 +22,15 @@ export function SharedCanvas({ view }: { view: SharedPage }) {
         }
         project={<WorkspaceLabel>{view.projectName}</WorkspaceLabel>}
         page={<WorkspaceLabel>{view.pageName}</WorkspaceLabel>}
-        actions={<span className={styles.readonlyBadge}>Read-only preview</span>}
+        actions={
+          <div className={styles.headerActions}>
+            <span className={styles.readonlyBadge}>Read-only preview</span>
+            <TokenDialog
+              key={view.artboards[0]?.iframeUrl}
+              iframeUrl={view.artboards[0]?.iframeUrl}
+            />
+          </div>
+        }
       />
       <main
         ref={viewport}

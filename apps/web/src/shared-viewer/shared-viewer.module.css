@@ -1,3 +1,8 @@
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--ep-desktop-space-8);
+}
 .readonlyBadge {
   flex: none;
   border: 1px solid var(--line);

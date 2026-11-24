@@ -9,6 +9,7 @@ import { chromium } from "playwright";
 import { checkWorkspaceHeader } from "../../scripts/workspace-header-check.mjs";
 import { png } from "./fixtures/png.mjs";
 import { workerFixture } from "./fixtures/worker.mjs";
+import { copyFormats, readSharedTokens } from "./src/shared-viewer/tokens.ts";
 import { test } from "node:test";
 import worker from "./worker/index.ts";
 
@@ -64,6 +65,8 @@ async function fixture(t) {
       new Blob([files.stylesheet ?? stylesheet], { type: "text/css" }),
       "board.css",
     );
+    if (files.tokens)
+      body.set(`${board.id}:tokens`, new Blob([files.tokens], { type: "text/css" }), "tokens.css");
     body.set(
       `${board.id}:asset:0`,
       new Blob([files.image ?? image], { type: "image/png" }),
@@ -222,6 +225,153 @@ test("the web home and published page share the desktop header and the waitlist 
   assert.equal(await email.isDisabled(), true);
   assert.match(await page.getByRole("status").innerText(), /Thanks\. We’ll be in touch/);
   assert.equal(database.prepare("SELECT email FROM waitlist").get().email, "designer@example.com");
+});
+
+test("a published page can search and copy its token formats without changing its artboard", async (t) => {
+  const origin = "http://127.0.0.1:8787";
+  const { env, metadata, rawHtml, sync } = await fixture(t);
+  const file = Buffer.from(`:root {
+  --ep-color-accent: #317460;
+  --ep-color-link: var(--ep-color-accent);
+  --ep-motion-fast: 160ms;
+  --ep-spacing-card: 16px;
+  --ep-unitless-count: 600;
+  --ep-unitless-weight: 600;
+  --ep-unitless-count-alias: var(--ep-unitless-count);
+  --ep-unitless-weight-alias: var(--ep-unitless-weight);
+}
+`);
+  const document = Buffer.from(previewHtml(rawHtml, true));
+  const initial = await sync();
+  assert.equal(initial.ok, true);
+  const { id } = await initial.json();
+  const page = await browserPage(t, env, origin);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin });
+  await page.goto(`${origin}/p/${id}`);
+  const trigger = page.getByRole("button", { name: "Tokens", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Project tokens" });
+  await trigger.click();
+  await dialog.getByText("This preview has no project tokens.").waitFor();
+  await dialog.getByRole("button", { name: "Close tokens" }).click();
+  const [board] = metadata.manifest.artboards;
+  const updated = await sync(
+    {
+      ...metadata,
+      manifest: {
+        ...metadata.manifest,
+        revision: 2,
+        artboards: [{ ...board, document: member(document), tokens: member(file) }],
+      },
+    },
+    { document, tokens: file },
+  );
+  assert.equal(updated.ok, true);
+  assert.equal((await updated.json()).id, id);
+
+  await page.reload();
+  const frame = page.frameLocator("iframe");
+  await frame.getByRole("heading", { name: "Live board" }).waitFor();
+  assert.ok(
+    (
+      await frame
+        .locator("body")
+        .evaluate((body) => getComputedStyle(body).getPropertyValue("--ep-color-accent"))
+    ).includes("#317460"),
+  );
+  await page.route("**/tokens.css", (route) =>
+    route.request().resourceType() === "fetch"
+      ? route.fulfill({ status: 503, body: "Temporarily unavailable" })
+      : route.fallback(),
+  );
+  await trigger.click();
+  await dialog.getByRole("alert").waitFor();
+  const retry = dialog.getByRole("button", { name: "Try again" });
+  await page.keyboard.press("Tab");
+  assert.equal(await retry.evaluate((button) => button.matches(":focus-visible")), true);
+  await page.unroute("**/tokens.css");
+  await page.keyboard.press("Enter");
+  const search = dialog.getByRole("searchbox", { name: "Search tokens" });
+  await search.waitFor();
+  assert.equal(await dialog.evaluate((modal) => modal.contains(document.activeElement)), true);
+  await search.fill("color-link");
+  assert.equal(await dialog.getByRole("row").count(), 2);
+  const overflow = dialog.getByRole("button", { name: "Copy options for color-link" });
+  await overflow.press("Enter");
+  const menu = dialog.getByRole("menu");
+  const css = menu.getByRole("menuitem", { name: "Copy CSS variable" });
+  await css.waitFor();
+  await page.waitForFunction(() =>
+    document.activeElement?.textContent.includes("Copy CSS variable"),
+  );
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await dialog.getByText("All formats copied.").waitFor();
+  const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+  assert.match(clipboard, /var\(--ep-color-link\)/);
+  assert.match(clipboard, /CSS value\n#317460/);
+  assert.match(clipboard, /Color\(\.sRGB, red:/);
+  assert.match(clipboard, /<color name="ep_color_link">#FF317460<\/color>/);
+  assert.equal(await overflow.evaluate((element) => element === document.activeElement), true);
+  await page.setViewportSize({ width: 390, height: 650 });
+  await search.fill("spacing-card");
+  for (const cell of [
+    dialog.getByRole("columnheader", { name: "Actions" }),
+    dialog.getByRole("cell", { name: "Dimension" }),
+  ]) {
+    assert.equal(
+      await cell.evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return range.getClientRects().length;
+      }),
+      1,
+    );
+  }
+  await dialog.getByRole("button", { name: "Copy options for spacing-card" }).click();
+  await menu.waitFor();
+  const menuBox = await menu.boundingBox();
+  assert.ok(menuBox.x >= 0 && menuBox.x + menuBox.width <= 390);
+  assert.equal(await menu.getByRole("menuitem").count(), 3);
+  await page.keyboard.press("Escape");
+  await menu.waitFor({ state: "hidden" });
+  assert.equal(await dialog.isVisible(), true);
+  await search.fill("unitless");
+  assert.equal(await dialog.getByRole("cell", { name: "Unitless", exact: true }).count(), 4);
+  await dialog.getByRole("button", { name: "Copy options for unitless-weight-alias" }).click();
+  await menu.waitFor();
+  assert.deepEqual(await menu.getByRole("menuitem").allTextContents(), [
+    "Copy CSS variable",
+    "Copy CSS value",
+    "Copy all formats",
+  ]);
+  await page.keyboard.press("Escape");
+  await menu.waitFor({ state: "hidden" });
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden" });
+  assert.equal(await trigger.evaluate((element) => element === document.activeElement), true);
+  await frame.getByRole("heading", { name: "Live board" }).waitFor();
+});
+
+test("token formats resolve aliases and keep native units accurate", () => {
+  const [duration, color, alias, pixels, wholeMilliseconds, fractionalMilliseconds, unitless] =
+    readSharedTokens(
+      ":root {\n  --ep-fast: 0.16s;\n  --ep-color: rgba(49, 116, 96, 0.5);\n  --ep-link: var(--ep-color);\n  --ep-gap: 8px;\n  --ep-seconds: 1.001s;\n  --ep-fraction: 1.0001s;\n  --ep-weight: 600;\n}\n",
+    );
+  assert.equal(copyFormats(duration)[2].value, "Duration.seconds(0.16)");
+  assert.equal(copyFormats(duration)[3].value, '<integer name="ep_fast">160</integer>');
+  assert.equal(copyFormats(color)[3].value, '<color name="ep_color">#80317460</color>');
+  assert.equal(alias.resolved, color.resolved);
+  assert.equal(copyFormats(pixels).length, 2);
+  assert.equal(
+    copyFormats(wholeMilliseconds)[3].value,
+    '<integer name="ep_seconds">1001</integer>',
+  );
+  assert.equal(copyFormats(fractionalMilliseconds).length, 3);
+  assert.equal(copyFormats(unitless).length, 2);
+  assert.throws(
+    () => readSharedTokens(":root {\n  --ep-cycle: var(--ep-cycle);\n}\n"),
+    /Invalid token alias/,
+  );
 });
 
 test("page sync keeps one URL and serves immutable sandboxed HTML, CSS, and assets", async (t) => {
