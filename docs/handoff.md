@@ -465,3 +465,33 @@ EasyProtoMocks revisions 399–400 refine the compact token table. Browser verif
 ## Animated home mark
 
 EasyProtoMocks revision 398 adds the desktop Edge runner to **Web Home** and **Web Home · Joined waitlist**. Revision 399 limits the home animation to two passes. Both 1280 × 800 Dark captures were inspected again with no unresolved dependencies. The web hero and desktop canvas activity overlay share the SVG and motion styles. Chromium checks the running highlight and its duration, a visible static mark with reduced motion, and the mark after signup. The focused Electron checks cover the desktop activity overlay.
+
+## Hosted sharing demo
+
+The production release candidate is `f0efeb858bb583ba24bc993670ca71af5ca60dba`. Worker version `b28a5fc8-49d3-425e-864f-2c933f854b9c` serves the viewer on **easyproto.app** and the artifact route on **preview.easyproto.app**. The production database and Standard R2 bucket are separate from staging. Each environment has disabled workers.dev and version-preview aliases and uses the caps in the [web runbook](../apps/web/README.md#hosted-sharing). Production smoke reserved 4,134 bytes across two uploads and used ten artifact reads.
+
+The signed Mac bundle published one real HTML/CSS page from the desktop in staging and production. Chromium and WebKit verified the generated password, stable URL, old grant rejection, sandboxed live markup, computed CSS, and a loaded project image. The desktop preflight rejected the bundled font fixture, so this demo uses system typography. EasyProtoMocks revisions 402 and 403 cover the password workflow and compact viewer. The final keyboard smoke verified Escape closes the share dialog and restores Settings focus.
+
+The hosted implementation, tests and runbook are in the working tree based on `6e7908d`. Frontend design, Security and Infrastructure findings were addressed before cutover. Local evidence is retained under `evidence/hosted-sharing-f0efeb8/`. Keep the storage cap conservative until a detached-snapshot reconciliation workflow is qualified. Native custom-font capture is the next bounded desktop check.
+
+## Homepage tagline and search metadata
+
+EasyProtoMocks revision 404 updates **Web Home** and **Web Home · Joined waitlist** with the new tagline. Both captures were inspected and reported no unresolved dependencies. Production Worker version `d66ba0ea-da2d-48f4-be21-0b66d0e4f562` uses source candidate `35c27b978f84d0b6edfb88d90f3d1362b921e9ac`, based on the prior deployed release.
+
+The homepage serves its heading and tagline in the initial document alongside title, description, canonical URL, social metadata and software structured data. The production sitemap lists only the public homepage. Staging and share pages carry `noindex`. All 13 web checks passed, and staging and production HTTPS smoke tests verified crawler HTML, the sitemap policy, a protected viewer response and the homepage with and without JavaScript. Local evidence is under `evidence/homepage-seo-35c27b9/`.
+
+EasyProtoMocks revision 405 restores continuous motion to the Fold mark in both homepage states. Production Worker version `a3a9ffde-6f51-4941-9d39-da14528d83df` uses candidate `5df98ad6839c94da8097b97846aee41f7ee8cf25`. All 13 web checks passed. Live Chromium verified the animation advanced beyond its third pass on both hosts and the mark remained visible with reduced motion enabled.
+
+## Homepage first paint
+
+The prior production homepage painted a bare heading and tagline before React replaced them with the centered layout. Candidate `03d5f9238d6e9c26ff754423c16c0003a2b6855a` renders the landing component at build time. React attaches to that existing markup and enables the waitlist form. Staging Worker version `7aab163d-4b50-42d7-ac33-34e343bb7de4` and production Worker version `6984d274-8840-4ba9-afca-b2d0732c4064` use identical code and assets.
+
+All 14 web checks passed, including the regression that delays JavaScript and checks heading position and node identity. Live Chromium at 1180 px and WebKit at 390 px verified the same behavior on both hosts. The checkout remains based on `6e7908d`. Native custom-font capture remains the next desktop check.
+
+## Next.js web site
+
+Candidate `5fa8ffeff35ab0d204dcea8c8f800b3b8971c3eb` moves the homepage and shared viewer to a Next.js Pages Router static export. The homepage uses Next.js prerendering and metadata. The existing Cloudflare Worker serves the export, checks access to shares, and supplies the authorized viewer payload. The standalone legacy demo keeps its own Vite entry. Webpack produces an export compatible with the current script policy. Local preview runs through the Cloudflare Vite plugin directly because `cf dev` detects Next.js and delegates to its development server.
+
+Staging version `e4de2432-2259-4ad2-815f-6bcd47c9b4fe` and production version `9c095f2c-99b6-41e6-934e-d0591f7f8acb` use identical Worker code and assets. All 14 web checks and four local launcher checks passed. A loopback Worker served the export and its JavaScript. Chromium and WebKit verified stable first paint on both hosts. Pre-cutover homepage screenshots matched in desktop dark and mobile light. Both browsers unlocked the existing production demo and rendered its HTML, computed CSS, and image.
+
+A fresh desktop publish on staging reached its existing daily upload cap. Re-run that staging check after the window resets. The release keeps the current Cloudflare resources and limits. The checkout remains based on `6e7908d`.

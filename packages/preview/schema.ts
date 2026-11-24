@@ -90,4 +90,7 @@ export type WebPreviewInfo = {
   url?: string;
   revision?: number;
   updatedAt?: string;
+  hosted?: boolean;
+  access?: "public" | "protected";
+  password?: string;
 };

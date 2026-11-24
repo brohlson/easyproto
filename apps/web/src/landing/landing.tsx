@@ -1,13 +1,16 @@
 import { Brand, EdgeRunner, WorkspaceHeader } from "@easy-proto/ui";
-import { Link } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import chrome from "../chrome.module.css";
 import styles from "./landing.module.css";
+import { homeDescription } from "./content";
 
 export function Landing() {
+  const [ready, setReady] = useState(false);
   const [pending, setPending] = useState(false);
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => setReady(true), []);
+
   async function join(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending || joined) return;
@@ -37,20 +40,21 @@ export function Landing() {
     <div className={styles.landingPage}>
       <WorkspaceHeader
         brand={
-          <Link to="/" aria-label="Easy Proto home">
+          <a href="/" aria-label="Easy Proto home">
             <Brand />
-          </Link>
+          </a>
         }
       />
       <main className={styles.landingMain}>
         <section className={styles.landingHero} aria-labelledby="landing-title">
           <EdgeRunner className={styles.landingMark} animated />
           <h1 id="landing-title">Easy Proto</h1>
-          <p>
-            Easy Proto is a free, open-source tool for generating prototypes and managing tokens and
-            components for all of your digital products.
-          </p>
-          <form className={styles.waitlistForm} onSubmit={(event) => void join(event)}>
+          <p>{homeDescription}</p>
+          <form
+            className={styles.waitlistForm}
+            inert={!ready}
+            onSubmit={(event) => void join(event)}
+          >
             <label className={styles.visuallyHidden} htmlFor="waitlist-email">
               Email address
             </label>

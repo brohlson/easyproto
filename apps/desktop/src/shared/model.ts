@@ -217,6 +217,7 @@ export type DesktopBridge = {
     generation: number,
     pageId: string,
     expectedRevision?: number,
+    access?: "public" | "protected",
   ): Promise<WebPreviewInfo>;
   reportVisiblePage(generation: number, pageId: string): void;
   getScene(): Promise<DesktopState>;

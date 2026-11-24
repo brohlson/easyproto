@@ -3,6 +3,7 @@ export type SharedPage = Omit<PreviewManifest, "artboards" | "revision"> & {
   kind: "page-preview";
   id: string;
   updatedAt: string;
+  tokensUrl?: string;
   artboards: (Omit<
     PreviewManifest["artboards"][number],
     "document" | "stylesheet" | "tokens" | "assets"

@@ -63,9 +63,9 @@ On macOS, you can also choose the file from **Open project** in Settings. The so
 
 ## Try browser sharing
 
-Run `pnpm local:dev` to initialize local Cloudflare storage and launch the web app with a development desktop. Open [the local landing page](http://127.0.0.1:8787), then choose **Settings → Export page to web preview… → Sync page** in the desktop. Each page receives a stable `/p/<id>` URL; syncing again updates that link with a saved, read-only canvas snapshot. Waitlist emails persist in local D1, and artboard PNGs persist in local R2.
+Run `pnpm local:dev` to initialize local Cloudflare storage and launch the web app with a development desktop. Open [the local landing page](http://127.0.0.1:8787), then choose **Settings → Export page to web preview… → Sync page** in the desktop. Each page receives a stable `/p/<id>` URL. Syncing again updates that link with a saved, read-only canvas snapshot. Local D1 stores waitlist emails and share metadata. Local R2 stores the sanitized HTML, CSS, and declared assets.
 
-For just the website, run `pnpm local:setup` followed by `pnpm web:dev`. The [web walkthrough](apps/web/README.md) covers setup, choosing an existing project, preview limits, checks, and the preserved earlier sharing demo. The workspace keeps Electron in `apps/desktop/`, TanStack Router and the Worker in `apps/web/`, UI in `packages/ui/`, and the page snapshot contract in `packages/preview/`.
+For just the website, run `pnpm local:setup` followed by `pnpm web:dev`. The [web walkthrough](apps/web/README.md) covers setup, choosing an existing project, preview limits, checks, and the standalone legacy demo. The workspace keeps Electron in `apps/desktop/`, Next.js and the Worker in `apps/web/`, UI in `packages/ui/`, and the page snapshot contract in `packages/preview/`.
 
 ## Connect an external agent
 

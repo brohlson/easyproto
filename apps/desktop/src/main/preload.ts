@@ -2,8 +2,8 @@ import { contextBridge, ipcRenderer } from "electron";
 import { ipc, type DesktopBridge, type DesktopState } from "../shared/model";
 
 const bridge: DesktopBridge = {
-  webPreview: (action, generation, pageId, revision) =>
-    ipcRenderer.invoke(ipc.webPreview, action, generation, pageId, revision),
+  webPreview: (action, generation, pageId, revision, access) =>
+    ipcRenderer.invoke(ipc.webPreview, action, generation, pageId, revision, access),
   reportVisiblePage: (generation, pageId) => ipcRenderer.send(ipc.visiblePage, generation, pageId),
   getScene: () => ipcRenderer.invoke(ipc.scene),
   getTokens: (generation) => ipcRenderer.invoke(ipc.tokens, generation),

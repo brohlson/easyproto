@@ -89,11 +89,11 @@ export async function start({
   });
   preview.protect(window.webContents);
   const webSettings = await readWebPreviewSettings(
-    app.isPackaged ? undefined : resolve(app.getAppPath(), "../../.local/web-preview.json"),
+    app.isPackaged
+      ? join(app.getPath("userData"), "web-preview.json")
+      : resolve(app.getAppPath(), "../../.local/web-preview.json"),
   ).catch(() => {
-    console.warn(
-      "Local web preview settings are unavailable. Check the development configuration.",
-    );
+    console.warn("Web preview settings are unavailable. Check the configuration.");
     return undefined;
   });
   function scene(): DesktopState {

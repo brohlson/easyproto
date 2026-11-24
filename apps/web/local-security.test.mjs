@@ -19,6 +19,7 @@ test("Vite denies private preview configuration, state, and project files withou
   const locations = [
     [join(root, ".local", `security-${suffix}`), "web-preview.json"],
     [join(web, ".cloudflare", `security-${suffix}`), "state.txt"],
+    [join(web, ".next", `security-${suffix}`), "server.txt"],
     [join(root, "mocks/.workspace", `security-${suffix}`), "private.txt"],
   ];
   const extra = [

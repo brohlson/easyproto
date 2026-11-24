@@ -1,0 +1,28 @@
+.viewport {
+  min-height: calc(100dvh - var(--ep-desktop-layout-header));
+  display: grid;
+  place-items: center;
+  padding: var(--ep-desktop-space-24);
+}
+.card {
+  width: min(420px, 100%);
+  padding: var(--ep-desktop-space-26);
+  border: var(--ep-desktop-stroke-border) solid var(--border);
+  border-radius: var(--ep-desktop-radius-dialog);
+  background: var(--background);
+}
+.card h1 {
+  margin: 0;
+  font-size: var(--ep-desktop-type-size-title);
+}
+.card p {
+  color: var(--muted-foreground);
+  margin: var(--ep-desktop-space-10) 0 var(--ep-desktop-space-16);
+}
+.card label {
+  display: grid;
+  gap: var(--ep-desktop-space-6);
+}
+.card button {
+  margin-top: var(--ep-desktop-space-12);
+}

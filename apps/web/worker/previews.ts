@@ -51,11 +51,34 @@ export async function serveArtifact(
     .first<{ manifest: string }>();
   if (!snapshot) return error("Preview unavailable.", 404);
   const manifest = previewManifest.parse(JSON.parse(snapshot.manifest));
-  const board = manifest.artboards.find(({ id }) => id === artifact[2]);
+  const prefix = `/preview-artifacts/${artifact[1]}/${artifact[2]}/`;
+  return serveBoardFile(
+    request,
+    env,
+    artifact[1],
+    manifest,
+    artifact[2],
+    artifact[3],
+    url.origin + prefix,
+    "'self'",
+  );
+}
+
+export async function serveBoardFile(
+  request: Request,
+  env: Env,
+  snapshot: string,
+  manifest: PreviewManifest,
+  boardId: string,
+  relative: string,
+  base: string,
+  ancestor: string,
+) {
+  const board = manifest.artboards.find(({ id }) => id === boardId);
   if (!board) return error("Preview unavailable.", 404);
   let resource: string;
   try {
-    const parts = artifact[3].split("/").map((part) => decodeURIComponent(part));
+    const parts = relative.split("/").map((part) => decodeURIComponent(part));
     if (
       parts.some(
         // oxlint-disable-next-line no-control-regex
@@ -74,7 +97,9 @@ export async function serveArtifact(
     (resource.startsWith("assets/") &&
       board.assets.some(({ path }) => path === resource.slice("assets/".length)));
   if (!allowed) return error("Preview unavailable.", 404);
-  const object = await env.PREVIEWS.get(`snapshots/${artifact[1]}/${board.id}/${resource}`);
+  const key = `snapshots/${snapshot}/${board.id}/${resource}`;
+  const head = request.method === "HEAD";
+  const object = head ? await env.PREVIEWS.head(key) : await env.PREVIEWS.get(key);
   if (!object) return error("Preview unavailable.", 404);
   const responseHeaders = { ...headers } as Record<string, string>;
   const entry = resource === "index.html";
@@ -85,13 +110,16 @@ export async function serveArtifact(
       : (board.assets.find(({ path }) => path === resource.slice("assets/".length))?.mime ??
         "application/octet-stream");
   if (entry) {
-    const base = `${url.origin}/preview-artifacts/${artifact[1]}/${board.id}/`;
     responseHeaders["content-security-policy"] =
       `sandbox; default-src 'none'; style-src 'unsafe-inline' ${base}board.css ${base}tokens.css; ` +
       `img-src ${base}assets/ data:; font-src ${base}assets/; connect-src 'none'; ` +
-      "frame-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'";
+      `frame-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors ${ancestor}`;
   }
-  return new Response(request.method === "HEAD" ? null : object.body, {
+  if (responseHeaders["content-type"].startsWith("font/")) {
+    // A sandboxed document has an opaque origin even on the artifact host.
+    responseHeaders["access-control-allow-origin"] = "*";
+  }
+  return new Response(head ? null : (object as R2ObjectBody).body, {
     headers: responseHeaders,
   });
 }

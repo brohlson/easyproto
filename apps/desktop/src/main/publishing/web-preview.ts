@@ -1,19 +1,26 @@
-import { readFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open } from "node:fs/promises";
 import { z } from "zod";
 import { pageUpload, previewHtml, previewLimits, type WebPreviewInfo } from "@easy-proto/preview";
 import { Project, type Snapshot } from "../document/project";
 import type { Artboard } from "../../shared/model";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
-export type WebPreviewSettings = { origin: string; token: string };
+export type WebPreviewSettings = { origin: string; token: string; mode?: "hosted" };
 const settingsSchema = z.strictObject({
   origin: z.url(),
   token: z.string().regex(/^[\w-]{43,128}$/),
+  mode: z.literal("hosted").optional(),
 });
 const savedSchema = z.object({
   id: z.uuid(),
   revision: z.number().int().nonnegative(),
   updatedAt: z.iso.datetime(),
+  access: z.enum(["public", "protected"]).optional(),
+  password: z
+    .string()
+    .regex(/^[\w-]{22}$/)
+    .optional(),
 });
 
 export async function readWebPreviewSettings(
@@ -21,29 +28,68 @@ export async function readWebPreviewSettings(
   env = process.env,
 ): Promise<WebPreviewSettings | undefined> {
   let value: unknown;
-  if (env.EASY_PROTO_WEB_ORIGIN || env.EASY_PROTO_WEB_TOKEN)
+  if (env.EASY_PROTO_WEB_HOSTED_ORIGIN || env.EASY_PROTO_WEB_HOSTED_TOKEN)
+    value = {
+      origin: env.EASY_PROTO_WEB_HOSTED_ORIGIN,
+      token: env.EASY_PROTO_WEB_HOSTED_TOKEN,
+      mode: "hosted",
+    };
+  else if (env.EASY_PROTO_WEB_ORIGIN || env.EASY_PROTO_WEB_TOKEN)
     value = { origin: env.EASY_PROTO_WEB_ORIGIN, token: env.EASY_PROTO_WEB_TOKEN };
   else if (path) {
-    const contents = await readFile(path, "utf8").catch((failure: NodeJS.ErrnoException) => {
+    const file = await open(
+      path,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    ).catch((failure: NodeJS.ErrnoException) => {
       if (failure.code !== "ENOENT")
         throw new Error("Local web preview settings could not be read.");
+      return undefined;
     });
-    if (contents) value = JSON.parse(contents);
+    if (file) {
+      try {
+        const stat = await file.stat();
+        const buffer = Buffer.alloc(1025);
+        if (!stat.isFile() || stat.size > 1024)
+          throw new Error("Invalid web preview settings file.");
+        const { bytesRead } = await file.read(buffer);
+        if (bytesRead > 1024) throw new Error("Invalid web preview settings file.");
+        if (bytesRead) {
+          const parsed = settingsSchema.parse(JSON.parse(buffer.toString("utf8", 0, bytesRead)));
+          if (
+            parsed.mode === "hosted" &&
+            (stat.nlink !== 1 || stat.uid !== process.getuid?.() || (stat.mode & 0o077) !== 0)
+          )
+            throw new Error(
+              "Hosted preview settings must be a private file owned by your account.",
+            );
+          value = parsed;
+        }
+      } finally {
+        await file.close();
+      }
+    }
   }
   if (!value) return;
   const settings = settingsSchema.parse(value);
   const origin = new URL(settings.origin);
-  if (
-    origin.protocol !== "http:" ||
-    !["127.0.0.1", "localhost", "[::1]"].includes(origin.hostname) ||
-    origin.username ||
-    origin.password ||
-    origin.pathname !== "/" ||
-    origin.search ||
-    origin.hash
-  )
+  if (origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash)
+    throw new Error("The preview endpoint must be an origin.");
+  if (settings.mode === "hosted") {
+    if (
+      origin.protocol !== "https:" ||
+      !["easyproto.app", "staging.easyproto.app"].includes(origin.host) ||
+      settings.token.length !== 43
+    )
+      throw new Error("Hosted preview settings must use an Easy Proto HTTPS origin.");
+    return { origin: origin.origin, token: settings.token, mode: "hosted" };
+  }
+  if (origin.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(origin.hostname))
     throw new Error("The local preview endpoint must be an HTTP loopback origin.");
   return { origin: origin.origin, token: settings.token };
+}
+
+function endpoint(settings: WebPreviewSettings, action: "page" | "sync") {
+  return new URL(`/api/${settings.mode ?? "local"}/${action}`, settings.origin);
 }
 
 export function pageInfo(project: Project, pageId: string, configured: boolean): WebPreviewInfo {
@@ -62,8 +108,18 @@ async function responseData(response: Response) {
   if (!response.ok) {
     if (response.status === 409)
       throw new Error("A newer revision is already online. Refresh the page and sync again.");
+    if (response.status === 413)
+      throw new Error(
+        "This page exceeds the preview limits. Try fewer artboards or smaller assets.",
+      );
+    if (response.status === 429)
+      throw new Error("The preview usage limit has been reached. Try again later.");
+    if (response.status === 425)
+      throw new Error("This sync is still finishing. Try again shortly.");
+    if (response.status === 507)
+      throw new Error("Hosted preview storage is full. Free up space before syncing again.");
     throw new Error(
-      "The local preview service could not sync this page. Check that the local web environment is running.",
+      "The preview service could not sync this page. Check the connection and try again.",
     );
   }
   return response.json();
@@ -76,7 +132,7 @@ export async function webPreviewStatus(
   signal?: AbortSignal,
   request = fetch,
 ): Promise<WebPreviewInfo> {
-  const url = new URL("/api/local/page", settings.origin);
+  const url = endpoint(settings, "page");
   url.searchParams.set("projectId", project.snapshot.manifest.projectId);
   url.searchParams.set("pageId", pageId);
   const response = await request(url, {
@@ -91,6 +147,7 @@ export async function webPreviewStatus(
     .parse(await responseData(response));
   return {
     ...pageInfo(project, pageId, true),
+    ...(settings.mode === "hosted" ? { hosted: true, access: preview?.access } : {}),
     ...(preview
       ? {
           url: `${settings.origin}/p/${preview.id}`,
@@ -114,6 +171,8 @@ export async function syncPagePreview(
   capture: Capture,
   signal: AbortSignal,
   request = fetch,
+  access?: "public" | "protected",
+  requestId?: string,
 ): Promise<WebPreviewInfo> {
   const snapshot = project.snapshot;
   if (snapshot.manifest.revision !== expectedRevision)
@@ -138,7 +197,7 @@ export async function syncPagePreview(
     const { details } = await capture(snapshot, board, signal);
     if (details.unresolved.length)
       throw new Error(
-        `“${board.name}” has unavailable images or fonts. Resolve them before syncing.`,
+        `“${board.name}” has unavailable images or fonts. ${details.unresolved.slice(0, 2).join(". ")}`,
       );
     const source = snapshot.sources.get(board.id);
     if (!source) throw new Error(`“${board.name}” has no saved source.`);
@@ -211,6 +270,7 @@ export async function syncPagePreview(
   });
   const body = new FormData();
   body.set("manifest", JSON.stringify(upload));
+  if (settings.mode === "hosted" && access) body.set("access", access);
   for (const { board, document, stylesheet, tokens, assets } of members) {
     body.set(
       `${board.id}:document`,
@@ -236,9 +296,12 @@ export async function syncPagePreview(
       ),
     );
   }
-  const response = await request(new URL("/api/local/sync", settings.origin), {
+  const response = await request(endpoint(settings, "sync"), {
     method: "POST",
-    headers: { authorization: `Bearer ${settings.token}` },
+    headers: {
+      authorization: `Bearer ${settings.token}`,
+      ...(settings.mode === "hosted" ? { "idempotency-key": requestId ?? randomUUID() } : {}),
+    },
     body,
     signal: AbortSignal.any([signal, AbortSignal.timeout(90_000)]),
     redirect: "error",
@@ -249,5 +312,8 @@ export async function syncPagePreview(
     url: `${settings.origin}/p/${saved.id}`,
     revision: saved.revision,
     updatedAt: saved.updatedAt,
+    ...(settings.mode === "hosted"
+      ? { hosted: true, access: saved.access, password: saved.password }
+      : {}),
   };
 }

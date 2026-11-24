@@ -1,5 +1,5 @@
 import "@easy-proto/ui/theme.css";
-import "./base.css";
+import "../src/base.css";
 import {
   createRootRoute,
   createRoute,
@@ -7,20 +7,13 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
-import faviconUrl from "@easy-proto/ui/fold.svg?url";
-import { Demo, DemoError } from "./demo/demo";
-import type { Page } from "./page";
-import { Landing } from "./landing/landing";
-import { SharedCanvas } from "./shared-viewer/shared-viewer";
-
-const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-if (favicon) favicon.href = faviconUrl;
+import { Demo, DemoError } from "../src/demo/demo";
+import type { DemoPage } from "../src/demo/page";
 
 const payload = document.querySelector<HTMLScriptElement>("#page-data");
 let firstPage = payload?.textContent
-  ? { path: location.pathname, data: JSON.parse(payload.textContent) as Page }
+  ? { path: location.pathname, data: JSON.parse(payload.textContent) as DemoPage }
   : undefined;
 payload?.remove();
 
@@ -42,7 +35,7 @@ async function loadPage({
     signal: abortController.signal,
   });
   if (!response.ok) return { kind: "unavailable" } as const;
-  return (await response.json()) as Page;
+  return (await response.json()) as DemoPage;
 }
 
 const rootRoute = createRootRoute({
@@ -50,16 +43,6 @@ const rootRoute = createRootRoute({
   errorComponent: DemoError,
   notFoundComponent: DemoError,
 });
-
-function Layout({ view }: { view: Page }) {
-  useLayoutEffect(() => {
-    document.title =
-      view.kind === "page-preview" ? `${view.projectName} - ${view.pageName}` : "Easy Proto";
-  }, [view]);
-  if (view.kind === "landing") return <Landing />;
-  if (view.kind === "page-preview") return <SharedCanvas view={view} />;
-  return <Demo view={view} />;
-}
 
 function pageRoute<const Path extends string>(path: Path) {
   const route = createRoute({
@@ -69,7 +52,7 @@ function pageRoute<const Path extends string>(path: Path) {
     component: RoutePage,
   });
   function RoutePage() {
-    return <Layout view={route.useLoaderData()} />;
+    return <Demo view={route.useLoaderData()} />;
   }
   return route;
 }
@@ -77,7 +60,6 @@ function pageRoute<const Path extends string>(path: Path) {
 const routeTree = rootRoute.addChildren([
   pageRoute("/"),
   pageRoute("/demo"),
-  pageRoute("/p/$previewId"),
   pageRoute("/dev/inbox"),
   pageRoute("/auth/continue"),
   pageRoute("/publish"),

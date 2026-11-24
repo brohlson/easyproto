@@ -22,7 +22,6 @@
   text-align: center;
 }
 .landingMark {
-  --ep-edge-runner-iterations: 2;
   width: 64px;
   height: 64px;
   margin-bottom: 26px;

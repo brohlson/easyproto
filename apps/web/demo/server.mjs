@@ -127,7 +127,8 @@ async function form(request) {
 export async function startWeb(port = 8787) {
   const shell = readFileSync(new URL("../dist/index.html", import.meta.url), "utf8");
   const mount = '<div id="root"></div>';
-  if (!shell.includes(mount)) throw new Error("Build the web app with pnpm web:build.");
+  if (!shell.includes(mount))
+    throw new Error("Build the demo with pnpm --filter @easy-proto/web demo:build.");
   const database = initDatabase();
   const inbox = new Map();
   let origin;

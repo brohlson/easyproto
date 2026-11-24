@@ -4,9 +4,9 @@ The landing page collects waitlist emails in local Cloudflare D1. A read-only pa
 
 ## Source layout
 
-- `src/app.tsx` connects routes to the landing page, shared viewer, and legacy demo. Each feature keeps its own styles. Both viewers use `src/canvas/` for pan and zoom.
-- `worker/index.ts` owns request dispatch and error handling. The adjacent modules own waitlist signup, desktop publishing, public previews and artifacts, and the site shell.
-- `demo/` contains the standalone Node server and HTML artboards for the legacy demo. The Worker continues to serve the current sharing workflow.
+- `src/pages/` contains the Next.js Pages Router entry points for the homepage and shared viewer. Feature components keep their CSS Modules colocated. Both viewers use `src/canvas/` for pan and zoom.
+- `worker/index.ts` owns request dispatch and error handling. The Worker serves the static Next.js export and handles waitlist signup, desktop publishing, and authorized access to previews and artifacts. Access to the viewer shell goes through the same share checks as before.
+- `demo/` contains the standalone Vite entry, Node server, and HTML artboards for the legacy demo.
 
 ## Start locally
 
@@ -34,11 +34,13 @@ pnpm web:dev
 
 If a standalone server is already using port 8787, stop it before starting `local:dev`.
 
+The local Worker serves the Next.js export built at startup. Run `pnpm --filter @easy-proto/web site:build` after changing the site. The production build uses Next.js static export with webpack so the site runs under the Worker's existing same-origin script policy. The Next.js build requires no Cloudflare bindings or credentials.
+
 The launcher creates private `.local/web-preview.json` and ignored `apps/web/.dev.vars` with matching publisher capabilities. Existing matching configuration is preserved; mismatched keys are refused. The development desktop reads this configuration or the `EASY_PROTO_WEB_ORIGIN`/`EASY_PROTO_WEB_TOKEN` environment variables. Only HTTP loopback origins are accepted. The capability never reaches renderer code, preview links, or project files.
 
 Local D1/R2 state persists in `apps/web/.cloudflare/state`. The development registry stays in `.local/cloudflare-registry`. Polling supports environments with restricted file watchers; set `CHOKIDAR_USEPOLLING=0` to prefer native watching. The configured D1 UUID is a local identifier; a hosted deployment needs its own resource and authentication configuration.
 
-Vite's file endpoint denies private local settings, `.dev.vars`, Cloudflare state, working mockups, managed project history, and `.easyproto` files, alongside Vite's standard credential-file exclusions. The regression check uses disposable fixtures and confirms public UI assets remain available.
+Vite's file endpoint denies private local settings, `.dev.vars`, Cloudflare state, Next.js build internals, working mockups, managed project history, and `.easyproto` files, alongside Vite's standard credential-file exclusions. The regression check uses disposable fixtures and confirms public UI assets remain available.
 
 ## Export the current page
 
@@ -75,4 +77,16 @@ pnpm --filter @easy-proto/web demo:start
 
 Open `http://127.0.0.1:8787/demo` and sign in with `owner@example.test` using the local inbox. This Node demo uses ephemeral sessions and synthetic sandboxed HTML fixtures. `web:verify` retains its HTTP and Chromium tests after the new Worker checks. Playwright Chromium must be installed for the browser portion.
 
-Hosted publisher identity/ownership, real resources, waitlist abuse controls, retention/revocation, and the production pipeline are the next scope. See [sharing architecture](../../docs/web-sharing-architecture.md).
+See the [sharing architecture](../../docs/web-sharing-architecture.md) for the single-owner hosted slice and later multi-owner work.
+
+## Hosted sharing
+
+The hosted deployment supports one trusted desktop publisher per environment. The desktop main process reads the local profile's `web-preview.json` with `mode` set to `hosted`, an Easy Proto HTTPS `origin`, and the environment's private publisher `token`. A disposable development session can instead use `EASY_PROTO_WEB_HOSTED_ORIGIN` and `EASY_PROTO_WEB_HOSTED_TOKEN`. Keep the publisher token in a user-only file or secret store. The renderer only receives the share URL and, when requested, a newly generated guest password.
+
+Hosted shares support stable links, live artboards, and optional generated access passwords. Changing access takes effect on the next sync and invalidates previous guest and artifact grants. A retry of the same sync returns the original result and password. Send passwords separately from the share URL. Hosted artboards use an artifact-only hostname. The viewer issues short-lived, board-scoped URLs that allow iframe HTML and its resource requests without cookies on the artifact hostname.
+
+Use separate D1 databases, private Standard R2 buckets, and Worker secrets for staging and production. Apply the migrations in order. Package a built Worker with `node apps/web/scripts/package-hosted.mjs staging <database-uuid>` or use `production` for the apex. The command returns a temporary directory for the pinned `cf deploy --prebuilt --no-provision` command. Supply `HOSTED_PUBLISH_TOKEN` and `SHARE_KEY` with a private JSON secrets file. Attach the viewer and artifact Custom Domains, disable the workers.dev and version preview aliases, and verify that the artifact host cannot serve the viewer or publish routes.
+
+Each environment allows ten upload attempts per UTC day, at most 5 MiB, eight artboards and 25 files per upload, and up to 5,000 authorized artifact reads per UTC day. The Worker reserves storage before writing to R2 and stops accepting uploads at 250 MiB of cumulative reservations per environment. Reservations are conservative and can include failed uploads. Storage accounting is not reset automatically, and no snapshot deletion is scheduled. If the cap is reached, reconcile the reservations and private bucket contents while publishing is disabled before adjusting the balance. These limits cover this app's operations. They do not cap other activity in the Cloudflare account.
+
+Use `node scripts/verify-hosted-sharing.mjs <viewer-origin> <private-secrets-file>` after a desktop build to publish a disposable page from the actual Electron interface and verify the guest view in Chromium and WebKit. Run the verifier against staging before promoting. Keep a known-good hosted revision available for rollback. A build from before hosted access should only be restored with both hosted routes disabled.

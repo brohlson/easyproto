@@ -91,7 +91,7 @@ function TokenActions({ token, notify }: { token: SharedToken; notify(message: s
 
 type TokenState = { kind: "loading" | "error" } | { kind: "ready"; rows: SharedToken[] };
 
-export function TokenDialog({ iframeUrl }: { iframeUrl?: string }) {
+export function TokenDialog({ iframeUrl, tokensUrl }: { iframeUrl?: string; tokensUrl?: string }) {
   const title = useId();
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -105,11 +105,13 @@ export function TokenDialog({ iframeUrl }: { iframeUrl?: string }) {
     const controller = new AbortController();
     async function load() {
       try {
-        if (!iframeUrl) {
+        if (!tokensUrl && !iframeUrl) {
           setState({ kind: "ready", rows: [] });
           return;
         }
-        const url = new URL("tokens.css", new URL(iframeUrl, location.origin));
+        const url = tokensUrl
+          ? new URL(tokensUrl, location.origin)
+          : new URL("tokens.css", new URL(iframeUrl!, location.origin));
         if (url.origin !== location.origin) throw new Error("Unexpected preview origin.");
         const response = await fetch(url, { mode: "same-origin", signal: controller.signal });
         if (!response.ok && response.status !== 404) throw new Error("Could not load tokens.");
@@ -121,7 +123,7 @@ export function TokenDialog({ iframeUrl }: { iframeUrl?: string }) {
     }
     void load();
     return () => controller.abort();
-  }, [iframeUrl, open, state.kind]);
+  }, [iframeUrl, tokensUrl, open, state.kind]);
 
   const rows =
     state.kind === "ready"

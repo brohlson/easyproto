@@ -73,10 +73,15 @@ async function fixture(t) {
       "pixel.png",
     );
     if (files.extra) body.set("unexpected", new Blob(["x"]), "x.txt");
+    if (files.access) body.set("access", files.access);
     return worker.fetch(
-      new Request("http://127.0.0.1:8787/api/local/sync", {
+      new Request(files.endpoint ?? "http://127.0.0.1:8787/api/local/sync", {
         method: "POST",
-        headers: { authorization: `Bearer ${token}`, ...extraHeaders },
+        headers: {
+          authorization: `Bearer ${token}`,
+          ...(files.endpoint ? { "idempotency-key": files.requestId ?? randomUUID() } : {}),
+          ...extraHeaders,
+        },
         body,
       }),
       env,
@@ -84,6 +89,213 @@ async function fixture(t) {
   }
   return { database, objects, env, metadata, document, image, rawHtml, sync, token };
 }
+
+test("only the public homepage is indexable and its discovery metadata is in the initial HTML", async (t) => {
+  const { env } = await workerFixture(t);
+  const production = "https://easyproto.app";
+  const staging = "https://staging.easyproto.app";
+  const workerEnv = (origin) => ({
+    ...env,
+    VIEWER_ORIGIN: origin,
+    ARTIFACT_ORIGIN: "https://preview.easyproto.app",
+    SHARE_KEY: "s".repeat(43),
+  });
+  const call = (origin, path = "/", options) =>
+    worker.fetch(new Request(origin + path, options), workerEnv(origin));
+  const response = await call(production, "/?source=test");
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-robots-tag"), null);
+  const markup = await response.text();
+  const tagline =
+    "Easy Proto is a free, open-source tool that brings prototyping, design tokens, and component management into a single workspace.";
+  assert.ok(markup.includes(`<meta name="description" content="${tagline}"`));
+  assert.ok(markup.includes(`<h1 id="landing-title">Easy Proto</h1><p>${tagline}</p>`));
+  assert.match(
+    markup,
+    /<title\b[^>]*>Easy Proto \| Open-source prototyping and design tokens<\/title>/,
+  );
+  assert.match(markup, /<link rel="canonical" href="https:\/\/easyproto\.app\/"/);
+  assert.match(markup, /<meta property="og:url" content="https:\/\/easyproto\.app\/"/);
+  assert.match(markup, /"@type":"SoftwareApplication"/);
+  assert.match(markup, /id="__NEXT_DATA__"/);
+  for (const [, attributes] of markup.matchAll(/<script\b([^>]*)>/g))
+    assert.match(attributes, /\bsrc="\/_next\/static\/|\btype="application\/(?:json|ld\+json)"/);
+
+  const robots = await call(production, "/robots.txt");
+  assert.match(await robots.text(), /Sitemap: https:\/\/easyproto\.app\/sitemap\.xml/);
+  const sitemap = await call(production, "/sitemap.xml");
+  assert.match(sitemap.headers.get("content-type"), /application\/xml/);
+  assert.deepEqual(
+    [...(await sitemap.text()).matchAll(/<loc>([^<]*)<\/loc>/g)].map((match) => match[1]),
+    [production + "/"],
+  );
+  assert.equal((await call(production, "/index.html")).headers.get("location"), production + "/");
+  assert.equal((await call(production, "/made-up-page")).status, 404);
+  for (const origin of [production, staging]) {
+    assert.equal((await call(origin, "/shared-preview.html")).status, 404);
+    assert.equal((await call(origin, "/demo")).status, 404);
+  }
+  assert.match((await call(staging)).headers.get("x-robots-tag"), /noindex/);
+  assert.equal((await call(staging, "/sitemap.xml")).status, 404);
+  assert.equal((await call(production, "/sitemap.xml", { method: "HEAD" })).status, 200);
+});
+
+test("hosted shares protect metadata and resources, keep the link on sync, and rotate access", async (t) => {
+  const { database, env, metadata, rawHtml, sync, token } = await fixture(t);
+  const origin = "https://viewer.example.test";
+  const artifacts = "https://artifacts.example.test";
+  Object.assign(env, {
+    VIEWER_ORIGIN: origin,
+    ARTIFACT_ORIGIN: artifacts,
+    SHARE_KEY: "k".repeat(43),
+    HOSTED_PUBLISH_TOKEN: token,
+  });
+  const endpoint = origin + "/api/hosted/sync";
+  const call = (url, options) => worker.fetch(new Request(url, options), env);
+  assert.equal((await sync()).status, 404);
+  assert.equal((await sync(metadata, { endpoint }, { origin })).status, 403);
+  assert.equal(
+    (await sync(metadata, { endpoint }, { authorization: "Bearer " + "z".repeat(43) })).status,
+    403,
+  );
+  const tokens = Buffer.from(":root {\n  --ep-color-test: #123456;\n}\n");
+  const document = Buffer.from(previewHtml(rawHtml, true));
+  const manifest = {
+    ...metadata.manifest,
+    artboards: [
+      { ...metadata.manifest.artboards[0], document: member(document), tokens: member(tokens) },
+    ],
+  };
+  const publish = async (access, revision, requestId) => {
+    const response = await sync(
+      { ...metadata, manifest: { ...manifest, revision } },
+      { endpoint, document, tokens, access, requestId },
+    );
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  const plain = await publish(undefined, 1);
+  const url = origin + "/p/" + plain.id;
+  const api = origin + "/api/previews/" + plain.id;
+  const getJson = async (cookie) => (await call(api, { headers: cookie ? { cookie } : {} })).json();
+  const publicView = await getJson();
+  const oldDocument = publicView.artboards[0].iframeUrl;
+  assert.equal(new URL(oldDocument).origin, artifacts);
+  assert.equal((await call(oldDocument)).status, 200);
+  const requestId = randomUUID();
+  const locked = await publish("protected", 2, requestId);
+  assert.equal(locked.id, plain.id);
+  assert.match(locked.password, /^[\w-]{22}$/);
+  const reserved = database
+    .prepare("SELECT reserved_bytes FROM hosted_storage_budget")
+    .get().reserved_bytes;
+  assert.deepEqual(await publish("protected", 2, requestId), locked);
+  assert.equal(
+    database.prepare("SELECT reserved_bytes FROM hosted_storage_budget").get().reserved_bytes,
+    reserved,
+  );
+  assert.equal(
+    (
+      await sync(
+        { ...metadata, manifest: { ...manifest, revision: 2 } },
+        {
+          endpoint,
+          document,
+          tokens,
+          requestId,
+          access: "public",
+        },
+      )
+    ).status,
+    409,
+  );
+  assert.equal((await call(oldDocument)).status, 404);
+  assert.equal((await call(api + "/tokens")).status, 404);
+  assert.deepEqual(await getJson(), { kind: "locked-preview", id: plain.id });
+  const shell = await call(url);
+  assert.match(shell.headers.get("cache-control"), /no-store/);
+  assert.match(shell.headers.get("x-robots-tag"), /noindex/);
+  assert.doesNotMatch(await shell.text(), /Notes|Concepts|rel="canonical"/);
+  const unlock = (password, sender = origin, ip = "192.0.2.1") =>
+    call(api + "/unlock", {
+      method: "POST",
+      headers: { origin: sender, "Content-Type": "application/json", "CF-Connecting-IP": ip },
+      body: JSON.stringify({ password }),
+    });
+  assert.equal((await unlock(locked.password, artifacts)).status, 404);
+  assert.equal((await unlock("incorrect")).status, 401);
+  const authorized = await unlock(locked.password);
+  assert.equal(authorized.status, 204);
+  const setCookie = authorized.headers.get("set-cookie");
+  assert.match(setCookie, /Secure; HttpOnly; SameSite=Strict/);
+  const cookie = setCookie.split(";")[0];
+  const page = await getJson(cookie);
+  const frame = page.artboards[0].iframeUrl;
+  for (const resource of ["index.html", "board.css", "tokens.css", "assets/pixel.png"]) {
+    const link = new URL(resource, frame);
+    const res = await call(link);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("cache-control"), /no-store/);
+    assert.equal((await call(link, { method: "HEAD" })).status, 200);
+    assert.equal((await call(new URL(link.pathname, origin))).status, 404);
+  }
+  assert.equal(
+    (await call(frame.replace(metadata.manifest.artboards[0].id, randomUUID()))).status,
+    404,
+  );
+  assert.match(
+    await (await call(origin + page.tokensUrl, { headers: { cookie } })).text(),
+    /--ep-color-test/,
+  );
+  const sameAccess = await publish(undefined, 3);
+  assert.equal(sameAccess.access, "protected");
+  assert.equal((await getJson(cookie)).kind, "page-preview");
+  const untilRotation = (await getJson(cookie)).artboards[0].iframeUrl;
+  const rotated = await publish("protected", 4);
+  assert.equal(rotated.id, plain.id);
+  assert.notEqual(rotated.password, locked.password);
+  assert.equal((await unlock(locked.password)).status, 401);
+  assert.equal((await getJson(cookie)).kind, "locked-preview");
+  assert.equal((await call(untilRotation)).status, 404);
+  assert.equal((await unlock(rotated.password)).status, 204);
+  assert.equal((await unlock(rotated.password)).status, 429);
+  assert.equal((await unlock(rotated.password, origin, "192.0.2.2")).status, 204);
+  assert.equal(
+    database.prepare("SELECT hits FROM hosted_limits WHERE scope=?").get(`unlock:${plain.id}`).hits,
+    5,
+  );
+  assert.ok(
+    !database
+      .prepare("SELECT verifier FROM hosted_shares")
+      .get()
+      .verifier.includes(rotated.password),
+  );
+  const different = await sync(
+    { ...metadata, pageId: randomUUID() },
+    { endpoint, access: "protected" },
+  );
+  assert.equal(different.status, 200);
+  const other = await different.json();
+  database.prepare("UPDATE hosted_limits SET hits=8 WHERE scope=?").run(`unlock:${plain.id}`);
+  assert.equal((await unlock(rotated.password)).status, 429);
+  assert.equal(
+    (
+      await call(origin + "/api/previews/" + other.id + "/unlock", {
+        method: "POST",
+        headers: { origin, "Content-Type": "application/json" },
+        body: JSON.stringify({ password: other.password }),
+      })
+    ).status,
+    204,
+  );
+  const unlocked = await publish("public", 5);
+  assert.equal(unlocked.access, "public");
+  assert.equal((await getJson()).kind, "page-preview");
+  database.prepare("UPDATE hosted_storage_budget SET reserved_bytes=262144000").run();
+  assert.equal((await sync(metadata, { endpoint })).status, 507);
+  database.prepare("UPDATE hosted_limits SET hits=10 WHERE scope='upload'").run();
+  assert.equal((await sync(metadata, { endpoint })).status, 429);
+});
 
 test("waitlist normalizes and deduplicates emails and rejects invalid or cross-origin requests", async (t) => {
   const { database, env } = await fixture(t);
@@ -112,23 +324,6 @@ test("waitlist normalizes and deduplicates emails and rejects invalid or cross-o
 });
 
 async function browserPage(t, env, origin) {
-  const assets = new URL("./.cloudflare/output/v1/workers/default/assets/", import.meta.url);
-  const contentTypes = {
-    ".html": "text/html",
-    ".js": "text/javascript",
-    ".css": "text/css",
-    ".svg": "image/svg+xml",
-    ".woff2": "font/woff2",
-  };
-  env.ASSETS.fetch = async (request) => {
-    const path = new URL(request.url).pathname;
-    const asset = path.startsWith("/assets/") ? path.slice(1) : "index.html";
-    const extension = asset.slice(asset.lastIndexOf("."));
-    return new Response(await readFile(new URL(asset, assets)), {
-      headers: { "content-type": contentTypes[extension] },
-    });
-  };
-
   const browser = await chromium.launch();
   t.after(() => browser.close());
   const page = await browser.newPage();
@@ -151,6 +346,43 @@ async function browserPage(t, env, origin) {
   });
   return page;
 }
+
+test("the homepage keeps its first paint when JavaScript loads", async (t) => {
+  const origin = "http://127.0.0.1:8787";
+  const { env } = await fixture(t);
+  const page = await browserPage(t, env, origin);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const scriptReady = Promise.withResolvers();
+  await page.route(/\/_next\/static\/.*\.js$/, async (route) => {
+    await scriptReady.promise;
+    await route.fallback();
+  });
+
+  try {
+    await page.goto(origin, { waitUntil: "commit" });
+    const heading = page.locator("#landing-title");
+    const logo = page.getByTestId("edge-runner");
+    await heading.waitFor();
+    await logo.waitFor();
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+    });
+    assert.equal(await page.locator("form[inert]").count(), 1);
+    const firstHeading = await heading.elementHandle();
+    const firstLogo = await logo.elementHandle();
+    const firstBox = await heading.boundingBox();
+    assert.ok(firstBox.y > 100);
+    assert.ok(Math.abs(firstBox.x + firstBox.width / 2 - 195) < 1);
+
+    scriptReady.resolve();
+    await page.locator("form:not([inert])").waitFor();
+    assert.equal(await firstHeading.evaluate((element) => element.isConnected), true);
+    assert.equal(await firstLogo.evaluate((element) => element.isConnected), true);
+    assert.deepEqual(await heading.boundingBox(), firstBox);
+  } finally {
+    scriptReady.resolve();
+  }
+});
 
 test("the web home and published page share the desktop header and the waitlist confirms signup", async (t) => {
   const origin = "http://127.0.0.1:8787";
@@ -185,6 +417,7 @@ test("the web home and published page share the desktop header and the waitlist 
       const previewHeader = await headerMetrics();
       await page.goto(origin);
       await page.getByRole("heading", { name: "Easy Proto", exact: true }).waitFor();
+      assert.equal(await page.title(), "Easy Proto | Open-source prototyping and design tokens");
       assert.deepEqual(await headerMetrics(), previewHeader);
     }
   }
@@ -195,17 +428,19 @@ test("the web home and published page share the desktop header and the waitlist 
   await page.emulateMedia({ reducedMotion: "no-preference" });
   const timing = await highlight.evaluate((path) => {
     const [animation] = path.getAnimations();
-    return [animation?.playState, animation?.effect?.getComputedTiming().activeDuration];
+    if (!animation?.effect) throw new Error("The homepage logo animation is missing.");
+    const { duration, iterations } = animation.effect.getTiming();
+    animation.currentTime = Number(duration) * 3.25;
+    return [animation.playState, iterations, animation.effect.getComputedTiming().currentIteration];
   });
-  assert.equal(timing[0], "running");
-  assert.ok(timing[1] > 0 && timing[1] <= 5000);
+  assert.deepEqual(timing, ["running", Infinity, 3]);
   await page.emulateMedia({ reducedMotion: "reduce" });
   assert.equal(await highlight.evaluate((path) => path.getAnimations().length), 0);
   assert.equal(await heroMark.isVisible(), true);
   assert.equal(
     await page
       .getByText(
-        "Easy Proto is a free, open-source tool for generating prototypes and managing tokens and components for all of your digital products.",
+        "Easy Proto is a free, open-source tool that brings prototyping, design tokens, and component management into a single workspace.",
         { exact: true },
       )
       .isVisible(),
@@ -391,7 +626,7 @@ test("page sync keeps one URL and serves immutable sandboxed HTML, CSS, and asse
   assert.equal(view.artboards[0].x, -400);
   const shellResponse = await worker.fetch(new Request(`http://127.0.0.1:8787/p/${saved.id}`), env);
   const shell = await shellResponse.text();
-  assert.match(shell, /<title>Notes - Concepts<\/title>/);
+  assert.match(shell, /<title\b[^>]*>Notes - Concepts<\/title>/);
   assert.match(shell, /id="page-data"/);
   for (const hidden of ["revision", metadata.projectId, metadata.pageId, "digest", "bytes"])
     assert.equal(JSON.stringify(view).includes(hidden), false);

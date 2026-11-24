@@ -9,6 +9,7 @@ process.env.CHOKIDAR_USEPOLLING ??= "1";
 
 export default defineConfig({
   plugins: [cloudflare({ inspectorPort: false })],
+  publicDir: "out",
   server: {
     host: "127.0.0.1",
     port: 8787,
@@ -25,25 +26,11 @@ export default defineConfig({
         "**/.local/**",
         "**/.dev.vars*",
         "**/.cloudflare/**",
+        "**/.next/**",
         "**/.workspace/**",
         "**/.easy-proto/**",
         "**/*.easyproto",
       ],
-    },
-  },
-  esbuild: { jsx: "automatic" },
-  build: {
-    assetsInlineLimit: 0,
-    rolldownOptions: {
-      onLog(level, log, handler) {
-        if (
-          level === "warn" &&
-          log.code === "MODULE_LEVEL_DIRECTIVE" &&
-          log.message.includes('directive "use client"')
-        )
-          return;
-        handler(level, log);
-      },
     },
   },
 });

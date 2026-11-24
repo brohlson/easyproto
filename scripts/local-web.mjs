@@ -105,11 +105,13 @@ try {
       "Reusing the authenticated local preview server; it will stay running when the desktop closes.",
     );
   } else {
+    await run("pnpm", ["site:build"], { cwd: web });
     if (stopping) throw new Error("Local development was stopped.");
-    const website = spawn(cf, ["dev", "--host", "127.0.0.1", "--port", origin.port || "80"], {
-      cwd: web,
-      stdio: "inherit",
-    });
+    const website = spawn(
+      join(web, "node_modules/.bin/vite"),
+      ["--host", "127.0.0.1", "--port", origin.port || "80"],
+      { cwd: web, stdio: "inherit" },
+    );
     children.add(website);
     website.once("error", (failure) => {
       console.error(failure.message);

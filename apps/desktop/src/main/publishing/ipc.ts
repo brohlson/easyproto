@@ -1,4 +1,5 @@
 import { clipboard, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { id, ipc, revision } from "../../shared/model";
 import type { Project } from "../document/project";
@@ -24,6 +25,7 @@ export function registerPublishingIpc({
   webSettings: WebPreviewSettings | undefined;
 }) {
   let pageExport: { generation: number; controller: AbortController } | undefined;
+  let pendingHosted: { scope: string; requestId: string } | undefined;
   ipcMain.handle(
     ipc.webPreview,
     async (
@@ -32,6 +34,7 @@ export function registerPublishingIpc({
       selectedGeneration: unknown,
       selectedPage: unknown,
       expectedRevision: unknown,
+      shareAccess: unknown,
     ) => {
       allowSender(event);
       const operation = z.enum(["status", "sync", "cancel", "open", "copy"]).parse(action);
@@ -49,17 +52,27 @@ export function registerPublishingIpc({
       const lifetime = state.active!.signal;
       if (operation === "sync") {
         if (pageExport) throw new Error("A page export is already running.");
+        const expected = revision.parse(expectedRevision);
+        const access = z.enum(["public", "protected"]).optional().parse(shareAccess);
+        const scope = JSON.stringify([state.generation, pageId, expected, access]);
+        if (webSettings.mode === "hosted" && pendingHosted?.scope !== scope)
+          pendingHosted = { scope, requestId: randomUUID() };
         const exporting = { generation: state.generation, controller: new AbortController() };
         pageExport = exporting;
         try {
-          return await syncPagePreview(
+          const result = await syncPagePreview(
             project,
-            revision.parse(expectedRevision),
+            expected,
             pageId,
             webSettings,
             (snapshot, board, signal) => preview.capture(project, snapshot, board, signal),
             AbortSignal.any([lifetime, exporting.controller.signal]),
+            fetch,
+            access,
+            pendingHosted?.requestId,
           );
+          pendingHosted = undefined;
+          return result;
         } finally {
           if (pageExport === exporting) pageExport = undefined;
         }

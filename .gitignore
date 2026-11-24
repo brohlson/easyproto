@@ -6,5 +6,8 @@ evidence/
 .DS_Store
 .local/
 .cloudflare/
+/apps/web/.next/
+/apps/web/next-env.d.ts
+/apps/web/out/
 .dev.vars
 .dev.vars.*

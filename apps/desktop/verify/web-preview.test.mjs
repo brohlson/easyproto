@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -55,6 +55,23 @@ test("local preview settings accept only loopback origins and keep capability ke
       }),
     );
   assert.equal(await readWebPreviewSettings(undefined, {}), undefined);
+});
+
+test("hosted preview settings require a private file and an explicit Easy Proto HTTPS origin", async (t) => {
+  const { root } = await fixture(t);
+  const path = join(root, "hosted.json");
+  const hosted = { mode: "hosted", origin: "https://staging.easyproto.app", token: settings.token };
+  await writeFile(path, JSON.stringify(hosted), { mode: 0o644 });
+  await assert.rejects(readWebPreviewSettings(path, {}), /private file/);
+  await chmod(path, 0o600);
+  assert.deepEqual(await readWebPreviewSettings(path, {}), hosted);
+  await assert.rejects(
+    readWebPreviewSettings(undefined, {
+      EASY_PROTO_WEB_HOSTED_ORIGIN: "https://other.example",
+      EASY_PROTO_WEB_HOSTED_TOKEN: hosted.token,
+    }),
+    /Easy Proto HTTPS origin/,
+  );
 });
 
 test("page export pins one revision and sends only the selected page's live preview members", async (t) => {

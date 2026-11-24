@@ -1,5 +1,4 @@
 import { Brand, WorkspaceHeader, WorkspaceLabel } from "@easy-proto/ui";
-import { Link } from "@tanstack/react-router";
 import { useLayoutEffect, useRef } from "react";
 import { startCamera } from "../canvas/camera";
 import chrome from "../chrome.module.css";
@@ -16,9 +15,9 @@ export function SharedCanvas({ view }: { view: SharedPage }) {
     <div ref={controls}>
       <WorkspaceHeader
         brand={
-          <Link to="/" aria-label="Easy Proto home">
+          <a href="/" aria-label="Easy Proto home">
             <Brand />
-          </Link>
+          </a>
         }
         project={<WorkspaceLabel>{view.projectName}</WorkspaceLabel>}
         page={<WorkspaceLabel>{view.pageName}</WorkspaceLabel>}
@@ -28,6 +27,7 @@ export function SharedCanvas({ view }: { view: SharedPage }) {
             <TokenDialog
               key={view.artboards[0]?.iframeUrl}
               iframeUrl={view.artboards[0]?.iframeUrl}
+              tokensUrl={view.tokensUrl}
             />
           </div>
         }

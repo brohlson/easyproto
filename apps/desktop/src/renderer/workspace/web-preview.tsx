@@ -19,6 +19,8 @@ export function WebPreviewDialog({
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [access, setAccess] = useState<"public" | "protected">();
+  const [password, setPassword] = useState<string>();
   useLayoutEffect(() => {
     mounted.current = true;
     const focus = document.activeElement;
@@ -30,7 +32,7 @@ export function WebPreviewDialog({
       })
       .catch(() => {
         if (mounted.current)
-          setError("Start the local web environment with pnpm local:dev, then reopen this dialog.");
+          setError("Couldn’t connect to the preview service. Reopen this dialog to try again.");
       })
       .finally(() => {
         if (mounted.current) setChecking(false);
@@ -50,9 +52,14 @@ export function WebPreviewDialog({
         scene.generation,
         pageId,
         scene.revision,
+        action === "sync" ? access : undefined,
       );
       if (!mounted.current) return;
       setInfo(result);
+      if (action === "sync") {
+        if (access) setPassword(result.password);
+        setAccess(undefined);
+      }
       setNotice(
         action === "sync"
           ? "Page synced. Your preview is ready."
@@ -73,6 +80,7 @@ export function WebPreviewDialog({
   }
   async function dismiss() {
     if (busy) await window.easyProto.webPreview("cancel", scene.generation, pageId).catch(() => {});
+    dialog.current?.close();
     close();
   }
   const page = scene.pages.find(({ id }) => id === pageId);
@@ -88,7 +96,9 @@ export function WebPreviewDialog({
         void dismiss();
       }}
     >
-      <div className={previewStyles.webPreviewEyebrow}>Local preview</div>
+      <div className={previewStyles.webPreviewEyebrow}>
+        {info?.hosted ? "Web preview" : "Local preview"}
+      </div>
       <h2 id="web-preview-title">Share this page.</h2>
       <p>
         Export a read-only live preview of <strong>{page?.name}</strong>. Sync again to update the
@@ -101,7 +111,7 @@ export function WebPreviewDialog({
         </span>
       </div>
       <div role="status" className={previewStyles.webPreviewStatus}>
-        {checking ? "Connecting to local preview…" : busy ? "Preparing preview…" : notice}
+        {checking ? "Connecting to preview…" : busy ? "Preparing preview…" : notice}
       </div>
       {error && <p role="alert">{error}</p>}
       {info && !info.configured && (
@@ -119,6 +129,49 @@ export function WebPreviewDialog({
             onFocus={(event) => event.currentTarget.select()}
           />
         </label>
+      )}
+      {info?.hosted && (
+        <fieldset className={previewStyles.webPreviewAccess} disabled={busy}>
+          <legend>Access password</legend>
+          <div>
+            {access === "protected"
+              ? "A new password will be generated when you sync."
+              : access === "public"
+                ? "The password will be removed when you sync."
+                : info.access === "protected"
+                  ? "Password required"
+                  : "Anyone with the link"}
+          </div>
+          <button
+            type="button"
+            onClick={() => setAccess(access === "protected" ? undefined : "protected")}
+          >
+            {access === "protected"
+              ? "Cancel password change"
+              : info.access === "protected"
+                ? "Replace password"
+                : "Generate password"}
+          </button>
+          {info.access === "protected" && access !== "protected" && (
+            <button
+              type="button"
+              onClick={() => setAccess(access === "public" ? undefined : "public")}
+            >
+              {access === "public" ? "Keep password" : "Remove password"}
+            </button>
+          )}
+          {password && (
+            <label className={previewStyles.webPreviewLink}>
+              Send this password separately from the link.
+              <input
+                readOnly
+                aria-label="Generated access password"
+                value={password}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            </label>
+          )}
+        </fieldset>
       )}
       <div className={previewStyles.webPreviewActions}>
         <button type="button" onClick={() => void dismiss()}>
