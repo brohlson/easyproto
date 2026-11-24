@@ -19,7 +19,7 @@ permissions:
 jobs:
   deploy:
     if: github.ref == 'refs/heads/main' && (inputs.target == 'staging' || inputs.target == 'production')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: web-${{ inputs.target }}
       url: ${{ inputs.target == 'staging' && 'https://staging.easyproto.app' || 'https://easyproto.app' }}
