@@ -20,12 +20,12 @@ The **Design system · Desktop tokens** artboard in EasyProtoMocks previews both
 
 ## Select controls
 
-Use the shared [Select component](../packages/ui/select.tsx) for single-choice fields. The default field has a subtle border. Use the quiet variant for a compact toolbar control. Both variants share option spacing, a trailing checkmark and the focus ring. They keep the browser's keyboard behavior. [Chromium customizable select](https://developer.chrome.com/blog/a-customizable-select)
+Use the shared [Select component](../packages/ui/components/select/select.tsx) for single-choice fields. The default field has a subtle border. Use the quiet variant for a compact toolbar control. Both variants share option spacing, a trailing checkmark and the focus ring. They keep the browser's keyboard behavior. [Chromium customizable select](https://developer.chrome.com/blog/a-customizable-select)
 
 Use colocated CSS Modules for component styles in both renderers and the shared UI package. Keep theme variables, font faces and document-wide defaults in global stylesheets. Use accessible roles or stable data attributes for tests and DOM hooks.
 
 ## Fold mark
 
-Use the shared [Brand component](../packages/ui/brand.tsx) in application headers. Fold uses the foreground color in both themes and pairs with the Easy Proto wordmark. The clipped corner and inset step come from the Easy Proto logo workshop. Use the same [Fold vector](../packages/ui/fold.svg) for the favicon.
+Use the shared [Brand component](../packages/ui/components/brand/brand.tsx) in application headers. Fold uses the foreground color in both themes and pairs with the Easy Proto wordmark. The clipped corner and inset step come from the Easy Proto logo workshop. Use the same [Fold vector](../packages/ui/fold.svg) for the favicon.
 
-Use the shared [WorkspaceHeader](../packages/ui/workspace-header.tsx) for the desktop workspace and published page. Desktop supplies its Home button, editable project name, page picker and Tokens action. The published page supplies a Home link and read-only names for its single page. Check the shared layout at regular and compact widths in both themes.
+Use the shared [WorkspaceHeader](../packages/ui/components/workspace-header/workspace-header.tsx) for the desktop workspace and published page. Desktop supplies its Home button, editable project name, page picker and Tokens action. The published page supplies a Home link and read-only names for its single page. Check the shared layout at regular and compact widths in both themes.

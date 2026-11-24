@@ -437,3 +437,9 @@ All four root, nine web and 51 desktop checks passed in sequence, alongside lint
 The web landing page, shared viewer, canvas and legacy demo now use CSS Modules, as do the shared Brand, Select and WorkspaceHeader. The remaining plain CSS under `apps/` and `packages/` holds base document rules, theme variables and font faces. Shared web canvas behavior and tests use stable data attributes, and the desktop picker test locates the native select by its accessible label.
 
 The nine web checks passed, including the published route and the legacy demo in Chromium. Twelve before-and-after captures of the landing and shared viewer at 1180, 660 and 390 CSS px in Light and Dark matched pixel for pixel. Fifty desktop checks passed in the full run. The activity-follow test timed out and then passed in isolation on the same build. Lint, formatting, theme validation, type checks and builds passed.
+
+## Shared package layout
+
+The batch based on `21689e0` moves each shared UI component and its CSS Module into one folder. The theme, font, favicon and package exports retain their existing paths. `@easy-proto/preview` keeps one public entry point and separates schemas and limits, HTML sanitization, and digests into internal modules. The web client TypeScript configuration accepts the explicit TypeScript imports also used by native Node consumers.
+
+Lint, formatting, theme validation and type checks passed. All six moved UI files were compared byte for byte. A differential Node check matched the preview runtime exports, limits, accepted and rejected schema results, sanitized output and SHA-256 results against the previous revision.

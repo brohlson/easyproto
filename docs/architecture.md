@@ -61,3 +61,5 @@ External agents use the authenticated loopback MCP endpoint to read, edit, and c
 ## Browser sharing
 
 The [browser sharing architecture](web-sharing-architecture.md) uses immutable read-only snapshots and distinguishes publisher sign-in from guest-link access. The [local prototype](../apps/web/README.md) uses React and TanStack Router. Its Node server retains access control for canvas and individual artboard links, device frames, magic-link sign-in, and revocation. The Electron and web applications live in `apps/desktop/` and `apps/web/`. Shared UI and Inter assets live in `packages/ui/`. The applications use one pnpm workspace, lockfile, and TypeScript base configuration.
+
+Shared UI components and their CSS Modules live together under `packages/ui/components/`. The package entry point exposes components, and the existing asset and theme exports remain at the package root. `packages/preview` exposes its public contract through `index.ts`, with schema validation and limits in `schema.ts`, HTML sanitization in `sanitize.ts`, and SHA-256 in `digest.ts`.
