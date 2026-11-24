@@ -43,6 +43,8 @@ The repository copy saves the final artboard at revision 219, replayed through M
 
 ## Pages picker and moving artboards
 
+`Workspace · Artboard context menu` replaces the former full-size Move to page mockup. The MCP update at EasyProtoMocks revision 375 depicts Move to page, Rename, and Delete next to a single artboard, with its name and dimensions in the footer. `Workspace · Multi-select` at source revision 374 depicts the group menu and footer Move/Delete actions. Both were captured and inspected at project revision 375, at 1180 × 738 and 670 × 265 in Dark, with no unresolved dependencies. The changes live in the local SQLite working project. The tracked checkpoint remains at revision 373. The implementation's Light/Dark, minimum-size, keyboard, selection, and Undo checks are in the desktop integration test; this session could not execute them because loopback listeners are denied. No MCP capability was missing for the design checks.
+
 EasyProtoMocks contains five artboards saved via MCP at source revisions 259–263. **Workspace · Pages picker** shows the current page and Add page. **Workspace · Move to page** shows the destination menu for two selected artboards. **Workspace · Page move confirmation** keeps the source page open and offers **Go to page**. The picker and destination menu have compact variants.
 
 All five artboards were captured at project revision 263 in Light and Dark at content sizes 1180 × 738 and 660 × 448. The capture used a disposable copy of the committed snapshot and Chromium’s color-scheme emulation. All ten captures reported zero unresolved dependencies. The controls depict static states. The mock uses the system fallback when Inter is unavailable to the project. During implementation, verify keyboard navigation, Escape and focus return, then move two selected boards in one undo step. [Page picker](../evidence/pages-and-tokens/pages-picker-light.png) · [Move to page](../evidence/pages-and-tokens/move-to-page-compact-dark.png) · [Confirmation](../evidence/pages-and-tokens/page-move-confirmation-dark.png) · [Capture metadata](../evidence/pages-and-tokens/captures.json)
@@ -116,3 +118,19 @@ The mock project now groups its screens under **Home & settings**, **Canvas**, *
 ## Projects-only Home
 
 For the external-MCP-only desktop, the existing Home artboard in a working copy of EasyProtoMocks was updated through MCP and captured as **Home · Project launcher**, revision 374 at 1180 × 738. It shows project creation, recent projects, and Settings. The desktop check also exercises the empty state. The design client supplied the desktop workspace’s Electron executable explicitly because this checkout’s Playwright installation could not resolve it automatically. [Design capture](../evidence/mcp-only/home-design.png) · [Empty Home](../evidence/mcp-only/home-empty.png)
+
+## Fold loading studies
+
+The **Loading · Fold studies** page was created through MCP in the live EasyProtoMocks project at revision 381. Its five 640 × 520 artboards, committed at revisions 382–386, compare **Contour chase**, **Quiet pulse**, **Corner fold**, **Step assembly**, and **Edge runner**. Each derives from the shared Fold vector, uses existing desktop color tokens, and shows Light/Dark plus 16, 24, and 32 px examples. SVG geometry and CSS animate without scripts; a reduced-motion rule supplies static marks.
+
+The ordered MCP review sheet at revision 386 was captured and visually inspected with zero unresolved dependencies. The running desktop showed the new page selected with all five boards. The captures establish rendering, not frame-by-frame motion or a tested reduced-motion preference. No MCP capability was missing. The live working project contains the studies; the tracked checkpoint was not replaced. Next task: choose a direction before tuning timing or integrating it into the desktop.
+
+## Following MCP work
+
+The selected **Edge runner** concept now informs **Artboard · Follow MCP work**, the reused agent-activity artboard on **Canvas**. The MCP capture at revision 388, 1032 × 680, was visually inspected before implementation and reported no unresolved dependencies. It compares Light and Dark scrims over the same artboard, the centered 48 px mark and Agent working label, page following, and a minimum 1.2-second display before revealing the edit. The desktop token group was authored through MCP, including scrim colors, indicator motion, and focus/dwell durations; its final revision is 389.
+
+`pnpm tokens:sync` could not connect to the running app because this session denies loopback connections. The committed group was instead read through `get_tokens` and exported to the same build input. This was transport friction, not a missing MCP capability. The renderer and document-service behavior checks are recorded in the handoff; production Light/Dark, small-viewport, camera-following, and reduced-motion checks remain pending in an Electron session that permits loopback listeners.
+
+## Local web preview refinement
+
+The `mocks/web-sync` viewer and export studies now match the desktop header height, wordmark typography, project/page alignment, omit revision labels and secondary canvas copy, and describe live read-only HTML/CSS. The viewer keeps only the bottom-right zoom controls. Easy Proto MCP and canvas controls were unavailable in this session, so these tracked HTML studies were updated directly. They still require import/capture inspection in Easy Proto before this design state can be marked dogfooded.

@@ -2,6 +2,20 @@
 
 Status on November 15, 2026. Architecture proposal with Security input. The desktop remains the source of truth. A loopback viewer prototype is available. Cloudflare integration and deployment are pending.
 
+## Local page sync slice — November 23, 2026
+
+The implemented local slice uses a Cloudflare Worker with D1 metadata/waitlist storage, board-scoped R2 artifacts, and the existing TanStack Router client. Settings exports the visible page through a generation-checked, main-frame-only IPC method. The export pins one project snapshot, validates only that page through the desktop preview host, refuses unresolved dependencies, and sends a strict manifest with sanitized HTML, CSS, token CSS, and only the observed image/font assets for each board. Canonical project files, local paths, credentials, other pages, and command receipts are not exported. This does not change the project format or its command history.
+
+For this slice, the requested stable URL replaces the earlier proposal's new-link-per-revision behavior: `(projectId, pageId)` identifies one `/p/<id>` route. Each successful sync points it to a new immutable snapshot. D1 publication follows all verified R2 writes; a failed upload or lower source revision leaves the prior pointer intact. Old published artifact URLs still resolve to their original snapshot. This is a manual snapshot sync, not a live editor connection.
+
+The local viewer mirrors desktop preview rendering with opaque `sandbox=""` iframes. The Worker re-sanitizes each board document and serves it under a response-level sandbox/CSP that blocks scripts, connections, forms, navigation, nested frames, and undeclared assets. Revision remains internal for stale-write ordering and is not public viewer metadata. This same-origin loopback arrangement is not production qualification; hosted live HTML/CSS still requires the separate cookieless preview origin described below.
+
+Publishing is local-only and capability-authenticated. The main process accepts only a configured HTTP loopback origin, constructs links from validated IDs, and refuses redirects. The Worker rejects browser-origin publishing requests and disables these local endpoints on hosted origins. The capability stays in private development configuration. The public viewer receives only page presentation metadata and images. Its CSP disables frames, scripts from other sites, and remote asset loading. Waitlist requests require same-origin JSON, normalize emails, and deduplicate with a D1 primary key; no email is echoed into responses or logs.
+
+`cf` and Cloudflare Vite plugin v2 use `cloudflare.config.ts`, generated binding/runtime types, and local persistence. Frontend and Worker TypeScript configurations are separate to avoid conflicting DOM/runtime globals. The launcher keeps the development registry within the checkout and uses polling where native file watching is unavailable. [Local setup and verification](../apps/web/README.md)
+
+The remaining sections describe the broader hosted proposal. Production publishing authentication, account ownership, real resource configuration, waitlist abuse controls, revocation/retention, and CI deployment are next decisions; the local capability is not a hosted authentication design.
+
 ## What a link opens
 
 | Mode | Recipient experience | Published scope |

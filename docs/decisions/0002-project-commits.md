@@ -12,9 +12,13 @@ Copy snapshots the selected artboards' committed source and layout in memory for
 
 Undo and redo cover the last 50 committed artboard, page, and token mutations in the open project, including MCP edits. Project naming and canvas navigation have separate lifecycles. Undo and redo publish new revisions, preserve IDs on restoration, and update their in-memory stacks after a successful save. A new mutation clears redo. The first delete, undo, or redo writes schema version 2, which allows historical command results to refer to a removed artboard. Easy Proto still reads version 1. Older builds refuse version 2 projects. Reopening preserves the resulting document and command ledger and starts a fresh undo history.
 
+MCP Undo requires a new request command ID, the expected project revision, and the original command ID of the edit to reverse. The document service checks the revision and the top undo entry in its serialized command queue. Undo and redo carry the edit’s identity between the two session stacks. Exact retries use the ordinary durable receipt, including after reopening.
+
 Delete removes the artboard and its source from the active snapshot. Undo restores its ID, source, bounds, and place in the artboard order. The restored preview uses a new revision. Earlier saved snapshots retain their original files.
 
 A group move, duplicate, paste, or delete publishes a single revision and takes one undo step. A move or copy adds the same offset to every selected board. The first result that affects multiple artboards upgrades the active pointer and manifest to schema version 3. The command result retains `artboard` and adds `artboards` in document order. Retrying the original command returns that full result, including after reopen. Builds from before group editing refuse version 3 projects. Selection and camera state stay in the renderer.
+
+A batch artboard update takes an explicit list of unique IDs with a patch for each. The command service checks the expected revision and validates the complete selection before starting activity or saving. It applies patches by ID in document order, skips matching targets, and records the changed boards as one history entry. A stale revision, a missing board, or an entirely unchanged selection leaves the document and undo history intact. The existing group receipt, pointer publication, and SQLite transaction formats cover batch updates. Exact retries replay the original receipt even after Undo or reopen.
 
 ## Pages
 
