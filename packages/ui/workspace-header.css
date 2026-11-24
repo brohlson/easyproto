@@ -1,0 +1,87 @@
+.ep-workspace-header {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  height: var(--ep-desktop-layout-header);
+  padding-inline: var(--ep-desktop-layout-window-gutter);
+  gap: var(--ep-desktop-space-12);
+  color: var(--foreground);
+  background: var(--background);
+  border-bottom: var(--ep-desktop-stroke-border) solid var(--border);
+  z-index: 1;
+}
+
+.ep-workspace-brand {
+  flex: none;
+  display: flex;
+  font-size: var(--ep-desktop-type-size-heading);
+  font-weight: var(--ep-desktop-type-weight-heading);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.ep-workspace-brand > :is(a, button) {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ep-desktop-control-target);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ep-workspace-brand > :is(a, button):focus-visible {
+  outline: var(--ep-desktop-stroke-focus) solid var(--ring);
+  outline-offset: var(--ep-desktop-stroke-focus);
+}
+
+.ep-workspace-project,
+.ep-workspace-page {
+  display: flex;
+  align-items: center;
+  gap: inherit;
+  min-width: 0;
+  font-size: var(--ep-desktop-type-size-body);
+}
+
+.ep-workspace-project { font-weight: var(--ep-desktop-type-weight-semibold); }
+.ep-workspace-page { font-weight: var(--ep-desktop-type-weight-label); }
+
+.ep-workspace-project::before,
+.ep-workspace-page::before {
+  content: "";
+  flex: none;
+  width: var(--ep-desktop-stroke-border);
+  height: var(--ep-desktop-space-20);
+  background: var(--border);
+}
+
+.ep-workspace-label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border: var(--ep-desktop-stroke-border) solid transparent;
+  padding-inline: var(--ep-desktop-space-5);
+  max-width: min(380px, 55vw);
+}
+
+.ep-workspace-page > .ep-workspace-label {
+  max-width: min(190px, 29vw);
+  padding-inline: var(--ep-desktop-space-8);
+}
+
+.ep-workspace-actions { flex: none; margin-inline-start: auto; }
+
+@media (max-width: 720px) {
+  .ep-workspace-header {
+    gap: var(--ep-desktop-space-8);
+    padding-inline: var(--ep-desktop-layout-compact-gutter);
+  }
+  .ep-workspace-brand { font-size: var(--ep-desktop-type-size-compact); }
+}

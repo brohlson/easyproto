@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { previewHtml } from "@easy-proto/preview";
+import { chromium } from "playwright";
+import { checkWorkspaceHeader } from "../../scripts/workspace-header-check.mjs";
 import { png } from "./fixtures/png.mjs";
 import { workerFixture } from "./fixtures/worker.mjs";
 import { test } from "node:test";
@@ -104,6 +106,55 @@ test("waitlist normalizes and deduplicates emails and rejects invalid or cross-o
   assert.equal((await joinList("other@example.test", "https://elsewhere.test")).status, 403);
   assert.equal((await joinList("bot@example.test", undefined, "bot-filled-field")).status, 200);
   assert.equal(database.prepare("SELECT count(*) AS count FROM waitlist").get().count, 1);
+});
+
+test("the published page matches the desktop header in Light and Dark at both widths", async (t) => {
+  const origin = "http://127.0.0.1:8787";
+  const { env, sync } = await fixture(t);
+  const saved = await sync();
+  assert.equal(saved.ok, true);
+  const { id } = await saved.json();
+  const assets = new URL("./.cloudflare/output/v1/workers/default/assets/", import.meta.url);
+  const contentTypes = {
+    ".html": "text/html",
+    ".js": "text/javascript",
+    ".css": "text/css",
+    ".svg": "image/svg+xml",
+    ".woff2": "font/woff2",
+  };
+  env.ASSETS.fetch = async (request) => {
+    const path = new URL(request.url).pathname;
+    const asset = path.startsWith("/assets/") ? path.slice(1) : "index.html";
+    const extension = asset.slice(asset.lastIndexOf("."));
+    return new Response(await readFile(new URL(asset, assets)), {
+      headers: { "content-type": contentTypes[extension] },
+    });
+  };
+
+  const browser = await chromium.launch();
+  t.after(() => browser.close());
+  const page = await browser.newPage();
+  page.setDefaultTimeout(5000);
+  await page.route(`${origin}/**`, async (route) => {
+    const response = await worker.fetch(new Request(route.request().url()), env);
+    await route.fulfill({
+      status: response.status,
+      headers: Object.fromEntries(response.headers),
+      body: Buffer.from(await response.arrayBuffer()),
+    });
+  });
+  for (const colorScheme of ["light", "dark"]) {
+    for (const width of [1180, 660]) {
+      await page.emulateMedia({ colorScheme });
+      await page.setViewportSize({ width, height: 600 });
+      await page.goto(`${origin}/p/${id}`);
+      await page.frameLocator("iframe").getByRole("heading", { name: "Live board" }).waitFor();
+      assert.equal(await page.title(), "Notes - Concepts");
+      assert.equal(await page.locator(".ep-workspace-project").innerText(), "Notes");
+      assert.equal(await page.locator(".ep-workspace-page").innerText(), "Concepts");
+      await checkWorkspaceHeader(page, { dark: colorScheme === "dark", compact: width === 660 });
+    }
+  }
 });
 
 test("page sync keeps one URL and serves immutable sandboxed HTML, CSS, and assets", async (t) => {

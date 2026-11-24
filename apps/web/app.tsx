@@ -12,7 +12,6 @@ import { createRoot } from "react-dom/client";
 import faviconUrl from "@easy-proto/ui/fold.svg?url";
 import { startCamera } from "./camera";
 import { type Frame, type Page, type Scope, frameLabels, scopeLabels } from "./page";
-import "virtual:desktop-design-tokens.css";
 import "./style.css";
 import { Landing, SharedCanvas } from "./shared-pages";
 

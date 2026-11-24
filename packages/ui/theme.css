@@ -1,0 +1,23 @@
+@import "./theme.tokens.css";
+@import "./fonts.css";
+
+:root {
+  color-scheme: light dark;
+  --background: light-dark(var(--ep-desktop-light-background), var(--ep-desktop-dark-background));
+  --foreground: light-dark(var(--ep-desktop-light-foreground), var(--ep-desktop-dark-foreground));
+  --muted-foreground: light-dark(var(--ep-desktop-light-muted-foreground), var(--ep-desktop-dark-muted-foreground));
+  --canvas: light-dark(var(--ep-desktop-light-canvas), var(--ep-desktop-dark-canvas));
+  --border: light-dark(var(--ep-desktop-light-border), var(--ep-desktop-dark-border));
+  --control-border: light-dark(var(--ep-desktop-light-control-border), var(--ep-desktop-dark-control-border));
+  --accent: light-dark(var(--ep-desktop-light-accent), var(--ep-desktop-dark-accent));
+  --primary: light-dark(var(--ep-desktop-light-primary), var(--ep-desktop-dark-primary));
+  --primary-foreground: light-dark(var(--ep-desktop-light-primary-foreground), var(--ep-desktop-dark-primary-foreground));
+  --ring: light-dark(var(--ep-desktop-light-ring), var(--ep-desktop-dark-ring));
+  font-family: var(--ep-desktop-type-family-interface);
+  font-size: var(--ep-desktop-type-size-body);
+  color: var(--foreground);
+  background: var(--background);
+}
+
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }

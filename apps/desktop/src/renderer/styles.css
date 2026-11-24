@@ -1,42 +1,17 @@
-@import "@easy-proto/ui/fonts.css";
+@import "@easy-proto/ui/theme.css";
 
 :root {
   color-scheme: light;
-  font-family: var(--ep-desktop-type-family-interface);
-  font-size: var(--ep-desktop-type-size-body);
-  color: var(--foreground);
-  background: var(--background);
-  --background: var(--ep-desktop-light-background);
-  --foreground: var(--ep-desktop-light-foreground);
-  --muted-foreground: var(--ep-desktop-light-muted-foreground);
-  --canvas: var(--ep-desktop-light-canvas);
   --grid: var(--ep-desktop-light-grid);
-  --border: var(--ep-desktop-light-border);
-  --control-border: var(--ep-desktop-light-control-border);
   --artboard-border: var(--ep-desktop-light-artboard-border);
-  --accent: var(--ep-desktop-light-accent);
-  --primary: var(--ep-desktop-light-primary);
-  --primary-foreground: var(--ep-desktop-light-primary-foreground);
-  --ring: var(--ep-desktop-light-ring);
   --working-scrim: var(--ep-desktop-light-working-scrim);
   --radius: var(--ep-desktop-radius-control);
   --shadow: 0 var(--ep-desktop-elevation-raised-y) var(--ep-desktop-elevation-raised-blur) var(--ep-desktop-light-shadow);
 }
 
 :root[data-theme="dark"] {
-  color-scheme: dark;
-  --background: var(--ep-desktop-dark-background);
-  --foreground: var(--ep-desktop-dark-foreground);
-  --muted-foreground: var(--ep-desktop-dark-muted-foreground);
-  --canvas: var(--ep-desktop-dark-canvas);
   --grid: var(--ep-desktop-dark-grid);
-  --border: var(--ep-desktop-dark-border);
-  --control-border: var(--ep-desktop-dark-control-border);
   --artboard-border: var(--ep-desktop-dark-artboard-border);
-  --accent: var(--ep-desktop-dark-accent);
-  --primary: var(--ep-desktop-dark-primary);
-  --primary-foreground: var(--ep-desktop-dark-primary-foreground);
-  --ring: var(--ep-desktop-dark-ring);
   --working-scrim: var(--ep-desktop-dark-working-scrim);
   --shadow: 0 var(--ep-desktop-elevation-raised-y) var(--ep-desktop-elevation-raised-blur) var(--ep-desktop-dark-shadow);
 }
@@ -44,12 +19,8 @@
 * { box-sizing: border-box; }
 html, body, #root { width: 100%; height: 100%; margin: 0; }
 .workspace { position: relative; height: 100%; display: grid; grid-template-rows: var(--ep-desktop-layout-header) 1fr var(--ep-desktop-layout-footer); }
-.workspace > header, .workspace > footer { display: flex; align-items: center; gap: var(--ep-desktop-space-12); padding: 0 var(--ep-desktop-layout-window-gutter); background: var(--background); z-index: 1; }
-.workspace > header { border-bottom: var(--ep-desktop-stroke-border) solid var(--border); }
+.workspace > footer { display: flex; align-items: center; gap: var(--ep-desktop-space-12); padding: 0 var(--ep-desktop-layout-window-gutter); background: var(--background); z-index: 1; }
 .workspace > footer { border-top: var(--ep-desktop-stroke-border) solid var(--border); justify-content: space-between; color: var(--muted-foreground); font-size: var(--ep-desktop-type-size-detail); }
-.brand { display: flex; align-items: center; gap: var(--ep-desktop-space-9); font-weight: var(--ep-desktop-type-weight-heading); letter-spacing: -.02em; font-size: var(--ep-desktop-type-size-heading); white-space: nowrap; }
-.brand-home { padding: 0; border: 0; background: transparent; color: inherit; font-family: inherit; cursor: pointer; }
-.divider { flex: none; width: 1px; height: 20px; background: var(--border); }
 .folder { min-width: 0; max-width: min(380px, 55vw); }
 .editable-name, .name-input {
   min-width: 0; max-width: 100%; min-height: var(--ep-desktop-control-target); padding: var(--ep-desktop-space-2) var(--ep-desktop-space-5);
@@ -343,8 +314,7 @@ button:disabled { opacity: var(--ep-desktop-opacity-disabled); }
 .error { display: flex; align-items: center; gap: var(--ep-desktop-space-10); position: absolute; left: 20px; bottom: calc(var(--ep-desktop-layout-footer) + var(--ep-desktop-layout-window-gutter)); max-width: calc(100% - 110px); padding: var(--ep-desktop-space-10) var(--ep-desktop-space-14); background: var(--background); border: var(--ep-desktop-stroke-border) solid var(--control-border); border-radius: var(--radius); color: var(--foreground); box-shadow: var(--shadow); z-index: 3; }
 
 @media (max-width: 720px) {
-  .workspace > header, .workspace > footer { gap: var(--ep-desktop-space-8); padding-inline: var(--ep-desktop-layout-compact-gutter); }
-  .brand { gap: var(--ep-desktop-space-6); font-size: var(--ep-desktop-type-size-compact); }
+  .workspace > footer { gap: var(--ep-desktop-space-8); padding-inline: var(--ep-desktop-layout-compact-gutter); }
 }
 
 .tokens-trigger {

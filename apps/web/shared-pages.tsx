@@ -1,4 +1,4 @@
-import { Brand } from "@easy-proto/ui";
+import { Brand, WorkspaceHeader } from "@easy-proto/ui";
 import { Link } from "@tanstack/react-router";
 import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { startCamera } from "./camera";
@@ -99,18 +99,16 @@ export function SharedCanvas({ view }: { view: SharedPage }) {
   useLayoutEffect(() => startCamera(viewport.current!, controls.current!), [view]);
   return (
     <div ref={controls} className="shared-page">
-      <header className="site-header">
-        <div className="shared-title">
+      <WorkspaceHeader
+        brand={
           <Link to="/" aria-label="Easy Proto home">
             <Brand />
           </Link>
-          <span className="header-divider" aria-hidden="true" />
-          <span className="project-name">{view.projectName}</span>
-          <span className="header-divider" aria-hidden="true" />
-          <span className="page-name">{view.pageName}</span>
-        </div>
-        <span className="readonly-badge">Read-only preview</span>
-      </header>
+        }
+        project={<span className="ep-workspace-label">{view.projectName}</span>}
+        page={<span className="ep-workspace-label">{view.pageName}</span>}
+        actions={<span className="readonly-badge">Read-only preview</span>}
+      />
       <main
         ref={viewport}
         className="viewport shared-viewport"

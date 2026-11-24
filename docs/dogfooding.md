@@ -59,6 +59,10 @@ The companion fixture used Style Dictionary 5.8.0 and Node 24.16.0 to compile st
 
 The **Design system · Desktop tokens** artboard documents Light and Dark surfaces, key semantic color roles and the type scale. The first capture preceded the application wiring. The final 860 × 465 capture at EasyProtoMocks revision 270 used the published 113-token dictionary and reported no unresolved dependencies. The catalog uses its font stack on the preview host. The desktop itself verifies the bundled Inter file. [Catalog](../evidence/desktop-design-system/token-catalog.png) · [Capture metadata](../evidence/desktop-design-system/token-catalog.json)
 
+## Shared workspace header
+
+The design check used a disposable EasyProtoMocks copy and the existing **Workspace · Edit and settings** artboard. The first Electron launch exited before MCP started. The retry with an isolated profile connected, updated the artboard through MCP and captured revision 374 at 960 × 600 in Light with no unresolved dependencies. The inspected capture shows the Fold wordmark, project and page hierarchy, and shared spacing. The tracked mock checkpoint was left intact. The implementation checks cover both themes and regular and compact widths in Electron and the published browser viewer.
+
 ## Page rename and inline token editing
 
 The existing **Workspace · Pages picker** and **Workspace · Project tokens** artboards were updated through the MCP connection and captured at EasyProtoMocks revisions 279 and 280 respectively. The 1040 × 600 captures show the page pencil and inline rename field, wider Tokens dialog, in-row editor, type picker and copy toast. The captures reported no unresolved dependencies. [Page rename mock](../evidence/workspace-refinements/page-rename-mock.png) · [Tokens mock](../evidence/workspace-refinements/inline-token-edit-mock.png)

@@ -1,4 +1,4 @@
-import { Brand } from "@easy-proto/ui";
+import { Brand, WorkspaceHeader } from "@easy-proto/ui";
 import { Folder, MoveDiagonal2, Plus } from "lucide-react";
 import {
   createContext,
@@ -38,7 +38,6 @@ import type {
   Scene,
 } from "../shared/model";
 import "@xyflow/react/dist/style.css";
-import "virtual:desktop-design-tokens.css";
 import "./styles.css";
 import { DevicePresets } from "./device-presets";
 import { EditableName } from "./editable-name";
@@ -826,25 +825,24 @@ function App() {
   }
   return (
     <main className={scene ? "workspace" : "workspace home-view"}>
-      <header>
-        {scene ? (
-          <button
-            type="button"
-            className="brand brand-home"
-            disabled={busy}
-            aria-label="Easy Proto Home"
-            onClick={() => void navigate(() => window.easyProto.goHome())}
-          >
+      <WorkspaceHeader
+        brand={
+          scene ? (
+            <button
+              type="button"
+              className="brand-home"
+              disabled={busy}
+              aria-label="Easy Proto Home"
+              onClick={() => void navigate(() => window.easyProto.goHome())}
+            >
+              <Brand />
+            </button>
+          ) : (
             <Brand />
-          </button>
-        ) : (
-          <div className="brand">
-            <Brand />
-          </div>
-        )}
-        {scene && (
-          <>
-            <span className="divider" />
+          )
+        }
+        project={
+          scene && (
             <div className="folder">
               <EditableName
                 key={scene.generation}
@@ -857,46 +855,45 @@ function App() {
                 }}
               />
             </div>
-            {page && (
-              <>
-                <span className="divider" />
-                <PagePicker
-                  key={scene.generation}
-                  active={page}
-                  pages={scene.pages}
-                  artboards={scene.artboards}
-                  disabled={busy}
-                  onSwitch={navigatePage}
-                  beginDelete={(pageId) => {
-                    const current = latest.current;
-                    return current
-                      ? () =>
-                          saveCommand({ operation: "delete_page", arguments: { pageId } }, current)
-                      : undefined;
-                  }}
-                  beginRename={(pageId) => {
-                    const current = latest.current;
-                    return current
-                      ? (name) =>
-                          saveCommand(
-                            { operation: "rename_page", arguments: { pageId, name } },
-                            current,
-                          )
-                      : undefined;
-                  }}
-                  onCreate={(name) => {
-                    const current = latest.current;
-                    return current
-                      ? saveCommand({ operation: "create_page", arguments: { name } }, current)
-                      : Promise.resolve(false);
-                  }}
-                />
-              </>
-            )}
-          </>
-        )}
-        {scene && <TokenManager key={scene.generation} scene={scene} disabled={busy} />}
-      </header>
+          )
+        }
+        page={
+          scene &&
+          page && (
+            <PagePicker
+              key={scene.generation}
+              active={page}
+              pages={scene.pages}
+              artboards={scene.artboards}
+              disabled={busy}
+              onSwitch={navigatePage}
+              beginDelete={(pageId) => {
+                const current = latest.current;
+                return current
+                  ? () => saveCommand({ operation: "delete_page", arguments: { pageId } }, current)
+                  : undefined;
+              }}
+              beginRename={(pageId) => {
+                const current = latest.current;
+                return current
+                  ? (name) =>
+                      saveCommand(
+                        { operation: "rename_page", arguments: { pageId, name } },
+                        current,
+                      )
+                  : undefined;
+              }}
+              onCreate={(name) => {
+                const current = latest.current;
+                return current
+                  ? saveCommand({ operation: "create_page", arguments: { name } }, current)
+                  : Promise.resolve(false);
+              }}
+            />
+          )
+        }
+        actions={scene && <TokenManager key={scene.generation} scene={scene} disabled={busy} />}
+      />
       {desktop?.view === "home" && (
         <div className="home">
           <section aria-labelledby="projects-title">

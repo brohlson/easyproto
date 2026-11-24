@@ -4,6 +4,8 @@
 
 Own the maintainability and behavior of the React interface, the canvas adapter, and the artboard preview lifecycle. Keep the application's document model independent of React Flow. Coordinate with design on interaction quality and with architecture and reliability on command contracts. Security owns privilege-boundary assessment.
 
+Own `@easy-proto/ui` and its public components, styles, and theme exports across the web and Electron renderers. Check for existing primitives before adding a local equivalent. Keep app-specific routing and commands in the apps. Partner with Design on token semantics and intentional platform differences. For shared UI changes, verify both consumers at regular and compact widths in Light and Dark, including keyboard behavior when controls change.
+
 Operate on demand as a read-only reviewer unless explicitly assigned scoped implementation. Permissions and independent review sessions must be enforced by the future runner. Follow the shared [review protocol](review-protocol.md).
 
 ## Required inputs

@@ -8,6 +8,7 @@ import { test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { _electron as electron } from "playwright";
+import { checkWorkspaceHeader } from "../../../scripts/workspace-header-check.mjs";
 
 const onePixel = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
@@ -1386,6 +1387,7 @@ test(
     await setAppearance("light");
     await desktop.waitForFunction(() => document.documentElement.dataset.theme === "light");
     const light = await themeInfo();
+    await checkWorkspaceHeader(desktop, { dark: false, compact: false });
     assert.deepEqual(light, {
       scheme: "light",
       background: "rgb(255, 255, 255)",
@@ -1409,6 +1411,7 @@ test(
     await setAppearance("dark");
     await desktop.waitForFunction(() => document.documentElement.dataset.theme === "dark");
     const dark = await themeInfo();
+    await checkWorkspaceHeader(desktop, { dark: true, compact: false });
     assert.deepEqual(dark, {
       scheme: "dark",
       background: "rgb(44, 44, 44)",
@@ -1440,6 +1443,7 @@ test(
         .setSize(660, 480),
     );
     await desktop.waitForFunction(() => innerWidth === 660);
+    await checkWorkspaceHeader(desktop, { dark: true, compact: true });
     await desktop.waitForFunction(
       () => document.querySelector(".settings-button").getBoundingClientRect().right <= innerWidth,
       undefined,
@@ -1461,6 +1465,7 @@ test(
     await setAppearance("light");
     await dimensions.click();
     await deviceMenu.waitFor();
+    await checkWorkspaceHeader(desktop, { dark: false, compact: true });
     if (evidence)
       await desktop.screenshot({
         path: join(evidence, "device-presets-light-minimum.png"),

@@ -1,7 +1,6 @@
 import { defineConfig } from "vite";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { fileURLToPath } from "node:url";
-import { desktopTokens } from "./desktop-tokens-plugin";
 
 process.env.CLOUDFLARE_DEV_REGISTRY_PATH ??= fileURLToPath(
   new URL("../../.local/cloudflare-registry", import.meta.url),
@@ -9,7 +8,7 @@ process.env.CLOUDFLARE_DEV_REGISTRY_PATH ??= fileURLToPath(
 process.env.CHOKIDAR_USEPOLLING ??= "1";
 
 export default defineConfig({
-  plugins: [desktopTokens(), cloudflare({ inspectorPort: false })],
+  plugins: [cloudflare({ inspectorPort: false })],
   server: {
     host: "127.0.0.1",
     port: 8787,
