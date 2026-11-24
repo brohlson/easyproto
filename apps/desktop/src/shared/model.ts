@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { artboardSize } from "./artboard-size";
 import { tokenByteLimit, type TokenView } from "./token-types";
+import type { WebPreviewInfo } from "@easy-proto/preview";
 
 export const id = z.uuid();
 export const revision = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -42,13 +43,24 @@ export const envelope = z.strictObject({
   commandId: id,
   expectedRevision: revision,
 });
-export const artboardLimit = 50;
+export const artboardUpdate = z.strictObject({ artboardId: id, patch: boardPatch });
+export const batchUpdateInput = z.strictObject({
+  updates: z
+    .array(artboardUpdate)
+    .min(1)
+    .max(50)
+    .refine(
+      (updates) => new Set(updates.map((update) => update.artboardId)).size === updates.length,
+      "Artboard IDs must be unique.",
+    ),
+});
 export const artboardIds = z
   .array(id)
   .min(1)
-  .max(artboardLimit)
   .refine((ids) => new Set(ids).size === ids.length, "Artboard IDs must be unique.");
+export const guardedUndoInput = z.strictObject({ targetCommandId: id });
 export const commandSchema = z.discriminatedUnion("operation", [
+  envelope.extend({ operation: z.literal("update_artboards"), arguments: batchUpdateInput }),
   envelope.extend({ operation: z.literal("create_artboard"), arguments: createArtboardInput }),
   envelope.extend({
     operation: z.literal("create_page"),
@@ -96,7 +108,7 @@ export const commandSchema = z.discriminatedUnion("operation", [
   }),
   envelope.extend({
     operation: z.literal("undo"),
-    arguments: z.strictObject({}),
+    arguments: guardedUndoInput.partial(),
   }),
   envelope.extend({
     operation: z.literal("redo"),
@@ -104,7 +116,7 @@ export const commandSchema = z.discriminatedUnion("operation", [
   }),
   envelope.extend({
     operation: z.literal("update_artboard"),
-    arguments: z.strictObject({ artboardId: id, patch: boardPatch }),
+    arguments: artboardUpdate,
   }),
 ]);
 
@@ -132,7 +144,7 @@ const commitBase = z.strictObject({
 export const commitSchema = z.union([
   commitBase.extend({
     artboard: boardSchema,
-    artboards: z.array(boardSchema).min(2).max(artboardLimit).optional(),
+    artboards: z.array(boardSchema).min(2).optional(),
   }),
   commitBase.extend({ page: pageSchema }),
   commitBase.extend({ tokens: tokenStampSchema.nullable() }),
@@ -191,6 +203,7 @@ export type Scene = PageLayout & {
   canUndo: boolean;
   canRedo: boolean;
   tokenDigest?: string;
+  agentFocus?: { sequence: number; artboardIds: string[] };
   projects: RecentProject[];
   artboards: (Artboard & { pageId: string; previewUrl: string; agentWorking: boolean })[];
 };
@@ -199,6 +212,13 @@ export type DesktopState =
   | Scene
   | { view: "home"; sceneVersion: number; projects: RecentProject[] };
 export type DesktopBridge = {
+  webPreview(
+    action: "status" | "sync" | "cancel" | "open" | "copy",
+    generation: number,
+    pageId: string,
+    expectedRevision?: number,
+  ): Promise<WebPreviewInfo>;
+  reportVisiblePage(generation: number, pageId: string): void;
   getScene(): Promise<DesktopState>;
   onScene(listener: (scene: DesktopState) => void): () => void;
   arrangeArtboard(generation: number, command: DesktopArtboardCommand): Promise<Commit>;
@@ -215,6 +235,8 @@ export type DesktopBridge = {
 };
 
 export const ipc = {
+  webPreview: "project:web-preview",
+  visiblePage: "project:visible-page",
   scene: "project:scene",
   changed: "project:changed",
   arrange: "project:arrange",

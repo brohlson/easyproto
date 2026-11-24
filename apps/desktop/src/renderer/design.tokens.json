@@ -217,6 +217,17 @@
           ],
           "alpha": 0.0784313725490196
         }
+      },
+      "working-scrim": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            1,
+            1,
+            1
+          ],
+          "alpha": 0.76
+        }
       }
     },
     "dark": {
@@ -266,6 +277,17 @@
             0
           ],
           "alpha": 0.3333333333333333
+        }
+      },
+      "working-scrim": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.11764705882352941,
+            0.11764705882352941,
+            0.11764705882352941
+          ],
+          "alpha": 0.76
         }
       }
     },
@@ -641,6 +663,9 @@
       },
       "marquee-outline": {
         "$value": 0.5
+      },
+      "working-track": {
+        "$value": 0.12
       }
     },
     "motion": {
@@ -666,6 +691,24 @@
       "dot-stagger": {
         "$value": {
           "value": 160,
+          "unit": "ms"
+        }
+      },
+      "working-minimum": {
+        "$value": {
+          "value": 1200,
+          "unit": "ms"
+        }
+      },
+      "working-focus": {
+        "$value": {
+          "value": 400,
+          "unit": "ms"
+        }
+      },
+      "edge-runner": {
+        "$value": {
+          "value": 2200,
           "unit": "ms"
         }
       }

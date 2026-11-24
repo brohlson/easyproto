@@ -1,0 +1,37 @@
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import type { Plugin } from "vite";
+import { compileTokens } from "../desktop/src/main/tokens";
+
+const tokenFile = fileURLToPath(
+  new URL("../desktop/src/renderer/design.tokens.json", import.meta.url),
+);
+const styleFiles = ["./style.css", "../../packages/ui/select.css"].map((name) =>
+  fileURLToPath(new URL(name, import.meta.url)),
+);
+const tokenModule = "virtual:desktop-design-tokens.css";
+const resolvedTokenModule = "\0" + tokenModule;
+
+export function desktopTokens(): Plugin {
+  return {
+    name: "desktop-design-tokens",
+    resolveId(id) {
+      if (id === tokenModule) return resolvedTokenModule;
+    },
+    async load(id) {
+      if (id !== resolvedTokenModule) return;
+      this.addWatchFile(tokenFile);
+      for (const file of styleFiles) this.addWatchFile(file);
+      const [source, ...styles] = await Promise.all([
+        readFile(tokenFile, "utf8"),
+        ...styleFiles.map((file) => readFile(file, "utf8")),
+      ]);
+      const { css, rows } = await compileTokens(source);
+      const names = new Set(rows.map(({ cssName }) => cssName));
+      for (const [, name] of styles.join("\n").matchAll(/var\((--ep-desktop-[\w-]+)/g)) {
+        if (!names.has(name)) this.error(`Missing desktop design token ${name}.`);
+      }
+      return css;
+    },
+  };
+}

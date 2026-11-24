@@ -4,3 +4,7 @@ dist/
 evidence/
 /mocks/.workspace/
 .DS_Store
+.local/
+.cloudflare/
+.dev.vars
+.dev.vars.*

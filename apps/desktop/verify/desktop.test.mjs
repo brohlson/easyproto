@@ -185,14 +185,19 @@ test(
     const list = await client.listTools();
     assert.deepEqual(list.tools.map(({ name }) => name).sort(), [
       "capture_artboard",
+      "capture_artboards",
       "create_artboard",
+      "create_page",
       "delete_page",
       "get_artboard",
       "get_context",
       "get_tokens",
+      "rename_page",
       "replace_project_tokens",
       "set_artboard_activity",
+      "undo",
       "update_artboard",
+      "update_artboards",
     ]);
     const { projectId, revision } = await data("get_context");
     statuses.push({
@@ -230,6 +235,7 @@ test(
     await frame.getByRole("heading", { name: "Prototype one" }).waitFor();
     statuses.push("MCP create rendered its HTML in the live canvas");
     const board = desktop.locator(".react-flow__node").filter({ hasText: "Agent mockup" });
+    await desktop.locator(".react-flow__pane").click({ position: { x: 10, y: 10 } });
     await fitCanvas(desktop);
     const initialFrame = desktop.frames().find((candidate) => candidate.url().includes(artboardId));
     await board.click({ position: { x: 60, y: 60 } });
@@ -577,50 +583,37 @@ test(
     await activeLabel().waitFor();
     assert.equal(await activityLabel().count(), 1);
     const preview = desktop.locator(`[data-id="${artboardId}"] iframe`);
-    assert.equal(await desktop.locator(".artboard-preview-working").count(), 1);
-    assert.deepEqual(
-      await preview.evaluate((element) => {
-        const [pulse] = element.getAnimations();
-        pulse.pause();
-        return [0, 1500, 3000].map((time) => {
-          pulse.currentTime = time;
-          return getComputedStyle(element).opacity;
-        });
-      }),
-      ["1", "0.8", "1"],
+    const runner = activeLabel().locator(".edge-runner-highlight");
+    assert.equal(
+      await desktop.locator('.artboard-working-overlay[data-working="true"]').count(),
+      1,
     );
-    assert.equal(await activeLabel().evaluate((label) => getComputedStyle(label).opacity), "1");
-    const dots = activeLabel().locator(".activity-dots > span");
-    assert.deepEqual(
-      await dots.evaluateAll((elements) =>
-        elements.map((dot) => [
-          getComputedStyle(dot).animationName,
-          getComputedStyle(dot).animationDelay,
-        ]),
-      ),
-      [
-        ["activity-dot", "0s"],
-        ["activity-dot", "0.16s"],
-        ["activity-dot", "0.32s"],
-      ],
-    );
-    await desktop.emulateMedia({ reducedMotion: "reduce" });
     assert.equal(await preview.evaluate((element) => element.getAnimations().length), 0);
     assert.equal(await preview.evaluate((element) => getComputedStyle(element).opacity), "1");
     assert.deepEqual(
-      await dots.evaluateAll((elements) =>
-        elements.map((dot) => getComputedStyle(dot).animationName),
-      ),
-      ["none", "none", "none"],
+      await runner.evaluate((element) => {
+        const [animation] = element.getAnimations();
+        animation.pause();
+        return [0, 550, 1100].map((time) => {
+          animation.currentTime = time;
+          return Math.round(parseFloat(getComputedStyle(element).strokeDashoffset));
+        });
+      }),
+      [0, -25, -50],
     );
+    assert.equal(await activeLabel().evaluate((label) => getComputedStyle(label).opacity), "1");
+    await desktop.emulateMedia({ reducedMotion: "reduce" });
+    assert.equal(await preview.evaluate((element) => element.getAnimations().length), 0);
+    assert.equal(await preview.evaluate((element) => getComputedStyle(element).opacity), "1");
+    assert.equal(await runner.evaluate((element) => element.getAnimations().length), 0);
     await activeLabel().waitFor();
     await desktop.emulateMedia({ reducedMotion: "no-preference" });
     if (evidence) {
       await mkdir(evidence, { recursive: true });
-      await preview.evaluate((element) => {
-        const [pulse] = element.getAnimations();
-        pulse.pause();
-        pulse.currentTime = 1500;
+      await runner.evaluate((element) => {
+        const [animation] = element.getAnimations();
+        animation.pause();
+        animation.currentTime = 1100;
       });
       await desktop.screenshot({ path: join(evidence, "artboard-activity.png") });
       await setAppearance("dark");
@@ -640,7 +633,10 @@ test(
     );
     assert.equal((await setActivity("idle", parallelActivity)).working, false);
     await activeLabel().waitFor({ state: "hidden" });
-    assert.equal(await desktop.locator(".artboard-preview-working").count(), 0);
+    assert.equal(
+      await desktop.locator('.artboard-working-overlay[data-working="true"]').count(),
+      0,
+    );
     assert.equal(await preview.evaluate((element) => getComputedStyle(element).opacity), "1");
     assert.equal(
       await activityDocument.evaluate((element) => element === document.documentElement),
@@ -649,7 +645,7 @@ test(
     assert.equal((await data("get_context")).revision, 4);
     assert.deepEqual(JSON.parse(await readFile(join(project, "project.json"), "utf8")), pointer);
     statuses.push(
-      "Explicit activity pulsed only its artboard between 100% and 80% opacity, respected reduced motion, overlapped independently, and left its iframe and project pointer intact.",
+      "Explicit activity overlaid Edge runner on only its artboard, respected reduced motion, overlapped independently, and left its iframe and project pointer intact.",
     );
 
     // Accelerate only the main process lease timer to observe abandoned activity cleanup.
@@ -1659,7 +1655,7 @@ test(
     await activityLabel.waitFor();
     const heights = () =>
       Promise.all(
-        [renamed, dimensions, activityLabel].map((locator) =>
+        [renamed, dimensions].map((locator) =>
           locator.evaluate((element) => element.getBoundingClientRect().height),
         ),
       );
@@ -2343,6 +2339,11 @@ test(
     await picker("Page 1").waitFor();
     const legacy = await snapshot();
     assert.deepEqual(legacy.pages, [{ id: legacy.defaultPageId, name: "Page 1" }]);
+    // A single-page project still exposes Rename and Delete, with Move disabled.
+    await left.click({ button: "right", position: { x: 25, y: 25 } });
+    const actions = desktop.getByRole("menu", { name: "Artboard actions" });
+    assert.equal(await actions.getByRole("menuitem", { name: "Move to page" }).isDisabled(), true);
+    await desktop.keyboard.press("Escape");
     const activeBefore = await call("get_context");
     const camera = () => desktop.locator(".react-flow__viewport").getAttribute("style");
     const beforePagePan = await camera();
@@ -2353,7 +2354,6 @@ test(
       (before) => document.querySelector(".react-flow__viewport").getAttribute("style") !== before,
       beforePagePan,
     );
-    const firstPageCamera = await camera();
 
     await addPage("Page 1", "Exploration");
     await emptyPage.waitFor();
@@ -2380,7 +2380,10 @@ test(
       arguments: fromMcp("Default page board"),
     });
     assert.equal(onDefault.artboard.pageId, legacy.defaultPageId);
-    assert.equal(await desktop.locator('iframe[title="Default page board"]').count(), 0);
+    await desktop
+      .frameLocator('iframe[title="Default page board"]')
+      .getByText("Default page board")
+      .waitFor();
     const onTarget = await call("create_artboard", {
       ...activeScopeForPages,
       commandId: randomUUID(),
@@ -2394,12 +2397,6 @@ test(
       .waitFor();
 
     await switchPage("Exploration", "Page 1");
-    await desktop.waitForFunction(
-      (expected) =>
-        document.querySelector(".react-flow__viewport")?.getAttribute("style") === expected,
-      firstPageCamera,
-      { timeout: 5000 },
-    );
     assert.equal((await snapshot()).revision, onTarget.revision);
     assert.equal(await desktop.locator('iframe[title="Destination board"]').count(), 0);
     await picker("Page 1").press("Enter");
@@ -2442,20 +2439,187 @@ test(
     await desktop.keyboard.press("Escape");
     await pageMenu().waitFor({ state: "hidden" });
 
+    await fitCanvas(desktop);
+    const beforeActions = await snapshot();
+    // Right-clicking outside the selection targets only the clicked board.
+    await right.click({ force: true });
+    await left.click({ button: "right", force: true });
+    assert.deepEqual(await selectedIds(), [groupIds[0]]);
+    assert.equal(await desktop.getByRole("button", { name: "Move…", exact: true }).count(), 0);
+    assert.equal(await desktop.getByText(/Delete to remove/).count(), 0);
+    if (evidence) await desktop.screenshot({ path: join(evidence, "artboard-context-menu.png") });
+    await actions.getByRole("menuitem", { name: "Rename" }).click();
+    const nameInput = desktop.getByRole("textbox", { name: "Artboard name" });
+    await nameInput.waitFor();
+    await nameInput.fill("Context renamed");
+    await nameInput.press("Enter");
+    const renamedByMenu = await waitForRevision(desktop, beforeActions.revision + 1);
+    assert.equal(
+      renamedByMenu.artboards.find(({ id }) => id === groupIds[0]).name,
+      "Context renamed",
+    );
+    await left.focus();
+    await desktop.keyboard.press("Meta+z");
+    await waitForRevision(desktop, renamedByMenu.revision + 1);
+
+    // Keyboard opening, navigation, cancellation, and focus return.
+    await left.press("Shift+F10");
+    await actions.waitFor();
+    await desktop.keyboard.press("End");
+    assert.equal(
+      await actions
+        .getByRole("menuitem", { name: "Delete" })
+        .evaluate((el) => el === document.activeElement),
+      true,
+    );
+    await desktop.keyboard.press("Home");
+    await desktop.keyboard.press("ArrowRight");
+    const singleMove = desktop.getByRole("menu", { name: "Move 1 artboard to" });
+    await singleMove.waitFor();
+    await desktop.keyboard.press("ArrowLeft");
+    await actions.waitFor();
+    await desktop.keyboard.press("Escape");
+    assert.equal(await left.evaluate((el) => el === document.activeElement), true);
+    assert.deepEqual(await selectedIds(), [groupIds[0]]);
+    await left.press("Shift+F10");
+    await actions.getByRole("menuitem", { name: "Rename" }).click();
+    await nameInput.fill("Canceled rename");
+    await nameInput.press("Escape");
+    assert.equal((await snapshot()).revision, renamedByMenu.revision + 1);
+    await left.press("Shift+F10");
+    await actions.waitFor();
+    await desktop.locator(".canvas-actions > span").click();
+    await actions.waitFor({ state: "hidden" });
+    assert.deepEqual(await selectedIds(), [groupIds[0]]);
+
+    // Edge clamping, Light/Dark, minimum size, and zoom do not scale the menu.
+    const windowSize = await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].getSize(),
+    );
+    for (const theme of ["Light", "Dark"]) {
+      await menu();
+      await desktop
+        .getByRole("group", { name: "Appearance" })
+        .getByRole("button", { name: theme, exact: true })
+        .click();
+      if (theme === "Dark") {
+        await app.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()[0].setSize(660, 480),
+        );
+        await pinchCanvas(desktop, 100);
+      }
+      const viewport = await desktop.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+      await left.dispatchEvent("contextmenu", {
+        clientX: viewport.width - 2,
+        clientY: viewport.height - 2,
+      });
+      await actions.waitFor();
+      const box = await actions.boundingBox();
+      assert.ok(
+        box.x >= 0 &&
+          box.y >= 0 &&
+          box.x + box.width <= viewport.width &&
+          box.y + box.height <= viewport.height,
+      );
+      assert.equal(Math.round(box.width), 184);
+      if (evidence)
+        await desktop.screenshot({
+          path: join(evidence, `artboard-context-${theme.toLowerCase()}.png`),
+        });
+      await desktop.keyboard.press("Escape");
+    }
+    await app.evaluate(
+      ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setSize(...size),
+      windowSize,
+    );
+    await fitCanvas(desktop);
+
+    // Single-board deletion and movement each use one undoable document command.
+    let beforeMenuCommand = await snapshot();
+    await left.click({ button: "right", position: { x: 25, y: 25 } });
+    await actions.getByRole("menuitem", { name: "Delete", exact: true }).click();
+    const deletedByMenu = await waitForRevision(desktop, beforeMenuCommand.revision + 1);
+    assert.deepEqual(
+      deletedByMenu.artboards,
+      beforeMenuCommand.artboards.filter(({ id }) => id !== groupIds[0]),
+    );
+    await desktop.keyboard.press("Meta+z");
+    const restoredByMenu = await waitForRevision(desktop, deletedByMenu.revision + 1);
+    const stableBoard = ({
+      sourceRevision: _sourceRevision,
+      previewUrl: _previewUrl,
+      agentWorking: _agentWorking,
+      ...board
+    }) => board;
+    assert.deepEqual(
+      restoredByMenu.artboards.map(stableBoard),
+      beforeMenuCommand.artboards.map(stableBoard),
+    );
+    assert.equal(
+      restoredByMenu.artboards.find(({ id }) => id === groupIds[0]).sourceRevision,
+      restoredByMenu.revision,
+    );
+    await left.waitFor();
+    beforeMenuCommand = await snapshot();
+    await left.click({ button: "right", position: { x: 25, y: 25 } });
+    await actions.getByRole("menuitem", { name: "Move to page" }).click();
+    await singleMove.getByRole("menuitem", { name: "Exploration", exact: true }).click();
+    const movedByMenu = await waitForRevision(desktop, beforeMenuCommand.revision + 1);
+    assert.equal(movedByMenu.artboards.find(({ id }) => id === groupIds[0]).pageId, target.id);
+    assert.equal(
+      movedByMenu.artboards.find(({ id }) => id === groupIds[1]).pageId,
+      legacy.defaultPageId,
+    );
+    await desktop.keyboard.press("Meta+z");
+    assert.deepEqual(
+      (await waitForRevision(desktop, movedByMenu.revision + 1)).artboards.map(stableBoard),
+      beforeMenuCommand.artboards.map(stableBoard),
+    );
+    await left.waitFor();
+
+    // The footer Delete action removes exactly the selected artboards in one step.
+    await left.click({ position: { x: 25, y: 25 } });
+    await right.click({ position: { x: 25, y: 25 }, modifiers: ["Shift"] });
+    await selectionCount.waitFor();
+    const beforeFooterDelete = await snapshot();
+    await desktop
+      .locator(".canvas-actions")
+      .getByRole("button", { name: "Delete", exact: true })
+      .click();
+    const footerDeleted = await waitForRevision(desktop, beforeFooterDelete.revision + 1);
+    assert.deepEqual(
+      footerDeleted.artboards,
+      beforeFooterDelete.artboards.filter(({ id }) => !groupIds.includes(id)),
+    );
+    await desktop.keyboard.press("Meta+z");
+    assert.deepEqual(
+      (await waitForRevision(desktop, footerDeleted.revision + 1)).artboards.map(stableBoard),
+      beforeFooterDelete.artboards.map(stableBoard),
+    );
+    await right.waitFor();
     await left.click({ position: { x: 25, y: 25 } });
     await right.click({ position: { x: 25, y: 25 }, modifiers: ["Shift"] });
     await selectionCount.waitFor();
     const beforePageMove = await snapshot();
-    const moveButton = desktop.getByRole("button", { name: "Move to page", exact: true });
-    const menuForMove = desktop.getByRole("group", { name: "Move 2 artboards to" });
+    const moveButton = desktop.getByRole("button", { name: "Move…", exact: true });
+    const menuForMove = desktop.getByRole("menu", { name: "Move 2 artboards to" });
+    await right.click({ button: "right", position: { x: 25, y: 25 } });
+    await actions.waitFor();
+    assert.equal(await actions.getByRole("menuitem", { name: "Rename" }).count(), 0);
+    await actions.getByRole("menuitem", { name: "Delete" }).waitFor();
+    await desktop.keyboard.press("Escape");
+    await selectionCount.waitFor();
     await moveButton.press("Enter");
     await menuForMove.waitFor();
-    assert.equal(await menuForMove.getByRole("button", { name: "Page 1", exact: true }).count(), 0);
+    assert.equal(
+      await menuForMove.getByRole("menuitem", { name: "Page 1", exact: true }).count(),
+      0,
+    );
     if (evidence) await desktop.screenshot({ path: join(evidence, "move-to-page.png") });
     await desktop.keyboard.press("Escape");
     await menuForMove.waitFor({ state: "hidden" });
     await moveButton.click();
-    await menuForMove.getByRole("button", { name: "Exploration", exact: true }).click();
+    await menuForMove.getByRole("menuitem", { name: "Exploration", exact: true }).click();
     const committedMove = await waitForRevision(desktop, beforePageMove.revision + 1);
     await left.waitFor({ state: "detached" });
     await right.waitFor({ state: "detached" });

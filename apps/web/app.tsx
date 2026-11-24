@@ -9,9 +9,15 @@ import {
 } from "@tanstack/react-router";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import faviconUrl from "@easy-proto/ui/fold.svg?url";
 import { startCamera } from "./camera";
 import { type Frame, type Page, type Scope, frameLabels, scopeLabels } from "./page";
+import "virtual:desktop-design-tokens.css";
 import "./style.css";
+import { Landing, SharedCanvas } from "./shared-pages";
+
+const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+if (favicon) favicon.href = faviconUrl;
 
 const payload = document.querySelector<HTMLScriptElement>("#page-data");
 let firstPage = payload?.textContent
@@ -36,6 +42,7 @@ async function loadPage({
     credentials: "same-origin",
     signal: abortController.signal,
   });
+  if (!response.ok) return { kind: "unavailable" } as const;
   return (await response.json()) as Page;
 }
 
@@ -57,9 +64,15 @@ function Header({ meta }: { meta: string }) {
 }
 
 function Layout({ view }: { view: Page }) {
+  useLayoutEffect(() => {
+    document.title =
+      view.kind === "page-preview" ? `${view.projectName} - ${view.pageName}` : "Easy Proto";
+  }, [view]);
+  if (view.kind === "landing") return <Landing />;
+  if (view.kind === "page-preview") return <SharedCanvas view={view} />;
   const meta =
     view.kind === "viewer"
-      ? `${view.title} · Revision ${view.revision}`
+      ? view.title
       : view.kind === "publisher" || view.kind === "created"
         ? "Publisher · local demo"
         : "Local demo";
@@ -99,6 +112,10 @@ function Unavailable() {
 
 function Content({ view }: { view: Page }) {
   switch (view.kind) {
+    case "landing":
+      return <Landing />;
+    case "page-preview":
+      return <SharedCanvas view={view} />;
     case "home":
       return <Home view={view} />;
     case "inbox":
@@ -175,7 +192,7 @@ function Publisher({ view }: { view: Extract<Page, { kind: "publisher" }> }) {
   const [frame, setFrame] = useState<Frame>("none");
   return (
     <Panel title="Share Field Notes">
-      <p>Publish a read-only preview of saved revision {view.revision}.</p>
+      <p>Publish a read-only preview.</p>
       <form method="post" action="/publish/create">
         <label htmlFor="scope">Share</label>
         <Select<Scope>
@@ -324,6 +341,8 @@ function pageRoute<const Path extends string>(path: Path) {
 
 const routeTree = rootRoute.addChildren([
   pageRoute("/"),
+  pageRoute("/demo"),
+  pageRoute("/p/$previewId"),
   pageRoute("/dev/inbox"),
   pageRoute("/auth/continue"),
   pageRoute("/publish"),

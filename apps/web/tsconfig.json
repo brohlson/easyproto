@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "types": ["vite/client"] },
-  "include": ["*.ts", "*.tsx"]
+  "include": ["app.tsx", "page.ts", "shared-pages.tsx", "camera.ts", "vite*.ts"]
 }

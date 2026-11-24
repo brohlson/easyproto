@@ -8,6 +8,9 @@
   },
   "packageManager": "pnpm@10.33.4",
   "scripts": {
+    "local:setup": "node scripts/local-web.mjs setup",
+    "local:dev": "node scripts/local-web.mjs dev",
+    "local:verify": "pnpm --filter @easy-proto/desktop build && node --test scripts/local-web-server.test.mjs apps/desktop/verify/web-sync.test.mjs",
     "build": "pnpm -r --if-present build",
     "dev": "pnpm --filter @easy-proto/desktop dev",
     "start": "pnpm --filter @easy-proto/desktop start",
@@ -19,7 +22,7 @@
     "fmt": "oxfmt --write '**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}'",
     "fmt:check": "oxfmt --check '**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}'",
     "typecheck": "pnpm -r --if-present typecheck",
-    "verify": "pnpm lint && pnpm fmt:check && pnpm -r --if-present verify",
+    "verify": "pnpm lint && pnpm fmt:check && node --test scripts/local-web-server.test.mjs && pnpm -r --if-present verify",
     "web:dev": "pnpm --filter @easy-proto/web dev",
     "web:build": "pnpm --filter @easy-proto/web build",
     "web:start": "pnpm --filter @easy-proto/web start",

@@ -16,20 +16,27 @@ export function startCamera(viewport: HTMLElement, controls: HTMLElement) {
   let manuallyMoved = false;
   function render() {
     camera.style.transform = `translate(${x}px,${y}px) scale(${zoom})`;
+    camera.style.setProperty("--camera-zoom", String(zoom));
+    const label = controls.querySelector("[data-zoom-label]");
+    if (label)
+      label.textContent = `${zoom < 0.1 ? (zoom * 100).toFixed(1) : Math.round(zoom * 100)}%`;
   }
 
-  function fit() {
-    const width = Math.max(...cards.map((card) => card.offsetLeft + card.offsetWidth));
-    const height = Math.max(...cards.map((card) => card.offsetTop + card.offsetHeight));
+  function fit(targets = cards) {
+    if (!targets.length) return;
+    const left = Math.min(...targets.map((card) => card.offsetLeft));
+    const top = Math.min(...targets.map((card) => card.offsetTop));
+    const width = Math.max(...targets.map((card) => card.offsetLeft + card.offsetWidth)) - left;
+    const height = Math.max(...targets.map((card) => card.offsetTop + card.offsetHeight)) - top;
     const inset = viewport.clientWidth < 600 ? 32 : 112;
     zoom = Math.min(
       1,
       (viewport.clientWidth - inset) / width,
       (viewport.clientHeight - 90) / height,
     );
-    zoom = Math.max(0.1, zoom);
-    x = (viewport.clientWidth - zoom * width) / 2;
-    y = (viewport.clientHeight - zoom * height) / 2;
+    zoom = Math.max(0.001, zoom);
+    x = (viewport.clientWidth - zoom * width) / 2 - left * zoom;
+    y = (viewport.clientHeight - zoom * height) / 2 - top * zoom;
     manuallyMoved = false;
     render();
   }
@@ -39,7 +46,7 @@ export function startCamera(viewport: HTMLElement, controls: HTMLElement) {
     anchorX = viewport.clientWidth / 2,
     anchorY = viewport.clientHeight / 2,
   ) {
-    const next = Math.min(2, Math.max(0.1, zoom * factor));
+    const next = Math.min(3, Math.max(0.001, zoom * factor));
     x = anchorX - ((anchorX - x) * next) / zoom;
     y = anchorY - ((anchorY - y) * next) / zoom;
     zoom = next;
@@ -47,7 +54,30 @@ export function startCamera(viewport: HTMLElement, controls: HTMLElement) {
     render();
   }
 
-  controls.querySelector('[data-zoom="fit"]')!.addEventListener("click", fit, listeners);
+  controls.querySelector('[data-zoom="fit"]')!.addEventListener("click", () => fit(), listeners);
+  viewport.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === "0" || event.key === "Home") {
+        event.preventDefault();
+        fit();
+      } else if (event.key === "+" || event.key === "=") {
+        event.preventDefault();
+        changeZoom(1.2);
+      } else if (event.key === "-") {
+        event.preventDefault();
+        changeZoom(1 / 1.2);
+      } else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+        event.preventDefault();
+        x += event.key === "ArrowLeft" ? 64 : event.key === "ArrowRight" ? -64 : 0;
+        y += event.key === "ArrowUp" ? 64 : event.key === "ArrowDown" ? -64 : 0;
+        manuallyMoved = true;
+        render();
+      }
+    },
+    listeners,
+  );
   controls
     .querySelector('[data-zoom="out"]')!
     .addEventListener("click", () => changeZoom(1 / 1.2), listeners);

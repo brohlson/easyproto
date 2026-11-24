@@ -84,7 +84,7 @@ test("Chromium owner publishes scoped canvas and framed artboards and revokes a 
   t.after(() => browser.close());
   const owner = await browser.newPage();
   owner.setDefaultTimeout(5000);
-  await owner.goto(origin);
+  await owner.goto(origin + "/demo");
   const mark = owner.locator("svg.ep-fold-mark path");
   await mark.waitFor();
   const icon = await owner.locator('link[rel="icon"]').getAttribute("href");
@@ -107,7 +107,7 @@ test("Chromium owner publishes scoped canvas and framed artboards and revokes a 
   });
   guest.setDefaultTimeout(5000);
   await showBoard(guest, canvasLink, [overview, today]);
-  assert.match(await guest.locator("header").innerText(), /Revision 7/);
+  assert.doesNotMatch(await guest.locator("header").innerText(), /Revision/);
   const originalWidth = (await guest.locator("iframe[title=Overview]").boundingBox()).width;
   await guest.getByRole("button", { name: "Zoom in" }).click();
   assert.ok((await guest.locator("iframe[title=Overview]").boundingBox()).width > originalWidth);

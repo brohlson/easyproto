@@ -62,8 +62,10 @@ runtime="$app/runtime"
 mkdir -p "$runtime/apps/desktop" "$runtime/packages"
 cp package.json pnpm-lock.yaml pnpm-workspace.yaml "$runtime/"
 cp "$desktop/package.json" "$runtime/apps/desktop/"
-mkdir "$runtime/packages/ui"
-rsync -a --exclude node_modules --exclude dist packages/ui/ "$runtime/packages/ui/"
+for package in ui preview; do
+  mkdir "$runtime/packages/$package"
+  rsync -a --exclude node_modules --exclude dist "packages/$package/" "$runtime/packages/$package/"
+done
 pnpm --dir "$runtime" --store-dir "$store" --filter '@easy-proto/desktop...' install \
   --prod --frozen-lockfile --ignore-scripts --prefer-offline --package-import-method=copy
 mv "$app/dist" "$runtime/apps/desktop/dist"

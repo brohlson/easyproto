@@ -1,4 +1,4 @@
-import { Check, ChevronDown, File, Pencil, Plus, Settings, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Pencil, Plus, Settings, Trash2, X } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { Artboard, Page } from "../shared/model";
 
@@ -427,60 +427,6 @@ export function PagePicker({
           </>
         )}
       </dialog>
-    </>
-  );
-}
-
-export function MoveToPage({
-  pages,
-  count,
-  disabled,
-  onMove,
-}: {
-  pages: Page[];
-  count: number;
-  disabled: boolean;
-  onMove(pageId: string): void;
-}) {
-  const panel = useRef<HTMLDivElement>(null);
-  const caption = `Move ${count} ${count === 1 ? "artboard" : "artboards"} to`;
-  return (
-    <>
-      <button
-        type="button"
-        className="page-trigger move-page-trigger"
-        popoverTarget="move-page"
-        disabled={disabled}
-      >
-        <span>Move to page</span>
-        <ChevronDown aria-hidden="true" size={14} />
-      </button>
-      <div
-        ref={panel}
-        id="move-page"
-        popover="auto"
-        className="menu-panel move-pages-panel"
-        role="group"
-        aria-label={caption}
-      >
-        <div className="menu-caption">{caption}</div>
-        {pages.map((page) => (
-          <button
-            key={page.id}
-            type="button"
-            className="menu-row page-row"
-            title={page.name}
-            disabled={disabled}
-            onClick={() => {
-              panel.current?.hidePopover();
-              onMove(page.id);
-            }}
-          >
-            <File aria-hidden="true" size={14} />
-            <span>{page.name}</span>
-          </button>
-        ))}
-      </div>
     </>
   );
 }
