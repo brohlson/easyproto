@@ -2751,7 +2751,8 @@ test(
     const insets = () =>
       tokens.evaluate((element) => {
         const bounds = element.getBoundingClientRect();
-        return [bounds.left, innerWidth - bounds.right, bounds.top, innerHeight - bounds.bottom];
+        const { clientWidth, clientHeight } = document.documentElement;
+        return [bounds.left, clientWidth - bounds.right, bounds.top, clientHeight - bounds.bottom];
       });
     assert.deepEqual(await insets(), [20, 20, 20, 20]);
     await app.evaluate(({ BrowserWindow }) =>

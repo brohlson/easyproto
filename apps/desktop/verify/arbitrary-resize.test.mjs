@@ -157,9 +157,9 @@ test(
     await revision(initial.revision + 3);
     await waitViewport(400, 290);
 
-    const canvas = await page.locator("[data-testid=canvas]").boundingBox();
     const renderedBefore = await iframe.boundingBox();
-    await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
+    // Anchor zoom at the handle so the next drag starts within smaller runner displays.
+    await handle.hover();
     await page.keyboard.down("Control");
     await page.mouse.wheel(0, -40);
     await page.keyboard.up("Control");
@@ -175,13 +175,16 @@ test(
     assert.deepEqual(await viewport(), [400, 290]);
     assert.equal((await scene()).revision, initial.revision + 3);
     assert.ok(Math.abs((await handle.boundingBox()).width - 24) < 0.5);
+    await handle.hover();
     const second = await handle.boundingBox();
-    await page.mouse.move(second.x + second.width / 2, second.y + second.height / 2);
     await page.mouse.down();
     await page.mouse.move(
       second.x + second.width / 2 + 40 * biggerScale,
       second.y + second.height / 2 + 30 * biggerScale,
       { steps: 6 },
+    );
+    await content.waitForFunction(
+      () => Math.abs(innerWidth - 440) <= 1 && Math.abs(innerHeight - 320) <= 1,
     );
     await page.mouse.up();
     await revision(initial.revision + 4);
