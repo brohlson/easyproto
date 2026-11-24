@@ -1,7 +1,6 @@
-import { Brand } from "@easy-proto/ui";
+import { Brand, EdgeRunner, WorkspaceHeader } from "@easy-proto/ui";
 import { Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
-import fold from "@easy-proto/ui/fold.svg";
 import chrome from "../chrome.module.css";
 import styles from "./landing.module.css";
 
@@ -36,22 +35,20 @@ export function Landing() {
   }
   return (
     <div className={styles.landingPage}>
-      <header className={`${chrome.header} ${styles.siteHeader}`}>
-        <Link to="/" aria-label="Easy Proto home">
-          <Brand />
-        </Link>
-        <span className={`${chrome.headerMeta} ${styles.headerMeta}`}>
-          A personal canvas for agent-made ideas.
-        </span>
-      </header>
+      <WorkspaceHeader
+        brand={
+          <Link to="/" aria-label="Easy Proto home">
+            <Brand />
+          </Link>
+        }
+      />
       <main className={styles.landingMain}>
         <section className={styles.landingHero} aria-labelledby="landing-title">
-          <img className={styles.landingMark} src={fold} alt="" />
+          <EdgeRunner className={styles.landingMark} animated />
           <h1 id="landing-title">Easy Proto</h1>
           <p>
-            Create with agents. Keep your files.
-            <br />
-            Share a page when it’s ready.
+            Easy Proto is a free, open-source tool for generating prototypes and managing tokens and
+            components for all of your digital products.
           </p>
           <form className={styles.waitlistForm} onSubmit={(event) => void join(event)}>
             <label className={styles.visuallyHidden} htmlFor="waitlist-email">
@@ -86,11 +83,10 @@ export function Landing() {
             {error ||
               (joined
                 ? "Thanks. We’ll be in touch when Easy Proto is ready."
-                : "Just a note when Easy Proto is ready.")}
+                : "We’ll send you a message when Easy Proto is ready.")}
           </p>
         </section>
       </main>
-      <footer className={styles.landingFooter}>Built for macOS. Shared on the web.</footer>
     </div>
   );
 }

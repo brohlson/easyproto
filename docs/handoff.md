@@ -443,3 +443,15 @@ The nine web checks passed, including the published route and the legacy demo in
 The batch based on `21689e0` moves each shared UI component and its CSS Module into one folder. The theme, font, favicon and package exports retain their existing paths. `@easy-proto/preview` keeps one public entry point and separates schemas and limits, HTML sanitization, and digests into internal modules. The web client TypeScript configuration accepts the explicit TypeScript imports also used by native Node consumers.
 
 Lint, formatting, theme validation and type checks passed. All six moved UI files were compared byte for byte. A differential Node check matched the preview runtime exports, limits, accepted and rejected schema results, sanitized output and SHA-256 results against the previous revision.
+
+## Web UI mockups
+
+The working EasyProtoMocks project now has a **Web UI** page with **Web Home** and **Shared Page**. The boards use the current web shell styles and shared Fold mark. The shared page uses sample artboards to show the read-only header and canvas; both boards are static HTML/CSS studies. The 1280 × 800 Dark captures at project revision 392 were inspected and reported no unresolved dependencies. The tracked mock checkpoint and production code were left intact.
+
+Revision 394 updates **Web Home** to match the shared canvas header and adds **Web Home · Joined waitlist** with the disabled email field, confirmation button and success copy. Both 1280 × 800 Dark mockups were captured and inspected with no unresolved dependencies. The live home page now renders the shared `WorkspaceHeader`, with its existing tagline in the actions slot. Chromium verified matching home and published header height, gutter, typography and colors at 1180 and 660 px in Light and Dark. It also submitted the waitlist form through a disposable Worker fixture and checked the resulting joined state. All nine web checks and lint, formatting, theme and whitespace checks passed.
+
+Revision 395 removes the home tagline and footer on both mockups and updates the description and signup hint. The joined state still confirms signup. Both 1280 × 800 Dark captures were inspected with no unresolved dependencies. The live landing page uses the same copy, and all nine web checks passed, including Chromium assertions for the shared header, the new copy and the joined state.
+
+## Animated home mark
+
+EasyProtoMocks revision 398 adds the desktop Edge runner to **Web Home** and **Web Home · Joined waitlist**. Revision 399 limits the home animation to two passes. Both 1280 × 800 Dark captures were inspected again with no unresolved dependencies. The web hero and desktop canvas activity overlay share the SVG and motion styles. Chromium checks the running highlight and its duration, a visible static mark with reduced motion, and the mark after signup. The focused Electron checks cover the desktop activity overlay.

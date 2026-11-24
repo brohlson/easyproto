@@ -108,12 +108,7 @@ test("waitlist normalizes and deduplicates emails and rejects invalid or cross-o
   assert.equal(database.prepare("SELECT count(*) AS count FROM waitlist").get().count, 1);
 });
 
-test("the published page matches the desktop header in Light and Dark at both widths", async (t) => {
-  const origin = "http://127.0.0.1:8787";
-  const { env, sync } = await fixture(t);
-  const saved = await sync();
-  assert.equal(saved.ok, true);
-  const { id } = await saved.json();
+async function browserPage(t, env, origin) {
   const assets = new URL("./.cloudflare/output/v1/workers/default/assets/", import.meta.url);
   const contentTypes = {
     ".html": "text/html",
@@ -136,13 +131,31 @@ test("the published page matches the desktop header in Light and Dark at both wi
   const page = await browser.newPage();
   page.setDefaultTimeout(5000);
   await page.route(`${origin}/**`, async (route) => {
-    const response = await worker.fetch(new Request(route.request().url()), env);
+    const request = route.request();
+    const response = await worker.fetch(
+      new Request(request.url(), {
+        method: request.method(),
+        headers: await request.allHeaders(),
+        body: request.postDataBuffer(),
+      }),
+      env,
+    );
     await route.fulfill({
       status: response.status,
       headers: Object.fromEntries(response.headers),
       body: Buffer.from(await response.arrayBuffer()),
     });
   });
+  return page;
+}
+
+test("the web home and published page share the desktop header and the waitlist confirms signup", async (t) => {
+  const origin = "http://127.0.0.1:8787";
+  const { database, env, sync } = await fixture(t);
+  const saved = await sync();
+  assert.equal(saved.ok, true);
+  const { id } = await saved.json();
+  const page = await browserPage(t, env, origin);
   for (const colorScheme of ["light", "dark"]) {
     for (const width of [1180, 660]) {
       await page.emulateMedia({ colorScheme });
@@ -153,8 +166,62 @@ test("the published page matches the desktop header in Light and Dark at both wi
       assert.equal(await page.getByTestId("workspace-project").innerText(), "Notes");
       assert.equal(await page.getByTestId("workspace-page").innerText(), "Concepts");
       await checkWorkspaceHeader(page, { dark: colorScheme === "dark", compact: width === 660 });
+      const headerMetrics = () =>
+        page.getByTestId("workspace-header").evaluate(async (header) => {
+          await document.fonts.ready;
+          const { height, paddingInlineStart, backgroundColor, color } = getComputedStyle(header);
+          const brand = header.querySelector("[data-testid=brand]");
+          return [
+            height,
+            paddingInlineStart,
+            backgroundColor,
+            color,
+            getComputedStyle(brand).fontSize,
+          ];
+        });
+      const previewHeader = await headerMetrics();
+      await page.goto(origin);
+      await page.getByRole("heading", { name: "Easy Proto", exact: true }).waitFor();
+      assert.deepEqual(await headerMetrics(), previewHeader);
     }
   }
+  assert.equal(await page.getByTestId("workspace-header").innerText(), "Easy Proto");
+  assert.equal(await page.locator("footer").count(), 0);
+  const heroMark = page.getByRole("main").getByTestId("edge-runner");
+  const highlight = heroMark.getByTestId("edge-runner-highlight");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const timing = await highlight.evaluate((path) => {
+    const [animation] = path.getAnimations();
+    return [animation?.playState, animation?.effect?.getComputedTiming().activeDuration];
+  });
+  assert.equal(timing[0], "running");
+  assert.ok(timing[1] > 0 && timing[1] <= 5000);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  assert.equal(await highlight.evaluate((path) => path.getAnimations().length), 0);
+  assert.equal(await heroMark.isVisible(), true);
+  assert.equal(
+    await page
+      .getByText(
+        "Easy Proto is a free, open-source tool for generating prototypes and managing tokens and components for all of your digital products.",
+        { exact: true },
+      )
+      .isVisible(),
+    true,
+  );
+  assert.equal(
+    await page.getByRole("status").innerText(),
+    "We’ll send you a message when Easy Proto is ready.",
+  );
+  const email = page.getByRole("textbox", { name: "Email address" });
+  await email.fill("designer@example.com");
+  await page.getByRole("button", { name: "Join the waitlist" }).click();
+  const joined = page.getByRole("button", { name: "You’re on the list" });
+  await joined.waitFor();
+  assert.equal(await heroMark.isVisible(), true);
+  assert.equal(await joined.isDisabled(), true);
+  assert.equal(await email.isDisabled(), true);
+  assert.match(await page.getByRole("status").innerText(), /Thanks\. We’ll be in touch/);
+  assert.equal(database.prepare("SELECT email FROM waitlist").get().email, "designer@example.com");
 });
 
 test("page sync keeps one URL and serves immutable sandboxed HTML, CSS, and assets", async (t) => {

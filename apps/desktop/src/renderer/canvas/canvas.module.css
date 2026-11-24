@@ -78,8 +78,6 @@
   font-size: var(--ep-desktop-type-size-detail); font-weight: var(--ep-desktop-type-weight-label); white-space: nowrap;
 }
 .edgeRunner { display: block; width: var(--ep-desktop-control-row); height: var(--ep-desktop-control-row); }
-.edgeRunnerTrack { opacity: var(--ep-desktop-opacity-working-track); }
-.edgeRunnerHighlight { stroke-dasharray: 12 88; }
 
 .artboardPreview { opacity: 0; pointer-events: none; }
 .artboardPreview[data-loaded="true"] { opacity: 1; }
@@ -87,7 +85,5 @@
 @media (prefers-reduced-motion: no-preference) {
   .artboardPreview { transition: opacity var(--ep-desktop-motion-preview-fade) ease-out; }
   .artboardWorkingOverlay { transition: opacity var(--ep-desktop-motion-preview-fade) ease-out, visibility var(--ep-desktop-motion-preview-fade); }
-  .artboardWorkingOverlay[data-working="true"] .edgeRunnerHighlight { animation: edge-runner var(--ep-desktop-motion-edge-runner) linear infinite; }
 }
-@keyframes edge-runner { to { stroke-dashoffset: -100; } }
 @media (prefers-color-scheme: dark) { .artboard iframe { color-scheme: dark; } }

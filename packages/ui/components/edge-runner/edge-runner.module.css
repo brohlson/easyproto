@@ -1,0 +1,12 @@
+.track { opacity: var(--ep-desktop-opacity-working-track); }
+.highlight { stroke-dasharray: 12 88; }
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-animated="true"] > .highlight {
+    animation: edge-runner var(--ep-desktop-motion-edge-runner) linear var(--ep-edge-runner-iterations, infinite);
+  }
+}
+
+@keyframes edge-runner {
+  to { stroke-dashoffset: -100; }
+}
