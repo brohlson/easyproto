@@ -52,6 +52,8 @@ The first product supports arranging, resizing, duplicating, and previewing artb
 
 The project now uses the design recorded in [project commits](decisions/0002-project-commits.md) and [preview and MCP isolation](decisions/0003-preview-and-mcp.md). The desktop launches from the Vite build with Electron. Electron Forge packaging stays in Milestone 4. See the [current handoff](handoff.md) for verification and remaining gates.
 
+The Electron entry points are `apps/desktop/src/main/main.ts` and `preload.ts`. Under that directory, `app/` owns startup, window and project selection state, and renderer IPC registration. `document/` contains the serialized command service, snapshot validation, and folder and SQLite storage. `previews/` owns the sandboxed protocols, capture, review sheets, and activity. `publishing/` handles the page export IPC and upload, and `mcp/` handles the local agent transport and settings. Renderer IPC and MCP still share the `Project` command queue.
+
 ## External agents
 
 External agents use the authenticated loopback MCP endpoint to read, edit, and capture the active project. The client owns provider configuration, conversations, and tool approval. The desktop owns the canvas and the shared project command service.

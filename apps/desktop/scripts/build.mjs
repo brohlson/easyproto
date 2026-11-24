@@ -3,12 +3,12 @@ import { fileURLToPath } from "node:url";
 
 await Promise.all([
   build({
-    entryPoints: [
-      "src/main/main.ts",
-      "src/main/project.ts",
-      "src/main/activity.ts",
-      "src/main/web-preview.ts",
-    ],
+    entryPoints: {
+      main: "src/main/main.ts",
+      project: "src/main/document/project.ts",
+      activity: "src/main/previews/activity.ts",
+      "web-preview": "src/main/publishing/web-preview.ts",
+    },
     outdir: "dist",
     bundle: true,
     platform: "node",

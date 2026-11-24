@@ -9,7 +9,7 @@ import {
   type TokenLiteral,
   type TokenRow,
   type TokenType,
-} from "../shared/token-types.ts";
+} from "../../shared/token-types.ts";
 
 const safeSegment = /^(?:[a-z0-9]+(?:-[a-z0-9]+)*)$/;
 const forbiddenSegments = new Set(["constructor", "prototype", "__proto__"]);

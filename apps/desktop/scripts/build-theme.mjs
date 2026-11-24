@@ -1,6 +1,6 @@
 import { glob, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { compileTokens } from "../src/main/tokens.ts";
+import { compileTokens } from "../src/main/document/tokens.ts";
 
 const source = new URL("../src/renderer/design.tokens.json", import.meta.url);
 const output = new URL("../../../packages/ui/theme.tokens.css", import.meta.url);

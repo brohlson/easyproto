@@ -1,6 +1,6 @@
 import { BrowserWindow, nativeImage } from "electron";
 import { securePreferences } from "./preview";
-import { ProjectError } from "./project";
+import { ProjectError } from "../document/project";
 
 const cellWidth = 240;
 const cellHeight = 216;

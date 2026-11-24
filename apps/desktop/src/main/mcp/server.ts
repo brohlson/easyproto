@@ -14,12 +14,12 @@ import {
   id,
   revision,
   type Command,
-} from "../shared/model";
-import { tokenByteLimit } from "../shared/token-types";
-import { activityLeaseMs, type ArtboardActivity } from "./activity";
-import { Project, ProjectError } from "./project";
-import { reviewSheet, thumbnail } from "./review-sheet";
-import type { Preview } from "./preview";
+} from "../../shared/model";
+import { tokenByteLimit } from "../../shared/token-types";
+import { activityLeaseMs, type ArtboardActivity } from "../previews/activity";
+import { Project, ProjectError } from "../document/project";
+import { reviewSheet, thumbnail } from "../previews/review-sheet";
+import type { Preview } from "../previews/preview";
 
 const host = "127.0.0.1";
 const maxBody = 3 * 1024 * 1024;

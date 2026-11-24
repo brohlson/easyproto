@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { pageUpload, previewHtml, previewLimits, type WebPreviewInfo } from "@easy-proto/preview";
-import { Project, type Snapshot } from "./project";
-import type { Artboard } from "../shared/model";
+import { Project, type Snapshot } from "../document/project";
+import type { Artboard } from "../../shared/model";
 import { createHash } from "node:crypto";
 
 export type WebPreviewSettings = { origin: string; token: string };

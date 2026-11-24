@@ -1,19 +1,33 @@
-import { createHash, randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import {
-  lstat,
-  mkdir,
-  open,
-  readdir,
-  realpath,
-  rename,
-  rm,
-  rmdir,
-  writeFile,
-} from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { lstat, mkdir, readdir, realpath, rmdir } from "node:fs/promises";
 import { basename, extname, join, sep } from "node:path";
-import { z } from "zod";
-import { tokenByteLimit } from "../shared/token-types";
+import type { z } from "zod";
+import {
+  boardInput,
+  commandSchema,
+  coordinateLimit,
+  revision,
+  type Artboard,
+  type Commit,
+  type Page,
+  type PageLayout,
+  type Source,
+} from "../../shared/model";
+import {
+  loadFolderSnapshot,
+  managed,
+  missing,
+  prepareBytes,
+  projectLabel,
+  publishFolderSnapshot,
+  readAssets,
+  readFolderName,
+  renameFolderProject,
+  requireDirectory,
+  validateDatabaseAssets,
+  type CommitPhase,
+} from "./folder-storage";
+import { canonical, digest, validateSnapshot, type Asset, type Snapshot } from "./snapshot";
 import {
   readSqliteProject,
   renameSqliteProject,
@@ -21,24 +35,10 @@ import {
   writeSqliteProjectCopy,
   type SqliteIdentity,
 } from "./sqlite-project";
-import { compileTokens, loadTokens, TokenError, type TokenBundle } from "./tokens";
-import {
-  boardInput,
-  commandSchema,
-  coordinateLimit,
-  id,
-  manifestSchema,
-  projectName,
-  revision,
-  schemaVersion,
-  source,
-  type Artboard,
-  type Commit,
-  type Manifest,
-  type Page,
-  type PageLayout,
-  type Source,
-} from "../shared/model";
+import { compileTokens, TokenError, type TokenBundle } from "./tokens";
+
+export { readRegular } from "./folder-storage";
+export { digest, type Asset, type Snapshot } from "./snapshot";
 
 export class ProjectError extends Error {
   constructor(
@@ -50,27 +50,6 @@ export class ProjectError extends Error {
   }
 }
 
-export function digest(value: string | Buffer) {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return JSON.stringify(value.map(canonical));
-  if (value !== null && typeof value === "object") {
-    return JSON.stringify(
-      Object.entries(value)
-        .sort(([left], [right]) => (left < right ? -1 : Number(left > right)))
-        .map(([key, item]) => [key, canonical(item)]),
-    );
-  }
-  return JSON.stringify(value);
-}
-
-export type Snapshot = {
-  manifest: Manifest;
-  sources: ReadonlyMap<string, Source>;
-  tokens?: TokenBundle;
-};
 type BoardInput = z.infer<typeof boardInput>;
 type ArtboardState = { board: Artboard; source: Source };
 type HistoryChange = { index: number } & (
@@ -92,117 +71,6 @@ type HistoryEntry =
   | { tokens: { before?: TokenBundle; after: TokenBundle } };
 type HistoryItem = { commandId: string; entry: HistoryEntry };
 const historyLimit = 50;
-export type Asset = { bytes: Buffer; mime: string };
-const assetTypes = new Map([
-  [".png", "image/png"],
-  [".jpg", "image/jpeg"],
-  [".jpeg", "image/jpeg"],
-  [".webp", "image/webp"],
-  [".gif", "image/gif"],
-  [".avif", "image/avif"],
-  [".woff2", "font/woff2"],
-  [".woff", "font/woff"],
-]);
-const pointerSchema = z.strictObject({
-  schemaVersion,
-  projectId: id,
-  revision,
-  snapshot: id,
-});
-const managed = ".easy-proto";
-const tokenDocument = "design.tokens.json";
-const tokenStylesheet = "tokens.css";
-const projectLabel = z.strictObject({ name: projectName });
-const prepareBytes = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
-const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
-
-export async function readRegular(path: string, max: number) {
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  try {
-    const stat = await file.stat();
-    if (!stat.isFile() || stat.nlink !== 1 || stat.size > max) {
-      throw new Error("Expected a regular, single-link project file within the size limit.");
-    }
-    const bytes = Buffer.alloc(stat.size);
-    let offset = 0;
-    while (offset < bytes.length) {
-      const { bytesRead } = await file.read(bytes, offset, bytes.length - offset, offset);
-      if (!bytesRead) throw new Error("File changed while reading.");
-      offset += bytesRead;
-    }
-    if ((await file.stat()).size !== stat.size) throw new Error("File changed while reading.");
-    return bytes;
-  } finally {
-    await file.close();
-  }
-}
-
-async function requireDirectory(path: string) {
-  if (!(await lstat(path)).isDirectory()) throw new Error("Expected a real directory.");
-}
-
-function assetSegment(name: string) {
-  // Control characters are excluded from project asset names.
-  // oxlint-disable-next-line no-control-regex
-  return Boolean(name) && !name.startsWith(".") && !/[\\\u0000-\u001f]/.test(name);
-}
-
-function assetMime(name: string) {
-  return assetTypes.get(name.slice(name.lastIndexOf(".")).toLowerCase());
-}
-
-function validateDatabaseAssets(assets: Map<string, Asset>) {
-  let total = 0;
-  for (const [path, { mime, bytes }] of assets) {
-    const segments = path.split("/");
-    total += bytes.length;
-    if (
-      segments.length > 13 ||
-      !segments.every(assetSegment) ||
-      mime !== assetMime(segments.at(-1)!) ||
-      bytes.length > 8 * 1024 * 1024 ||
-      total > 32 * 1024 * 1024 ||
-      assets.size > 2048
-    )
-      throw new Error("Invalid project asset data.");
-  }
-}
-
-async function readAssets(root: string) {
-  const assets = new Map<string, Asset>();
-  let total = 0;
-  let entries = 0;
-  async function walk(segments: string[]) {
-    if (segments.length > 12) throw new Error("The assets directory is nested too deeply.");
-    const folder = join(root, "assets", ...segments);
-    await requireDirectory(folder);
-    for (const name of (await readdir(folder)).sort()) {
-      if (++entries > 2048) throw new Error("The assets directory contains too many entries.");
-      if (!assetSegment(name)) continue;
-      const path = join(folder, name);
-      const entry = await lstat(path);
-      if (entry.isSymbolicLink()) throw new Error("Project assets cannot contain symbolic links.");
-      if (entry.isDirectory()) {
-        await walk([...segments, name]);
-        continue;
-      }
-      const mime = assetMime(name);
-      if (!mime) continue;
-      const bytes = await readRegular(path, 8 * 1024 * 1024);
-      total += bytes.byteLength;
-      if (total > 32 * 1024 * 1024) throw new Error("Project assets exceed 32 MiB.");
-      assets.set([...segments, name].join("/"), { bytes, mime });
-    }
-  }
-  try {
-    await lstat(join(root, "assets"));
-  } catch (error) {
-    if (missing(error)) return assets;
-    throw error;
-  }
-  await walk([]);
-  return assets;
-}
 
 function metadata(artboardId: string, atRevision: number, input: BoardInput, pageId?: string) {
   const { html, css, ...bounds } = input;
@@ -359,156 +227,6 @@ function starter(): Snapshot {
   };
 }
 
-async function load(root: string): Promise<Snapshot> {
-  const pointer = pointerSchema.parse(
-    JSON.parse((await readRegular(join(root, "project.json"), 4096)).toString()),
-  );
-  await requireDirectory(join(root, managed));
-  const folder = join(root, managed, pointer.snapshot);
-  await requireDirectory(folder);
-  const manifest = manifestSchema.parse(
-    JSON.parse((await readRegular(join(folder, "manifest.json"), 32 * 1024 * 1024)).toString()),
-  );
-  if (
-    manifest.schemaVersion !== pointer.schemaVersion ||
-    manifest.revision !== pointer.revision ||
-    manifest.projectId !== pointer.projectId
-  ) {
-    throw new Error("Project pointer and revision disagree.");
-  }
-  return validateSnapshot(
-    manifest,
-    async (board) => ({
-      html: (await readRegular(join(folder, board.htmlRef), 1024 * 1024)).toString(),
-      css: (await readRegular(join(folder, board.cssRef), 512 * 1024)).toString(),
-    }),
-    async () => ({
-      document: (await readRegular(join(folder, tokenDocument), tokenByteLimit)).toString("utf8"),
-      css: (await readRegular(join(folder, tokenStylesheet), tokenByteLimit)).toString("utf8"),
-    }),
-  );
-}
-
-type TokenFiles = { document: string; css: string };
-async function validateSnapshot(
-  manifest: Manifest,
-  readSource: (board: Artboard) => unknown | Promise<unknown>,
-  readTokenFiles: () => TokenFiles | undefined | Promise<TokenFiles>,
-): Promise<Snapshot> {
-  const { pageLayout } = manifest;
-  const pageIds = new Set(pageLayout?.pages.map(({ id }) => id));
-  if (
-    manifest.schemaVersion >= 4 !== Boolean(pageLayout) ||
-    (manifest.schemaVersion < 5 && manifest.tokens !== undefined) ||
-    (pageLayout &&
-      (pageIds.size !== pageLayout.pages.length || !pageIds.has(pageLayout.defaultPageId)))
-  )
-    throw new Error("Invalid project pages.");
-  const sources = new Map<string, Source>();
-  for (const board of manifest.artboards) {
-    if (
-      sources.has(board.id) ||
-      (board.pageId === undefined ? manifest.schemaVersion >= 4 : !pageIds.has(board.pageId)) ||
-      board.htmlRef !== `${board.id}.html` ||
-      board.cssRef !== `${board.id}.css` ||
-      board.sourceRevision > manifest.revision
-    )
-      throw new Error("Invalid artboard metadata.");
-    const content = source.parse(await readSource(board));
-    if (board.sourceDigest !== digest(canonical(content)))
-      throw new Error("Artboard source has changed on disk.");
-    sources.set(board.id, content);
-  }
-  const commands = new Set<string>();
-  for (const { result } of manifest.commands) {
-    if (
-      commands.has(result.commandId) ||
-      result.projectId !== manifest.projectId ||
-      result.revision < 1 ||
-      result.revision > manifest.revision
-    ) {
-      throw new Error("Invalid command history.");
-    }
-    if ("artboard" in result) {
-      const affected = result.artboards ?? [result.artboard];
-      if (
-        (manifest.schemaVersion === 1 && !sources.has(result.artboard.id)) ||
-        (result.artboards &&
-          (manifest.schemaVersion < 3 ||
-            canonical(result.artboard) !== canonical(affected[0]) ||
-            new Set(affected.map(({ id }) => id)).size !== affected.length)) ||
-        affected.some(
-          (board) =>
-            (board.pageId !== undefined && manifest.schemaVersion < 4) ||
-            board.htmlRef !== `${board.id}.html` ||
-            board.cssRef !== `${board.id}.css` ||
-            board.sourceRevision > result.revision,
-        )
-      )
-        throw new Error("Invalid artboard command history.");
-    } else if (manifest.schemaVersion < ("tokens" in result ? 5 : 4)) {
-      throw new Error("Invalid project command history.");
-    }
-    commands.add(result.commandId);
-  }
-  let tokens: TokenBundle | undefined;
-  if (manifest.tokens) {
-    const files = await readTokenFiles();
-    if (!files) throw new Error("The token files are missing.");
-    tokens = loadTokens(files.document, files.css, manifest.tokens);
-  }
-  return { manifest, sources, tokens };
-}
-
-async function readName(root: string) {
-  try {
-    const bytes = await readRegular(join(root, managed, "name.json"), 4096);
-    return projectLabel.parse(JSON.parse(bytes.toString())).name;
-  } catch (error) {
-    if (!missing(error)) throw error;
-    return basename(root);
-  }
-}
-
-type CommitPhase = "snapshotWritten" | "pointerPublished";
-
-async function publish(root: string, snapshot: Snapshot, onPhase?: (phase: CommitPhase) => void) {
-  await requireDirectory(join(root, managed));
-  const key = randomUUID();
-  const folder = join(root, managed, key);
-  const pending = join(root, `.project-${key}.tmp`);
-  const { manifest, sources, tokens } = snapshot;
-  const { schemaVersion, projectId, revision } = manifest;
-  const serialized = prepareBytes(manifest);
-  if (Buffer.byteLength(serialized) > 32 * 1024 * 1024)
-    throw new Error("Project history capacity reached.");
-  await mkdir(folder);
-  try {
-    if (tokens) {
-      await writeFile(join(folder, tokenDocument), tokens.document, { flag: "wx", flush: true });
-      await writeFile(join(folder, tokenStylesheet), tokens.css, { flag: "wx", flush: true });
-    }
-    for (const board of manifest.artboards) {
-      const data = sources.get(board.id)!;
-      await writeFile(join(folder, board.htmlRef), data.html, { flag: "wx", flush: true });
-      await writeFile(join(folder, board.cssRef), data.css, { flag: "wx", flush: true });
-    }
-    await writeFile(join(folder, "manifest.json"), serialized, { flag: "wx", flush: true });
-    await writeFile(pending, prepareBytes({ schemaVersion, projectId, revision, snapshot: key }), {
-      flag: "wx",
-      flush: true,
-    });
-    onPhase?.("snapshotWritten");
-    await rename(pending, join(root, "project.json"));
-  } catch (error) {
-    await Promise.allSettled([
-      rm(folder, { recursive: true, force: true }),
-      rm(pending, { force: true }),
-    ]);
-    throw error;
-  }
-}
-
 export class Project {
   #tail = Promise.resolve();
   #snapshot: Snapshot;
@@ -580,7 +298,7 @@ export class Project {
       }
       const snapshot = starter();
       try {
-        await publish(root, snapshot);
+        await publishFolderSnapshot(root, snapshot);
       } catch (error) {
         if (!hasManagedFolder) await rmdir(join(root, managed)).catch(() => undefined);
         throw error;
@@ -590,9 +308,9 @@ export class Project {
     if (mode === "create") throw new Error("This folder already contains a project.");
     return new Project(
       root,
-      await load(root),
+      await loadFolderSnapshot(root),
       await readAssets(root),
-      await readName(root),
+      await readFolderName(root),
       onPhase,
     );
   }
@@ -960,7 +678,7 @@ export class Project {
           saveSqliteProject(this.root, this.sqlite, this.#snapshot, next, () =>
             this.onPhase?.("snapshotWritten"),
           );
-        else await publish(this.root, next, this.onPhase);
+        else await publishFolderSnapshot(this.root, next, this.onPhase);
       } catch {
         throw new ProjectError(
           "SAVE_FAILED",
@@ -1007,14 +725,9 @@ export class Project {
         this.displayName = label.name;
         return;
       }
-      const folder = join(this.root, managed);
-      const pending = join(folder, `.name-${randomUUID()}.tmp`);
       try {
-        await requireDirectory(folder);
-        await writeFile(pending, bytes, { flag: "wx", flush: true });
-        await rename(pending, join(folder, "name.json"));
+        await renameFolderProject(this.root, bytes);
       } catch {
-        await rm(pending, { force: true }).catch(() => undefined);
         throw new ProjectError("SAVE_FAILED", "The project name could not be saved.");
       }
       this.displayName = label.name;

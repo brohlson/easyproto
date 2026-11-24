@@ -3,7 +3,7 @@ import { chmod, link, mkdtemp, rm, symlink, unlink, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { environmentMcpSettings, readLocalMcpSettings } from "../src/main/local-mcp.ts";
+import { environmentMcpSettings, readLocalMcpSettings } from "../src/main/mcp/settings.ts";
 
 test("saved MCP settings require an opted-in, private, single-link file and a fixed port", async (t) => {
   const profile = await mkdtemp(join(tmpdir(), "easy-proto-settings-"));

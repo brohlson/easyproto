@@ -3,8 +3,8 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { BrowserWindow, nativeImage, protocol, type Session, type WebContents } from "electron";
 import { previewHtml } from "@easy-proto/preview";
-import type { Artboard, Source } from "../shared/model";
-import { Project, ProjectError, type Snapshot } from "./project";
+import type { Artboard, Source } from "../../shared/model";
+import { Project, ProjectError, type Snapshot } from "../document/project";
 
 export const chromeUrl = "easy-proto://ui/index.html";
 const chromeOrigin = "easy-proto://ui";

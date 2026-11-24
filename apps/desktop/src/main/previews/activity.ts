@@ -1,4 +1,4 @@
-import { ProjectError } from "./project";
+import { ProjectError } from "../document/project";
 
 export const activityLeaseMs = 120_000;
 const maxLeases = 128;

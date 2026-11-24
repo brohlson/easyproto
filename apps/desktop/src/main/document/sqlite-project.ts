@@ -3,9 +3,9 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from "
 import { link, mkdtemp, open, realpath, rm, unlink } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { manifestSchema, type Manifest, type Source } from "../shared/model";
-import { tokenByteLimit } from "../shared/token-types";
-import type { Asset, Snapshot } from "./project";
+import { manifestSchema, type Manifest, type Source } from "../../shared/model";
+import { tokenByteLimit } from "../../shared/token-types";
+import type { Asset, Snapshot } from "./snapshot";
 
 const applicationId = 0x4550524f;
 const containerVersion = 1;

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { z } from "zod";
-import { id, type RecentProject } from "../shared/model";
+import { id, type RecentProject } from "../../shared/model";
 import type { Project } from "./project";
 
 const record = z.strictObject({
