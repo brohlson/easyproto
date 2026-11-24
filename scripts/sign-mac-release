@@ -13,9 +13,18 @@ bundle="${1:?Pass the path to the assembled release bundle}"
 version="$(node -p "require('./apps/desktop/package.json').version")"
 [[ "${GITHUB_REF_NAME:-}" == "v$version" ]]
 
+keychain_search_list="$(security list-keychains -d user)"
+original_keychains=()
+while IFS= read -r entry; do
+  [[ -n "$entry" ]] || continue
+  entry="${entry#*\"}"
+  original_keychains+=("${entry%\"}")
+done <<< "$keychain_search_list"
+
 work="$(mktemp -d)"
 keychain="$work/release.keychain-db"
 cleanup() {
+  security list-keychains -d user -s ${original_keychains[@]+"${original_keychains[@]}"} >/dev/null 2>&1 || true
   security delete-keychain "$keychain" >/dev/null 2>&1 || true
   rm -rf "$work"
 }
@@ -29,6 +38,7 @@ printf '%s' "$MAC_CERTIFICATE" | base64 -D > "$work/certificate.p12"
 printf '%s' "$APPLE_NOTARY_KEY" | base64 -D > "$work/AuthKey.p8"
 keychain_password="$(openssl rand -hex 32)"
 security create-keychain -p "$keychain_password" "$keychain"
+security list-keychains -d user -s "$keychain" ${original_keychains[@]+"${original_keychains[@]}"}
 security unlock-keychain -p "$keychain_password" "$keychain"
 security import "$work/certificate.p12" -k "$keychain" -P "$MAC_CERTIFICATE_PASSWORD" -T /usr/bin/codesign >/dev/null
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
