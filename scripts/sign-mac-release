@@ -75,6 +75,8 @@ ditto "$bundle" "$work/image/Easy Proto.app"
 ln -s /Applications "$work/image/Applications"
 dmg="$out/EasyProto-mac-arm64-$version.dmg"
 hdiutil create -volname "Easy Proto" -srcfolder "$work/image" -format UDZO "$dmg"
+# App notarization can outlast the temporary keychain's unlock timeout.
+security unlock-keychain -p "$keychain_password" "$keychain"
 codesign --sign "$identity" --keychain "$keychain" --timestamp "$dmg"
 notarize "$dmg"
 xcrun stapler staple "$dmg"
