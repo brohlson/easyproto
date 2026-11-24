@@ -425,3 +425,15 @@ The working tree based on `2bbea54` leaves the renderer entry point responsible 
 Desktop component styles now use colocated CSS Modules. `base.css` contains theme and document-wide defaults. The canvas module targets React Flow's library classes explicitly. Integration tests use stable data attributes and accessible selectors for desktop elements.
 
 In Electron, the 660px Dark workspace, page picker and token dialog matched the previous build pixel for pixel. At 1180px Light, the token dialog also matched exactly. The two canvas-containing captures differed only in fewer than 0.07% of pixels in the rendered artboard previews, by at most two color levels per channel. The first combined verification run passed all four root and nine web checks, plus 50 of 51 desktop tests. Its second arbitrary-resize drag timed out waiting for the saved revision. With no implementation changes, that test passed on its own and all 51 desktop tests passed on the standalone rerun. Lint, formatting, theme validation, type checking and builds passed.
+
+## Desktop main process organization
+
+The working tree based on `1fd4c6e` separates app startup and renderer IPC from the document command queue, folder and SQLite persistence, preview and capture, browser publishing, and local MCP transport. The serialized command body is unchanged apart from the extracted folder-storage call. IPC sender and project-generation guards, the startup order, preload bridge, and runtime bundle filenames are preserved.
+
+All four root, nine web and 51 desktop checks passed in sequence, alongside lint, formatting, theme validation, type checks and builds. A separate Electron smoke run invoked the publishing bridge against a disposable local Worker fixture. It verified scope rejection, status, real capture and sync, published HTML for the selected page only, stable link lookup, and rejection after returning Home. No packaged install was performed.
+
+## CSS Modules across application chrome
+
+The web landing page, shared viewer, canvas and legacy demo now use CSS Modules, as do the shared Brand, Select and WorkspaceHeader. The remaining plain CSS under `apps/` and `packages/` holds base document rules, theme variables and font faces. Shared web canvas behavior and tests use stable data attributes, and the desktop picker test locates the native select by its accessible label.
+
+The nine web checks passed, including the published route and the legacy demo in Chromium. Twelve before-and-after captures of the landing and shared viewer at 1180, 660 and 390 CSS px in Light and Dark matched pixel for pixel. Fifty desktop checks passed in the full run. The activity-follow test timed out and then passed in isolation on the same build. Lint, formatting, theme validation, type checks and builds passed.

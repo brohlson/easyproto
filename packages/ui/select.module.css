@@ -1,11 +1,11 @@
-.ep-select-field {
+.field {
   position: relative;
   display: inline-grid;
   min-width: 0;
   max-width: 100%;
 }
 
-.ep-select {
+.select {
   box-sizing: border-box;
   min-width: 0;
   min-height: var(--ep-desktop-control-field);
@@ -18,43 +18,43 @@
   cursor: pointer;
 }
 
-.ep-select-field[data-variant="quiet"] .ep-select {
+.field[data-variant="quiet"] .select {
   border-color: transparent;
   background: transparent;
   font-weight: var(--ep-desktop-type-weight-label);
 }
 
-.ep-select:disabled {
+.select:disabled {
   cursor: default;
   opacity: var(--ep-desktop-opacity-disabled);
 }
 
-.ep-select-field .ep-select:is(:hover, :open):enabled {
+.field .select:is(:hover, :open):enabled {
   background: var(--accent);
 }
 
-.ep-select:focus-visible {
+.select:focus-visible {
   outline: var(--ep-desktop-stroke-focus) solid var(--ring);
   outline-offset: var(--ep-desktop-stroke-focus);
 }
 
-.ep-select-chevron {
+.chevron {
   display: none;
 }
 
 @supports (appearance: base-select) {
-  .ep-select {
+  .select {
     appearance: base-select;
     align-items: center;
     overflow: hidden;
     padding-inline-end: var(--ep-desktop-control-short);
   }
 
-  .ep-select::picker-icon {
+  .select::picker-icon {
     display: none;
   }
 
-  .ep-select-chevron {
+  .chevron {
     position: absolute;
     inset: 0 var(--ep-desktop-space-8) 0 auto;
     display: block;
@@ -63,7 +63,7 @@
     pointer-events: none;
   }
 
-  .ep-select::picker(select) {
+  .select::picker(select) {
     appearance: base-select;
     box-sizing: border-box;
     min-inline-size: 140px;
@@ -78,11 +78,11 @@
     position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
   }
 
-  .ep-select-field[data-variant="quiet"] .ep-select::picker(select) {
+  .field[data-variant="quiet"] .select::picker(select) {
     position-area: bottom span-left;
   }
 
-  .ep-select option {
+  .select option {
     align-items: center;
     gap: var(--ep-desktop-space-8);
     min-height: var(--ep-desktop-control-short);
@@ -91,26 +91,26 @@
     cursor: pointer;
   }
 
-  .ep-select option:checked {
+  .select option:checked {
     font-weight: var(--ep-desktop-type-weight-label);
   }
 
-  .ep-select option:is(:checked, :hover, :focus-visible) {
+  .select option:is(:checked, :hover, :focus-visible) {
     background: var(--accent);
   }
 
-  .ep-select option:focus-visible {
+  .select option:focus-visible {
     outline: var(--ep-desktop-stroke-focus) solid var(--ring);
     outline-offset: calc(-1 * var(--ep-desktop-stroke-focus));
   }
 
-  .ep-select option::checkmark {
+  .select option::checkmark {
     order: 1;
     margin-inline-start: auto;
     color: var(--foreground);
   }
 
-  .ep-select option:disabled {
+  .select option:disabled {
     cursor: default;
     opacity: var(--ep-desktop-opacity-disabled);
   }

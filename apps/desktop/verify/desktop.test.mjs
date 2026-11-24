@@ -2798,14 +2798,14 @@ test(
     );
     await typePicker.press("Space");
     await desktop.waitForFunction(
-      () => document.querySelector(".ep-select")?.matches(":open"),
+      () => document.querySelector('select[aria-label="Type"]')?.matches(":open"),
       undefined,
       { timeout: 5000 },
     );
     if (evidence) await desktop.screenshot({ path: join(evidence, "token-type-picker.png") });
     await desktop.keyboard.press("Escape");
     await desktop.waitForFunction(
-      () => document.querySelector(".ep-select")?.matches(":open") === false,
+      () => document.querySelector('select[aria-label="Type"]')?.matches(":open") === false,
       undefined,
       { timeout: 5000 },
     );

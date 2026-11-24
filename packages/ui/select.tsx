@@ -1,5 +1,5 @@
 import { ChevronDown } from "lucide-react";
-import "./select.css";
+import styles from "./select.module.css";
 
 type SelectOption<T extends string> = {
   value: T;
@@ -16,6 +16,7 @@ export function Select<T extends string>({
   onValueChange,
   disabled,
   variant = "field",
+  className,
 }: {
   label: string;
   id?: string;
@@ -25,11 +26,15 @@ export function Select<T extends string>({
   onValueChange(value: T): void;
   disabled?: boolean;
   variant?: "field" | "quiet";
+  className?: string;
 }) {
   return (
-    <span className="ep-select-field" data-variant={variant}>
+    <span
+      className={className ? `${styles.field} ${className}` : styles.field}
+      data-variant={variant}
+    >
       <select
-        className="ep-select"
+        className={styles.select}
         aria-label={label}
         id={id}
         name={name}
@@ -47,7 +52,7 @@ export function Select<T extends string>({
           </option>
         ))}
       </select>
-      <ChevronDown size={13} className="ep-select-chevron" aria-hidden="true" />
+      <ChevronDown size={13} className={styles.chevron} aria-hidden="true" />
     </span>
   );
 }

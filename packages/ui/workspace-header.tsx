@@ -1,5 +1,9 @@
 import type { ReactNode } from "react";
-import "./workspace-header.css";
+import styles from "./workspace-header.module.css";
+
+export function WorkspaceLabel({ children }: { children: ReactNode }) {
+  return <span className={styles.label}>{children}</span>;
+}
 
 export function WorkspaceHeader({
   brand,
@@ -13,11 +17,19 @@ export function WorkspaceHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="ep-workspace-header">
-      <div className="ep-workspace-brand">{brand}</div>
-      {project != null && <div className="ep-workspace-project">{project}</div>}
-      {page != null && <div className="ep-workspace-page">{page}</div>}
-      {actions != null && <div className="ep-workspace-actions">{actions}</div>}
+    <header className={styles.header} data-testid="workspace-header">
+      <div className={styles.brand}>{brand}</div>
+      {project != null && (
+        <div className={styles.project} data-testid="workspace-project">
+          {project}
+        </div>
+      )}
+      {page != null && (
+        <div className={styles.page} data-testid="workspace-page">
+          {page}
+        </div>
+      )}
+      {actions != null && <div className={styles.actions}>{actions}</div>}
     </header>
   );
 }

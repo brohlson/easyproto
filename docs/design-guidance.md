@@ -20,7 +20,9 @@ The **Design system · Desktop tokens** artboard in EasyProtoMocks previews both
 
 ## Select controls
 
-Use the shared [Select component](../packages/ui/select.tsx) for single-choice fields. The default field has a subtle border. Use the quiet variant for a compact toolbar control. Both variants share option spacing, a trailing checkmark and the focus ring. They keep the browser's keyboard behavior. HTML mockups can use the same [select stylesheet](../packages/ui/select.css) with a named native select. [Chromium customizable select](https://developer.chrome.com/blog/a-customizable-select)
+Use the shared [Select component](../packages/ui/select.tsx) for single-choice fields. The default field has a subtle border. Use the quiet variant for a compact toolbar control. Both variants share option spacing, a trailing checkmark and the focus ring. They keep the browser's keyboard behavior. [Chromium customizable select](https://developer.chrome.com/blog/a-customizable-select)
+
+Use colocated CSS Modules for component styles in both renderers and the shared UI package. Keep theme variables, font faces and document-wide defaults in global stylesheets. Use accessible roles or stable data attributes for tests and DOM hooks.
 
 ## Fold mark
 

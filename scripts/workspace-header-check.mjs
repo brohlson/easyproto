@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 
 export async function checkWorkspaceHeader(page, { dark, compact }) {
-  const header = await page.locator(".ep-workspace-header").evaluate(async (element) => {
+  const header = await page.getByTestId("workspace-header").evaluate(async (element) => {
     await document.fonts.ready;
     const style = getComputedStyle(element);
-    const brand = element.querySelector(".ep-brand");
-    const project = element.querySelector(".ep-workspace-project");
-    const pageLabel = element.querySelector(".ep-workspace-page");
+    const brand = element.querySelector("[data-testid=brand]");
+    const project = element.querySelector("[data-testid=workspace-project]");
+    const pageLabel = element.querySelector("[data-testid=workspace-page]");
     const center = (node) => {
       const { top, height } = node.getBoundingClientRect();
       return top + height / 2;
@@ -19,9 +19,7 @@ export async function checkWorkspaceHeader(page, { dark, compact }) {
       ink: style.color,
       brand: getComputedStyle(brand).fontSize,
       weight: getComputedStyle(brand).fontWeight,
-      homeTarget: element
-        .querySelector(".ep-workspace-brand > :is(a, button)")
-        .getBoundingClientRect().height,
+      homeTarget: brand.closest("a, button").getBoundingClientRect().height,
       labels: [project, pageLabel].map((node) => getComputedStyle(node.firstElementChild).fontSize),
       aligned: [brand, project, pageLabel].every(
         (node) => Math.abs(center(element) - center(node)) <= 1,

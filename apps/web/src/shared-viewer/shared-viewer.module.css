@@ -1,4 +1,4 @@
-.readonly-badge {
+.readonlyBadge {
   flex: none;
   border: 1px solid var(--line);
   border-radius: 5px;
@@ -7,13 +7,13 @@
   letter-spacing: 0.02em;
   color: var(--secondary);
 }
-.shared-viewport {
-  height: calc(100dvh - var(--ep-desktop-layout-header));
+.sharedViewport {
+  --viewport-height: calc(100dvh - var(--ep-desktop-layout-header));
 }
-.shared-viewport figure {
+.sharedViewport figure {
   user-select: none;
 }
-.shared-viewport figcaption {
+.sharedViewport figcaption {
   position: absolute;
   bottom: 100%;
   width: max-content;
@@ -24,10 +24,10 @@
   transform: scale(calc(1 / var(--camera-zoom, 1)));
   transform-origin: bottom left;
 }
-.shared-viewport figcaption span {
+.sharedViewport figcaption span {
   font-size: 11px;
 }
-.shared-viewport iframe {
+.sharedViewport iframe {
   display: block;
   border: 0;
   pointer-events: none;
@@ -36,7 +36,7 @@
     0 0 0 1px var(--line),
     0 3px 12px #00000009;
 }
-.controls output {
+.zoomLabel {
   display: flex;
   align-items: center;
   min-width: 42px;
@@ -46,10 +46,7 @@
   font-variant-numeric: tabular-nums;
 }
 @media (max-width: 600px) {
-  .readonly-badge {
+  .readonlyBadge {
     font-size: 9px;
-  }
-  .shared-viewport {
-    height: calc(100dvh - var(--ep-desktop-layout-header));
   }
 }

@@ -3,7 +3,7 @@
   margin: clamp(48px, 16vh, 144px) auto 0;
   padding: 0 20px 48px;
 }
-.panel .ep-select-field {
+.panel .selectField {
   width: 100%;
   margin-block-end: 7px;
 }
@@ -42,27 +42,27 @@ button.secondary {
   background: #edf4f0;
   box-shadow: 0 0 0 1px var(--line);
 }
-.device.phone,
-.device.laptop {
+.device[data-frame="phone"],
+.device[data-frame="laptop"] {
   border: var(--frame-edge) solid #252525;
   background: #252525;
   box-shadow:
     0 0 0 1px #666,
     0 10px 32px #0003;
 }
-.device.phone {
+.device[data-frame="phone"] {
   --frame-edge: 12px;
   border-radius: 30px;
   overflow: hidden;
 }
-.device.phone iframe {
+.device[data-frame="phone"] iframe {
   border-radius: 19px;
 }
-.device.laptop {
+.device[data-frame="laptop"] {
   --frame-edge: 14px;
   border-radius: 17px 17px 6px 6px;
 }
-.device.laptop::after {
+.device[data-frame="laptop"]::after {
   content: "";
   position: absolute;
   height: 12px;

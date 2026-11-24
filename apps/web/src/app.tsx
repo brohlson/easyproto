@@ -1,3 +1,5 @@
+import "@easy-proto/ui/theme.css";
+import "./base.css";
 import {
   createRootRoute,
   createRoute,
@@ -12,7 +14,6 @@ import { Demo, DemoError } from "./demo/demo";
 import type { Page } from "./page";
 import { Landing } from "./landing/landing";
 import { SharedCanvas } from "./shared-viewer/shared-viewer";
-import "./style.css";
 
 const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
 if (favicon) favicon.href = faviconUrl;

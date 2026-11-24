@@ -1,7 +1,10 @@
-import { Brand, WorkspaceHeader } from "@easy-proto/ui";
+import { Brand, WorkspaceHeader, WorkspaceLabel } from "@easy-proto/ui";
 import { Link } from "@tanstack/react-router";
 import { useLayoutEffect, useRef } from "react";
 import { startCamera } from "../canvas/camera";
+import chrome from "../chrome.module.css";
+import canvas from "../canvas/canvas.module.css";
+import styles from "./shared-viewer.module.css";
 import type { SharedPage } from "./page";
 
 export function SharedCanvas({ view }: { view: SharedPage }) {
@@ -9,25 +12,25 @@ export function SharedCanvas({ view }: { view: SharedPage }) {
   const controls = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => startCamera(viewport.current!, controls.current!), [view]);
   return (
-    <div ref={controls} className="shared-page">
+    <div ref={controls}>
       <WorkspaceHeader
         brand={
           <Link to="/" aria-label="Easy Proto home">
             <Brand />
           </Link>
         }
-        project={<span className="ep-workspace-label">{view.projectName}</span>}
-        page={<span className="ep-workspace-label">{view.pageName}</span>}
-        actions={<span className="readonly-badge">Read-only preview</span>}
+        project={<WorkspaceLabel>{view.projectName}</WorkspaceLabel>}
+        page={<WorkspaceLabel>{view.pageName}</WorkspaceLabel>}
+        actions={<span className={styles.readonlyBadge}>Read-only preview</span>}
       />
       <main
         ref={viewport}
-        className="viewport shared-viewport"
+        className={`${canvas.viewport} ${styles.sharedViewport}`}
         data-scope="canvas"
         aria-label={`Read-only canvas: ${view.pageName}`}
         tabIndex={0}
       >
-        <div className="camera">
+        <div className={canvas.camera} data-camera>
           {view.artboards.map((board) => (
             <figure
               key={board.id}
@@ -54,13 +57,15 @@ export function SharedCanvas({ view }: { view: SharedPage }) {
           ))}
         </div>
       </main>
-      <div className="controls" aria-label="Zoom controls">
-        <button data-zoom="out" aria-label="Zoom out">
+      <div className={canvas.controls} aria-label="Zoom controls">
+        <button className={chrome.button} data-zoom="out" aria-label="Zoom out">
           −
         </button>
-        <button data-zoom="fit">Fit</button>
-        <output data-zoom-label aria-label="Canvas zoom" />
-        <button data-zoom="in" aria-label="Zoom in">
+        <button className={chrome.button} data-zoom="fit">
+          Fit
+        </button>
+        <output className={styles.zoomLabel} data-zoom-label aria-label="Canvas zoom" />
+        <button className={chrome.button} data-zoom="in" aria-label="Zoom in">
           +
         </button>
       </div>

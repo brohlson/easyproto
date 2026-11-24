@@ -1,0 +1,42 @@
+.header {
+  height: 52px;
+  padding: 0 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.header strong {
+  white-space: nowrap;
+  letter-spacing: -0.03em;
+}
+.headerMeta {
+  color: var(--secondary);
+  font-size: 13px;
+  text-align: right;
+}
+
+:where(.button):is(button, a) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 6px 12px;
+  color: var(--action-ink);
+  background: var(--action);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  text-decoration: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 590;
+  cursor: pointer;
+}
+button:where(.button):disabled {
+  opacity: 0.48;
+  cursor: default;
+}
+:where(.button):is(button, a):not(:disabled):hover {
+  opacity: 0.86;
+}

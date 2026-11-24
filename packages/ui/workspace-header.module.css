@@ -1,4 +1,4 @@
-.ep-workspace-header {
+.header {
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -12,7 +12,7 @@
   z-index: 1;
 }
 
-.ep-workspace-brand {
+.brand {
   flex: none;
   display: flex;
   font-size: var(--ep-desktop-type-size-heading);
@@ -21,7 +21,7 @@
   white-space: nowrap;
 }
 
-.ep-workspace-brand > :is(a, button) {
+.brand > :is(a, button) {
   display: inline-flex;
   align-items: center;
   min-height: var(--ep-desktop-control-target);
@@ -35,13 +35,13 @@
   cursor: pointer;
 }
 
-.ep-workspace-brand > :is(a, button):focus-visible {
+.brand > :is(a, button):focus-visible {
   outline: var(--ep-desktop-stroke-focus) solid var(--ring);
   outline-offset: var(--ep-desktop-stroke-focus);
 }
 
-.ep-workspace-project,
-.ep-workspace-page {
+.project,
+.page {
   display: flex;
   align-items: center;
   gap: inherit;
@@ -49,11 +49,11 @@
   font-size: var(--ep-desktop-type-size-body);
 }
 
-.ep-workspace-project { font-weight: var(--ep-desktop-type-weight-semibold); }
-.ep-workspace-page { font-weight: var(--ep-desktop-type-weight-label); }
+.project { font-weight: var(--ep-desktop-type-weight-semibold); }
+.page { font-weight: var(--ep-desktop-type-weight-label); }
 
-.ep-workspace-project::before,
-.ep-workspace-page::before {
+.project::before,
+.page::before {
   content: "";
   flex: none;
   width: var(--ep-desktop-stroke-border);
@@ -61,7 +61,7 @@
   background: var(--border);
 }
 
-.ep-workspace-label {
+.label {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -71,17 +71,17 @@
   max-width: min(380px, 55vw);
 }
 
-.ep-workspace-page > .ep-workspace-label {
+.page > .label {
   max-width: min(190px, 29vw);
   padding-inline: var(--ep-desktop-space-8);
 }
 
-.ep-workspace-actions { flex: none; margin-inline-start: auto; }
+.actions { flex: none; margin-inline-start: auto; }
 
 @media (max-width: 720px) {
-  .ep-workspace-header {
+  .header {
     gap: var(--ep-desktop-space-8);
     padding-inline: var(--ep-desktop-layout-compact-gutter);
   }
-  .ep-workspace-brand { font-size: var(--ep-desktop-type-size-compact); }
+  .brand { font-size: var(--ep-desktop-type-size-compact); }
 }

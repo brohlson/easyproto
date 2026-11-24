@@ -2,15 +2,18 @@ import { Brand, Select } from "@easy-proto/ui";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { startCamera } from "../canvas/camera";
+import chrome from "../chrome.module.css";
+import canvas from "../canvas/canvas.module.css";
+import styles from "./demo.module.css";
 import { type Frame, type DemoPage, type Scope, frameLabels, scopeLabels } from "./page";
 
 function Header({ meta }: { meta: string }) {
   return (
-    <header>
+    <header className={chrome.header}>
       <strong>
         <Brand />
       </strong>
-      <span className="header-meta">{meta}</span>
+      <span className={chrome.headerMeta}>{meta}</span>
     </header>
   );
 }
@@ -41,7 +44,7 @@ export function DemoError() {
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <main className="panel">
+    <main className={styles.panel}>
       <h1>{title}</h1>
       {children}
     </main>
@@ -82,7 +85,7 @@ function Home({ view }: { view: Extract<DemoPage, { kind: "home" }> }) {
       <form method="post" action="/auth/request">
         <label htmlFor="email">Email</label>
         <input id="email" name="email" type="email" placeholder={view.email} required />
-        <button>Request sign-in link</button>
+        <button className={chrome.button}>Request sign-in link</button>
       </form>
     </Panel>
   );
@@ -94,7 +97,7 @@ function Inbox({ view }: { view: Extract<DemoPage, { kind: "inbox" }> }) {
       {view.link ? (
         <>
           <p>Sign-in link for {view.email}.</p>
-          <a className="button" href={view.link}>
+          <a className={chrome.button} href={view.link}>
             Open sign-in link
           </a>
         </>
@@ -120,7 +123,7 @@ function Confirm({ view }: { view: Extract<DemoPage, { kind: "confirm" }> }) {
       {valid ? (
         <form method="post" action={view.action}>
           <input type="hidden" name="secret" value={secret} />
-          <button>{view.button}</button>
+          <button className={chrome.button}>{view.button}</button>
         </form>
       ) : (
         <p>This link is incomplete. Open the original link to continue.</p>
@@ -138,6 +141,7 @@ function Publisher({ view }: { view: Extract<DemoPage, { kind: "publisher" }> })
       <form method="post" action="/publish/create">
         <label htmlFor="scope">Share</label>
         <Select<Scope>
+          className={styles.selectField}
           id="scope"
           name="scope"
           label="Share"
@@ -154,6 +158,7 @@ function Publisher({ view }: { view: Extract<DemoPage, { kind: "publisher" }> })
         />
         <label htmlFor="frame">Device frame</label>
         <Select<Frame>
+          className={styles.selectField}
           id="frame"
           name="frame"
           label="Device frame"
@@ -165,12 +170,12 @@ function Publisher({ view }: { view: Extract<DemoPage, { kind: "publisher" }> })
           ]}
           onValueChange={setFrame}
         />
-        <button>Create share link</button>
+        <button className={chrome.button}>Create share link</button>
       </form>
       {view.shares.length > 0 && (
         <>
           <h2>Active links</h2>
-          <ul className="shares">
+          <ul className={styles.shares}>
             {view.shares.map(({ id, scope, frame }) => (
               <li key={id}>
                 <span>
@@ -178,7 +183,7 @@ function Publisher({ view }: { view: Extract<DemoPage, { kind: "publisher" }> })
                 </span>
                 <form method="post" action="/publish/revoke">
                   <input type="hidden" name="id" value={id} />
-                  <button className="secondary">Revoke</button>
+                  <button className={`${chrome.button} ${styles.secondary}`}>Revoke</button>
                 </form>
               </li>
             ))}
@@ -205,11 +210,11 @@ function Created({ view }: { view: Extract<DemoPage, { kind: "created" }> }) {
     <Panel title="Share link created">
       <label htmlFor="link">Read-only preview link</label>
       <input ref={input} id="link" type="url" readOnly value={view.link} />
-      <div className="row">
-        <a className="button" href={view.link} target="_blank" rel="noopener noreferrer">
+      <div className={styles.row}>
+        <a className={chrome.button} href={view.link} target="_blank" rel="noopener noreferrer">
           Open preview
         </a>
-        <button className="secondary" onClick={() => void copy()}>
+        <button className={`${chrome.button} ${styles.secondary}`} onClick={() => void copy()}>
           {copyLabel}
         </button>
       </div>
@@ -226,11 +231,11 @@ function Viewer({ view }: { view: Extract<DemoPage, { kind: "viewer" }> }) {
     <>
       <main
         ref={viewport}
-        className="viewport"
+        className={canvas.viewport}
         data-scope={view.scope}
         aria-label="Artboard preview"
       >
-        <div className="camera">
+        <div className={canvas.camera} data-camera>
           {view.boards.map((board) => (
             <figure key={board.id} data-x={board.x} data-y={board.y}>
               <figcaption>
@@ -239,7 +244,7 @@ function Viewer({ view }: { view: Extract<DemoPage, { kind: "viewer" }> }) {
                   {board.width} × {board.height}
                 </span>
               </figcaption>
-              <div className={`device ${view.frame}`}>
+              <div className={styles.device} data-frame={view.frame}>
                 <iframe
                   title={board.name}
                   src={`/s/${view.id}/boards/${board.id}`}
@@ -253,14 +258,14 @@ function Viewer({ view }: { view: Extract<DemoPage, { kind: "viewer" }> }) {
           ))}
         </div>
       </main>
-      <div ref={controls} className="controls" aria-label="Zoom controls">
-        <button type="button" data-zoom="out" aria-label="Zoom out">
+      <div ref={controls} className={canvas.controls} aria-label="Zoom controls">
+        <button className={chrome.button} type="button" data-zoom="out" aria-label="Zoom out">
           −
         </button>
-        <button type="button" data-zoom="fit">
+        <button className={chrome.button} type="button" data-zoom="fit">
           Fit
         </button>
-        <button type="button" data-zoom="in" aria-label="Zoom in">
+        <button className={chrome.button} type="button" data-zoom="in" aria-label="Zoom in">
           +
         </button>
       </div>

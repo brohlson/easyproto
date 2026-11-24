@@ -2,6 +2,8 @@ import { Brand } from "@easy-proto/ui";
 import { Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import fold from "@easy-proto/ui/fold.svg";
+import chrome from "../chrome.module.css";
+import styles from "./landing.module.css";
 
 export function Landing() {
   const [pending, setPending] = useState(false);
@@ -33,24 +35,26 @@ export function Landing() {
     }
   }
   return (
-    <div className="landing-page">
-      <header className="site-header">
+    <div className={styles.landingPage}>
+      <header className={`${chrome.header} ${styles.siteHeader}`}>
         <Link to="/" aria-label="Easy Proto home">
           <Brand />
         </Link>
-        <span className="header-meta">A personal canvas for agent-made ideas.</span>
+        <span className={`${chrome.headerMeta} ${styles.headerMeta}`}>
+          A personal canvas for agent-made ideas.
+        </span>
       </header>
-      <main className="landing-main">
-        <section className="landing-hero" aria-labelledby="landing-title">
-          <img className="landing-mark" src={fold} alt="" />
+      <main className={styles.landingMain}>
+        <section className={styles.landingHero} aria-labelledby="landing-title">
+          <img className={styles.landingMark} src={fold} alt="" />
           <h1 id="landing-title">Easy Proto</h1>
           <p>
             Create with agents. Keep your files.
             <br />
             Share a page when it’s ready.
           </p>
-          <form className="waitlist-form" onSubmit={(event) => void join(event)}>
-            <label className="visually-hidden" htmlFor="waitlist-email">
+          <form className={styles.waitlistForm} onSubmit={(event) => void join(event)}>
+            <label className={styles.visuallyHidden} htmlFor="waitlist-email">
               Email address
             </label>
             <input
@@ -64,20 +68,20 @@ export function Landing() {
               disabled={joined}
               aria-describedby="waitlist-status"
             />
-            <div className="honeypot" aria-hidden="true">
+            <div className={styles.honeypot} aria-hidden="true">
               <label>
                 Website
                 <input name="website" tabIndex={-1} autoComplete="off" />
               </label>
             </div>
-            <button disabled={pending || joined}>
+            <button className={chrome.button} disabled={pending || joined}>
               {joined ? "You’re on the list" : pending ? "Joining…" : "Join the waitlist"}
             </button>
           </form>
           <p
             id="waitlist-status"
             role="status"
-            className={error ? "waitlist-error" : "waitlist-note"}
+            className={error ? styles.waitlistError : styles.waitlistNote}
           >
             {error ||
               (joined
@@ -86,7 +90,7 @@ export function Landing() {
           </p>
         </section>
       </main>
-      <footer className="landing-footer">Built for macOS. Shared on the web.</footer>
+      <footer className={styles.landingFooter}>Built for macOS. Shared on the web.</footer>
     </div>
   );
 }

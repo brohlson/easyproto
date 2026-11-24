@@ -65,7 +65,7 @@ async function showBoard(page, url, expected, frame = null) {
       [width, height, "null"],
     );
   }
-  if (frame) assert.equal(await page.locator(`.device.${frame}`).count(), 1);
+  if (frame) assert.equal(await page.locator(`[data-frame="${frame}"]`).count(), 1);
 }
 
 async function publish(page, origin, scope, frame) {
@@ -85,7 +85,7 @@ test("Chromium owner publishes scoped canvas and framed artboards and revokes a 
   const owner = await browser.newPage();
   owner.setDefaultTimeout(5000);
   await owner.goto(origin + "/demo");
-  const mark = owner.locator("svg.ep-fold-mark path");
+  const mark = owner.getByTestId("fold-mark").locator("path");
   await mark.waitFor();
   const icon = await owner.locator('link[rel="icon"]').getAttribute("href");
   const iconSvg = await (await owner.request.get(origin + icon)).text();
@@ -119,12 +119,16 @@ test("Chromium owner publishes scoped canvas and framed artboards and revokes a 
     1120,
   );
   await guest.getByRole("button", { name: "Fit" }).click();
-  const beforePan = await guest.locator(".camera").evaluate((camera) => camera.style.transform);
+  const beforePan = await guest
+    .locator("[data-camera]")
+    .evaluate((camera) => camera.style.transform);
   await guest.mouse.move(40, 120);
   await guest.mouse.down();
   await guest.mouse.move(100, 180);
   await guest.mouse.up();
-  const afterPan = await guest.locator(".camera").evaluate((camera) => camera.style.transform);
+  const afterPan = await guest
+    .locator("[data-camera]")
+    .evaluate((camera) => camera.style.transform);
   assert.notEqual(afterPan, beforePan);
   await guest.getByRole("button", { name: "Fit" }).click();
   if (process.env.EASY_PROTO_WEB_EVIDENCE) {

@@ -1,7 +1,7 @@
 export function startCamera(viewport: HTMLElement, controls: HTMLElement) {
   const controller = new AbortController();
   const listeners = { signal: controller.signal };
-  const camera = viewport.querySelector<HTMLElement>(".camera")!;
+  const camera = viewport.querySelector<HTMLElement>("[data-camera]")!;
   const cards = [...camera.querySelectorAll<HTMLElement>("figure")];
   const single = viewport.dataset.scope !== "canvas";
   for (const card of cards) {

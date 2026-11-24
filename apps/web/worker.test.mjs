@@ -150,8 +150,8 @@ test("the published page matches the desktop header in Light and Dark at both wi
       await page.goto(`${origin}/p/${id}`);
       await page.frameLocator("iframe").getByRole("heading", { name: "Live board" }).waitFor();
       assert.equal(await page.title(), "Notes - Concepts");
-      assert.equal(await page.locator(".ep-workspace-project").innerText(), "Notes");
-      assert.equal(await page.locator(".ep-workspace-page").innerText(), "Concepts");
+      assert.equal(await page.getByTestId("workspace-project").innerText(), "Notes");
+      assert.equal(await page.getByTestId("workspace-page").innerText(), "Concepts");
       await checkWorkspaceHeader(page, { dark: colorScheme === "dark", compact: width === 660 });
     }
   }
