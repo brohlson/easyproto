@@ -1,6 +1,8 @@
+import controls from "../shared/controls.module.css";
+import canvasStyles from "./canvas.module.css";
 import { ChevronLeft, ChevronRight, File, Pencil, Trash2 } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import type { Page } from "../shared/model";
+import type { Page } from "../../shared/model";
 
 export type MenuAnchor = { x: number; y: number; owner: HTMLElement };
 
@@ -56,7 +58,7 @@ export function ArtboardMenu({
     <div
       ref={panel}
       popover="auto"
-      className="menu-panel artboard-menu"
+      className={`${controls.menuPanel} ${canvasStyles.artboardMenu}`}
       role="menu"
       aria-label={caption}
       onToggle={(event) => {
@@ -94,19 +96,19 @@ export function ArtboardMenu({
             <button
               type="button"
               role="menuitem"
-              className="menu-row"
+              className={controls.menuRow}
               onClick={() => setChoosingPage(false)}
             >
               <ChevronLeft size={14} aria-hidden="true" /> Back
             </button>
           )}
-          <div className="menu-caption">{caption}</div>
+          <div className={controls.menuCaption}>{caption}</div>
           {pages.map((page) => (
             <button
               type="button"
               key={page.id}
               role="menuitem"
-              className="menu-row page-row"
+              className={`${controls.menuRow} ${controls.pageRow}`}
               title={page.name}
               disabled={disabled}
               onClick={() => {
@@ -124,7 +126,7 @@ export function ArtboardMenu({
           <button
             type="button"
             role="menuitem"
-            className="menu-row"
+            className={controls.menuRow}
             disabled={disabled || !pages.length}
             onKeyDown={(event) => {
               if (event.key === "ArrowRight" && pages.length) {
@@ -134,13 +136,14 @@ export function ArtboardMenu({
             }}
             onClick={() => setChoosingPage(true)}
           >
-            Move to page <ChevronRight size={14} aria-hidden="true" className="menu-check" />
+            Move to page{" "}
+            <ChevronRight size={14} aria-hidden="true" className={controls.menuCheck} />
           </button>
           {count === 1 && (
             <button
               type="button"
               role="menuitem"
-              className="menu-row"
+              className={controls.menuRow}
               disabled={disabled}
               onClick={() => {
                 close();
@@ -154,7 +157,7 @@ export function ArtboardMenu({
           <button
             type="button"
             role="menuitem"
-            className="menu-row"
+            className={controls.menuRow}
             disabled={disabled}
             onClick={() => {
               close();

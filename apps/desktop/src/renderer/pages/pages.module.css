@@ -1,0 +1,114 @@
+.pagePickerTrigger { anchor-name: --page-picker; max-width: min(190px, 29vw); }
+
+.pagesPanel {
+  inset: auto; width: 224px; margin: var(--ep-desktop-space-6) 0; max-height: calc(100dvh - 110px);
+}
+.pagesPanel {
+  position-anchor: --page-picker;
+  position-area: bottom span-right;
+  position-try-fallbacks: flip-inline;
+  width: 192px;
+}
+.pagesPanel [data-page-menu-section] + [data-page-menu-section] {
+  margin-top: var(--ep-desktop-space-4);
+  padding-top: 0;
+  border-top: 0;
+}
+
+.pagePickerRow, .pageRename {
+  display: flex;
+  align-items: center;
+  gap: var(--ep-desktop-space-2);
+  border-radius: var(--ep-desktop-radius-compact);
+}
+.pagePickerRow:is(:hover, :focus-within) { background: var(--accent); }
+.pagesPanel .pagePickerChoice, .pagesPanel .pagePickerAdd {
+  min-height: var(--ep-desktop-control-picker);
+  padding: 0 var(--ep-desktop-space-7);
+  gap: var(--ep-desktop-space-7);
+}
+.pagePickerChoice { min-width: 0; }
+.pagePickerChoice[aria-current="page"] { font-weight: var(--ep-desktop-type-weight-semibold); }
+.pagePickerChoice .pageRowIndicator { display: grid; width: 13px; flex: none; }
+.pagesPanel .pagePickerAdd { color: var(--muted-foreground); }
+.pagesPanel .pagePickerAdd:hover:enabled { color: var(--foreground); }
+.pageRename { padding-inline: var(--ep-desktop-space-3); }
+.pageRename input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--ep-desktop-control-picker);
+  padding: 0 var(--ep-desktop-space-6);
+  border: var(--ep-desktop-stroke-border) solid var(--control-border);
+  border-radius: var(--ep-desktop-radius-small);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+}
+.pageIconButton {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--ep-desktop-control-target);
+  height: var(--ep-desktop-control-target);
+  margin-inline-end: var(--ep-desktop-space-2);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.pageIconButton:focus-visible { outline-offset: calc(-1 * var(--ep-desktop-stroke-focus)); }
+.pageIconButton:hover:enabled { background: var(--accent); color: var(--foreground); }
+@media (hover: hover) {
+  .pagePickerRow:not(:hover, :focus-within) .pageIconButton { opacity: 0; }
+}
+.pageForm { display: grid; gap: var(--ep-desktop-space-8); padding: var(--ep-desktop-space-3) var(--ep-desktop-space-5) var(--ep-desktop-space-5); }
+.pageDeleteDialog {
+  width: min(360px, calc(100% - 40px)); padding: var(--ep-desktop-space-20);
+  border: var(--ep-desktop-stroke-border) solid var(--border); border-radius: var(--ep-desktop-radius-notice);
+  background: var(--background); color: var(--foreground); box-shadow: var(--shadow);
+}
+.pageDeleteDialog::backdrop { background: rgb(0 0 0 / 38%); }
+.pageDeleteDialog h2 { margin: 0; font-size: var(--ep-desktop-type-size-heading); overflow-wrap: anywhere; }
+.pageDeleteDialog p { margin: var(--ep-desktop-space-12) 0 var(--ep-desktop-space-20); color: var(--muted-foreground); line-height: 1.6; }
+.pageDeleteActions { display: flex; justify-content: flex-end; gap: var(--ep-desktop-space-8); }
+.pageDeleteActions button {
+  min-height: var(--ep-desktop-control-standard); padding: var(--ep-desktop-space-5) var(--ep-desktop-space-12);
+  border: 0; border-radius: var(--radius); background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+.pageDeleteActions button:hover:enabled { background: var(--accent); }
+.pageDeleteActions .pageDeleteConfirm, .pageDeleteActions .pageDeleteConfirm:hover:enabled {
+  background: var(--primary); color: var(--primary-foreground);
+}
+.pageForm input {
+  width: 100%; min-height: var(--ep-desktop-control-field); padding: var(--ep-desktop-space-3) var(--ep-desktop-space-8); border-radius: var(--ep-desktop-radius-compact);
+  border: var(--ep-desktop-stroke-border) solid var(--control-border); color: var(--foreground); background: var(--background); font: inherit;
+}
+.pageFormActions { display: flex; align-items: center; justify-content: flex-end; gap: var(--ep-desktop-space-6); }
+.pageFormActions button {
+  min-height: var(--ep-desktop-control-short); padding: var(--ep-desktop-space-2) var(--ep-desktop-space-8); border: 0; border-radius: var(--ep-desktop-radius-compact);
+  background: var(--accent); color: var(--foreground); font: inherit; cursor: pointer;
+}
+.pageFormActions button[type="submit"] { background: var(--primary); color: var(--primary-foreground); }
+
+.pageMoveNotice button {
+  min-height: var(--ep-desktop-control-short); padding: var(--ep-desktop-space-2) var(--ep-desktop-space-8); border: 0; border-radius: var(--ep-desktop-radius-compact);
+  background: var(--accent); color: var(--foreground); font: inherit; cursor: pointer;
+}
+
+.pageMoveNotice {
+  position: absolute; z-index: 1; bottom: 14px; right: 20px; max-width: calc(100% - 40px);
+  display: flex; align-items: center; gap: var(--ep-desktop-space-10); padding: var(--ep-desktop-space-7) var(--ep-desktop-space-9) var(--ep-desktop-space-7) var(--ep-desktop-space-12);
+  border: var(--ep-desktop-stroke-border) solid var(--control-border); border-radius: var(--ep-desktop-radius-notice); background: var(--background); box-shadow: var(--shadow);
+}
+.pageMoveNotice span { overflow-wrap: anywhere; }
+.pageMoveNotice button { flex: none; font-size: var(--ep-desktop-type-size-detail); font-weight: var(--ep-desktop-type-weight-semibold); }
+
+.pageActions { flex: none; anchor-scope: --page-actions; }
+.pageActionsTrigger { anchor-name: --page-actions; }
+.pageActionsMenu {
+  inset: auto; position-anchor: --page-actions; position-area: right span-bottom;
+  position-try-fallbacks: flip-inline, flip-block; align-self: start;
+  width: 144px; margin: 0 0 0 var(--ep-desktop-space-6);
+}

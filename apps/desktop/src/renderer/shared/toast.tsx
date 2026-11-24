@@ -1,3 +1,5 @@
+import controls from "./controls.module.css";
+import toastStyles from "./toast.module.css";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Check, X } from "lucide-react";
 
@@ -39,16 +41,16 @@ export function ToastViewport({ scope = "workspace" }: { scope?: ToastScope }) {
   const { toast, dismiss } = useToast();
   const message = toast?.scope === scope ? toast.message : "";
   return (
-    <div className="toast-viewport">
-      <span role="status" aria-atomic="true" className="screen-reader-only">
+    <div className={toastStyles.toastViewport} data-toast-scope={scope}>
+      <span role="status" aria-atomic="true" className={controls.screenReaderOnly}>
         {message}
       </span>
       {message && (
-        <div className="toast">
+        <div className={toastStyles.toast} data-testid="toast">
           <Check size={15} aria-hidden="true" />
           <span aria-hidden="true">{message}</span>
           <button
-            className="toast-dismiss"
+            className={toastStyles.toastDismiss}
             aria-label="Dismiss notification"
             type="button"
             onClick={() => dismiss(scope)}

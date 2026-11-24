@@ -1,3 +1,5 @@
+import controls from "../shared/controls.module.css";
+import canvasStyles from "./canvas.module.css";
 import { Check, ChevronDown, Monitor, Smartphone, Tablet } from "lucide-react";
 import { useId, useRef, type KeyboardEvent } from "react";
 
@@ -74,7 +76,8 @@ export function DevicePresets({
       <button
         ref={trigger}
         type="button"
-        className="artboard-dimensions nodrag nopan"
+        className={`${canvasStyles.artboardDimensions} nodrag nopan`}
+        data-testid="artboard-dimensions"
         aria-disabled={disabled}
         aria-label={`Device size, ${width} × ${height}`}
         title="Choose device size"
@@ -94,7 +97,7 @@ export function DevicePresets({
         ref={popover}
         id={id}
         popover="auto"
-        className="menu-panel preset-panel nodrag nopan nowheel"
+        className={`${controls.menuPanel} ${canvasStyles.presetPanel} nodrag nopan nowheel`}
         role="group"
         aria-label="Device sizes"
         onKeyDown={moveFocus}
@@ -108,8 +111,8 @@ export function DevicePresets({
         }}
       >
         {groups.map(({ name, icon: Icon, presets }) => (
-          <div key={name} className="menu-section" role="group" aria-label={name}>
-            <div className="menu-caption">
+          <div key={name} className={controls.menuSection} role="group" aria-label={name}>
+            <div className={controls.menuCaption}>
               <Icon aria-hidden="true" size={14} />
               {name}
             </div>
@@ -119,7 +122,7 @@ export function DevicePresets({
                 <button
                   key={preset.name}
                   type="button"
-                  className="menu-row preset-row"
+                  className={`${controls.menuRow} ${canvasStyles.presetRow}`}
                   aria-pressed={current}
                   onClick={() => {
                     if (disabled) return;
@@ -131,19 +134,23 @@ export function DevicePresets({
                   }}
                 >
                   <span>{preset.name}</span>
-                  <span className="preset-size">
+                  <span className={canvasStyles.presetSize}>
                     {preset.width} × {preset.height}
                   </span>
-                  <Check aria-hidden="true" className={current ? "" : "inactive-check"} size={14} />
+                  <Check
+                    aria-hidden="true"
+                    className={current ? "" : canvasStyles.inactiveCheck}
+                    size={14}
+                  />
                 </button>
               );
             })}
           </div>
         ))}
-        <div className="menu-section">
+        <div className={controls.menuSection}>
           <button
             type="button"
-            className="menu-row preset-row"
+            className={`${controls.menuRow} ${canvasStyles.presetRow}`}
             aria-pressed={arbitrary}
             disabled={disabled}
             onClick={() => {
@@ -153,7 +160,11 @@ export function DevicePresets({
             }}
           >
             <span>Arbitrary size</span>
-            <Check aria-hidden="true" className={arbitrary ? "" : "inactive-check"} size={14} />
+            <Check
+              aria-hidden="true"
+              className={arbitrary ? "" : canvasStyles.inactiveCheck}
+              size={14}
+            />
           </button>
         </div>
       </div>

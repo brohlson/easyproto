@@ -1,3 +1,5 @@
+import controls from "../shared/controls.module.css";
+import workspaceStyles from "./workspace.module.css";
 import {
   Check,
   Copy,
@@ -51,7 +53,8 @@ export function Settings({
       <button
         ref={trigger}
         type="button"
-        className="settings-button"
+        className={workspaceStyles.settingsButton}
+        data-testid="settings-button"
         aria-label="Settings"
         title="Settings"
         popoverTarget="settings"
@@ -62,16 +65,16 @@ export function Settings({
         ref={panel}
         id="settings"
         popover="auto"
-        className="menu-panel settings-panel"
+        className={`${controls.menuPanel} ${workspaceStyles.settingsPanel}`}
         role="group"
         aria-label="Settings"
       >
-        <div className="menu-section" role="group" aria-label="Project actions">
+        <div className={controls.menuSection} role="group" aria-label="Project actions">
           {goHome && (
             <>
               <button
                 type="button"
-                className="menu-row"
+                className={controls.menuRow}
                 disabled={busy}
                 onClick={() => invoke(goHome)}
               >
@@ -79,7 +82,7 @@ export function Settings({
               </button>
               <button
                 type="button"
-                className="menu-row"
+                className={controls.menuRow}
                 disabled={busy}
                 onClick={() => invoke(() => choose("create"))}
               >
@@ -89,7 +92,7 @@ export function Settings({
           )}
           <button
             type="button"
-            className="menu-row"
+            className={controls.menuRow}
             disabled={busy}
             onClick={() => invoke(() => choose("open"))}
           >
@@ -98,7 +101,7 @@ export function Settings({
           {saveCopy && (
             <button
               type="button"
-              className="menu-row"
+              className={controls.menuRow}
               disabled={busy}
               onClick={() => invoke(saveCopy)}
             >
@@ -108,7 +111,7 @@ export function Settings({
           {exportPage && (
             <button
               type="button"
-              className="menu-row"
+              className={controls.menuRow}
               disabled={busy}
               onClick={() => invoke(exportPage)}
             >
@@ -117,18 +120,20 @@ export function Settings({
             </button>
           )}
         </div>
-        <div className="menu-section" role="group" aria-label="Appearance">
-          <div className="menu-caption">Appearance</div>
+        <div className={controls.menuSection} role="group" aria-label="Appearance">
+          <div className={controls.menuCaption}>Appearance</div>
           {appearances.map(({ value, label, icon: Icon }) => (
             <button
               key={value}
               type="button"
-              className="menu-row appearance-row"
+              className={controls.menuRow}
               aria-pressed={value === theme}
               onClick={() => invoke(() => changeTheme(value))}
             >
               <Icon aria-hidden="true" size={15} /> {label}
-              {value === theme && <Check aria-hidden="true" className="menu-check" size={14} />}
+              {value === theme && (
+                <Check aria-hidden="true" className={controls.menuCheck} size={14} />
+              )}
             </button>
           ))}
         </div>

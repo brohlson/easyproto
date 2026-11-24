@@ -1,7 +1,8 @@
+import tokenStyles from "./tokens.module.css";
 import { Select } from "@easy-proto/ui";
 import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { Braces, Copy, Plus, Search, Trash2, X } from "lucide-react";
-import type { Scene } from "../shared/model";
+import type { Scene } from "../../shared/model";
 import {
   colorToHex,
   tokenByteLimit,
@@ -10,9 +11,9 @@ import {
   type TokenRow,
   type TokenType,
   type TokenView,
-} from "../shared/token-types";
+} from "../../shared/token-types";
 
-import { ToastViewport, useToast } from "./toast";
+import { ToastViewport, useToast } from "../shared/toast";
 
 type Group = Record<string, unknown>;
 type Draft = { path: string; type: TokenType; text: string; existing: boolean };
@@ -131,15 +132,15 @@ function TokenEditorRow({
   }, []);
 
   return (
-    <tr className="token-edit-row">
+    <tr className={tokenStyles.tokenEditRow}>
       <td colSpan={4}>
         <form
-          className="token-row-editor"
+          className={tokenStyles.tokenRowEditor}
           aria-label={draft.existing ? `Edit ${draft.path}` : "New token"}
           onSubmit={onSave}
         >
           {draft.existing ? (
-            <strong className="token-edit-name">{draft.path}</strong>
+            <strong className={tokenStyles.tokenEditName}>{draft.path}</strong>
           ) : (
             <input
               ref={firstInput}
@@ -160,7 +161,7 @@ function TokenEditorRow({
           />
           <input
             ref={draft.existing ? firstInput : undefined}
-            className="token-edit-value"
+            className={tokenStyles.tokenEditValue}
             aria-label="Value"
             required
             disabled={disabled}
@@ -168,10 +169,13 @@ function TokenEditorRow({
             value={draft.text}
             onChange={(event) => onChange({ ...draft, text: event.currentTarget.value })}
           />
-          <div className="token-actions token-row-actions">
+          <div
+            className={`${tokenStyles.tokenActions} ${tokenStyles.tokenRowActions}`}
+            data-testid="token-row-actions"
+          >
             {draft.existing && (
               <button
-                className="token-icon"
+                className={tokenStyles.tokenIcon}
                 type="button"
                 title="Delete token"
                 aria-label="Delete token"
@@ -181,11 +185,16 @@ function TokenEditorRow({
                 <Trash2 size={14} aria-hidden="true" />
               </button>
             )}
-            <button className="token-cancel" type="button" disabled={disabled} onClick={onCancel}>
+            <button
+              className={tokenStyles.tokenCancel}
+              type="button"
+              disabled={disabled}
+              onClick={onCancel}
+            >
               Cancel
             </button>
             <button
-              className="token-primary"
+              className={tokenStyles.tokenPrimary}
               type="submit"
               aria-label="Save token"
               disabled={disabled || stale}
@@ -194,7 +203,7 @@ function TokenEditorRow({
             </button>
           </div>
           {error && (
-            <p className="token-row-error" role="alert">
+            <p className={tokenStyles.tokenRowError} role="alert">
               {error}
             </p>
           )}
@@ -316,7 +325,7 @@ export function TokenManager({ scene, disabled }: { scene: Scene; disabled: bool
   return (
     <>
       <button
-        className="tokens-trigger"
+        className={tokenStyles.tokensTrigger}
         type="button"
         ref={trigger}
         disabled={disabled}
@@ -325,7 +334,8 @@ export function TokenManager({ scene, disabled }: { scene: Scene; disabled: bool
         <Braces size={15} aria-hidden="true" /> Tokens
       </button>
       <dialog
-        className="tokens-dialog"
+        className={tokenStyles.tokensDialog}
+        data-testid="tokens-dialog"
         aria-labelledby="token-manager-title"
         ref={dialog}
         onCancel={(event) => {
@@ -337,10 +347,10 @@ export function TokenManager({ scene, disabled }: { scene: Scene; disabled: bool
           trigger.current?.focus();
         }}
       >
-        <div className="tokens-heading">
+        <div className={tokenStyles.tokensHeading}>
           <h2 id="token-manager-title">Project tokens</h2>
           <button
-            className="token-icon"
+            className={tokenStyles.tokenIcon}
             type="button"
             aria-label="Close tokens"
             disabled={pending}
@@ -350,7 +360,7 @@ export function TokenManager({ scene, disabled }: { scene: Scene; disabled: bool
           </button>
         </div>
         {stale && (
-          <div className="token-notice" role="status">
+          <div className={tokenStyles.tokenNotice} role="status">
             The project has changed. Reload tokens before saving.
             <button disabled={pending} type="button" onClick={() => void run(refresh)}>
               {isEditing ? "Discard draft and reload" : "Reload tokens"}
@@ -358,25 +368,29 @@ export function TokenManager({ scene, disabled }: { scene: Scene; disabled: bool
           </div>
         )}
         {error && !draft && (
-          <p className="token-error" role="alert">
+          <p className={tokenStyles.tokenError} role="alert">
             {error}
           </p>
         )}
         {!view ? (
           pending ? (
-            <p className="token-empty" role="status">
+            <p className={tokenStyles.tokenEmpty} role="status">
               Loading tokens…
             </p>
           ) : (
-            <button className="token-retry" type="button" onClick={() => void run(refresh)}>
+            <button
+              className={tokenStyles.tokenRetry}
+              type="button"
+              onClick={() => void run(refresh)}
+            >
               Retry
             </button>
           )
         ) : (
           <>
             {json === undefined && (
-              <div className="tokens-toolbar">
-                <label className="token-search">
+              <div className={tokenStyles.tokensToolbar}>
+                <label className={tokenStyles.tokenSearch} data-testid="token-search">
                   <Search size={15} aria-hidden="true" />
                   <input
                     type="search"
@@ -399,13 +413,13 @@ export function TokenManager({ scene, disabled }: { scene: Scene; disabled: bool
                 </button>
                 <button
                   ref={addButton}
-                  className="token-primary"
+                  className={tokenStyles.tokenPrimary}
                   type="button"
                   disabled={pending || stale || isEditing}
                   onClick={() => {
                     setError("");
                     setDraft({ path: "", type: "color", text: "", existing: false });
-                    dialog.current?.querySelector(".token-table-wrap")?.scrollTo(0, 0);
+                    dialog.current?.querySelector(`.${tokenStyles.tokenTableWrap}`)?.scrollTo(0, 0);
                   }}
                 >
                   <Plus size={15} aria-hidden="true" /> Add token
@@ -413,7 +427,7 @@ export function TokenManager({ scene, disabled }: { scene: Scene; disabled: bool
               </div>
             )}
             {json !== undefined ? (
-              <form className="token-form" onSubmit={saveForm}>
+              <form className={tokenStyles.tokenForm} onSubmit={saveForm}>
                 <label>
                   Design tokens JSON
                   <textarea
@@ -425,7 +439,7 @@ export function TokenManager({ scene, disabled }: { scene: Scene; disabled: bool
                     spellCheck={false}
                   />
                 </label>
-                <div className="token-actions">
+                <div className={tokenStyles.tokenActions}>
                   <button
                     type="button"
                     disabled={pending}
@@ -457,26 +471,30 @@ export function TokenManager({ scene, disabled }: { scene: Scene; disabled: bool
                     Export CSS…
                   </button>
                   <button
-                    className="token-cancel"
+                    className={tokenStyles.tokenCancel}
                     type="button"
                     disabled={pending}
                     onClick={cancelEdit}
                   >
                     Cancel
                   </button>
-                  <button className="token-primary" type="submit" disabled={pending || stale}>
+                  <button
+                    className={tokenStyles.tokenPrimary}
+                    type="submit"
+                    disabled={pending || stale}
+                  >
                     Save tokens
                   </button>
                 </div>
               </form>
             ) : rows.length || draft ? (
-              <div className="token-table-wrap">
-                <table className="token-table">
+              <div className={tokenStyles.tokenTableWrap}>
+                <table className={tokenStyles.tokenTable}>
                   <colgroup>
-                    <col className="token-col-name" />
-                    <col className="token-col-type" />
+                    <col className={tokenStyles.tokenColName} />
+                    <col className={tokenStyles.tokenColType} />
                     <col />
-                    <col className="token-col-actions" />
+                    <col className={tokenStyles.tokenColActions} />
                   </colgroup>
                   <thead>
                     <tr>
@@ -496,7 +514,7 @@ export function TokenManager({ scene, disabled }: { scene: Scene; disabled: bool
                         <tr key={row.path}>
                           <td>
                             <button
-                              className="token-name"
+                              className={tokenStyles.tokenName}
                               type="button"
                               disabled={pending || stale || isEditing}
                               data-token-name={row.path}
@@ -507,17 +525,17 @@ export function TokenManager({ scene, disabled }: { scene: Scene; disabled: bool
                           </td>
                           <td>{typeLabels[row.type]}</td>
                           <td>
-                            <span className="token-value">
+                            <span className={tokenStyles.tokenValue}>
                               {row.type === "color" && (
                                 <span
-                                  className="token-swatch"
+                                  className={tokenStyles.tokenSwatch}
                                   aria-hidden="true"
                                   style={{ backgroundColor: resolved }}
                                 />
                               )}
                               {inputValue(row.value)}
                               {typeof row.value === "string" && (
-                                <span className="token-resolved">{resolved}</span>
+                                <span className={tokenStyles.tokenResolved}>{resolved}</span>
                               )}
                             </span>
                           </td>
@@ -526,7 +544,7 @@ export function TokenManager({ scene, disabled }: { scene: Scene; disabled: bool
                               type="button"
                               title={css}
                               aria-label={`Copy CSS for ${row.path}`}
-                              className="token-copy"
+                              className={tokenStyles.tokenCopy}
                               disabled={pending}
                               onClick={() =>
                                 void run(async () => {
@@ -545,7 +563,7 @@ export function TokenManager({ scene, disabled }: { scene: Scene; disabled: bool
                 </table>
               </div>
             ) : (
-              <p className="token-empty">
+              <p className={tokenStyles.tokenEmpty}>
                 {view.rows.length ? "No matching tokens" : "No tokens yet"}
               </p>
             )}

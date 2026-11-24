@@ -1,0 +1,14 @@
+.webPreviewDialog { width: min(480px, calc(100vw - 32px)); padding: var(--ep-desktop-space-26); border: var(--ep-desktop-stroke-border) solid var(--border); border-radius: var(--ep-desktop-radius-dialog); background: var(--background); color: var(--foreground); box-shadow: 0 var(--ep-desktop-elevation-dialog-y) var(--ep-desktop-elevation-dialog-blur) var(--ep-desktop-surface-dialog-shadow); }
+.webPreviewDialog::backdrop { background: var(--ep-desktop-surface-backdrop); }
+.webPreviewDialog h2 { font-size: var(--ep-desktop-type-size-title); letter-spacing: -.025em; margin: var(--ep-desktop-space-8) 0 var(--ep-desktop-space-12); }
+.webPreviewDialog p { color: var(--muted-foreground); font-size: var(--ep-desktop-type-size-detail); line-height: 1.65; margin: 0 0 var(--ep-desktop-space-20); }
+.webPreviewEyebrow { width: max-content; font-size: var(--ep-desktop-type-size-caption); background: var(--accent); color: var(--muted-foreground); padding: var(--ep-desktop-space-3) var(--ep-desktop-space-6); border-radius: var(--ep-desktop-radius-small); }
+.webPreviewSummary { display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--ep-desktop-space-8); font-size: var(--ep-desktop-type-size-detail); padding-block: var(--ep-desktop-space-14); border-block: var(--ep-desktop-stroke-border) solid var(--border); margin-bottom: var(--ep-desktop-space-14); }
+.webPreviewSummary > span, .webPreviewStatus { color: var(--muted-foreground); }
+.webPreviewStatus { min-height: 20px; font-size: var(--ep-desktop-type-size-detail); }
+.webPreviewLink { display: block; font-size: var(--ep-desktop-type-size-detail); margin-block: var(--ep-desktop-space-12); }
+.webPreviewLink input { display: block; width: 100%; padding: var(--ep-desktop-space-8); margin-top: var(--ep-desktop-space-5); border: var(--ep-desktop-stroke-border) solid var(--control-border); border-radius: var(--ep-desktop-radius-control); background: var(--accent); color: var(--foreground); font: inherit; }
+.webPreviewActions { display: flex; justify-content: flex-end; gap: var(--ep-desktop-space-6); flex-wrap: wrap; margin-block: var(--ep-desktop-space-14); }
+.webPreviewActions button { min-height: var(--ep-desktop-control-standard); padding: var(--ep-desktop-space-6) var(--ep-desktop-space-9); border: var(--ep-desktop-stroke-border) solid var(--control-border); border-radius: var(--ep-desktop-radius-control); background: var(--background); color: var(--foreground); font: inherit; font-size: var(--ep-desktop-type-size-detail); cursor: pointer; }
+.webPreviewActions .webPreviewSync { background: var(--primary); color: var(--primary-foreground); border-color: transparent; }
+.webPreviewDialog .webPreviewNote { margin-bottom: 0; font-size: var(--ep-desktop-type-size-caption); }

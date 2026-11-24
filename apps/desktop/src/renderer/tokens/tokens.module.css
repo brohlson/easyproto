@@ -1,0 +1,126 @@
+.tokensTrigger {
+  display: inline-flex; align-items: center; gap: var(--ep-desktop-space-6); flex: none; margin-left: auto; min-height: var(--ep-desktop-control-toolbar);
+  padding: var(--ep-desktop-space-5) var(--ep-desktop-space-8); font: inherit; font-weight: var(--ep-desktop-type-weight-label); color: var(--muted-foreground);
+  border: 0; border-radius: var(--radius); background: transparent; cursor: pointer;
+}
+.tokensTrigger:hover:enabled { color: var(--foreground); background: var(--accent); }
+.tokensDialog {
+  --token-type-track: 132px;
+  --token-actions-track: 198px;
+  position: fixed;
+  inset: var(--ep-desktop-layout-window-gutter);
+  margin: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
+  border: var(--ep-desktop-stroke-border) solid var(--control-border);
+  border-radius: var(--ep-desktop-radius-dialog);
+  color: var(--foreground);
+  background: var(--background);
+  box-shadow: 0 var(--ep-desktop-elevation-dialog-y) var(--ep-desktop-elevation-dialog-blur) var(--ep-desktop-surface-dialog-shadow);
+}
+.tokensDialog[open] { display: flex; flex-direction: column; }
+.tokensDialog::backdrop { background: var(--ep-desktop-surface-backdrop); }
+.tokensHeading, .tokensToolbar, .tokenActions, .tokenValue {
+  display: flex;
+  align-items: center;
+  gap: var(--ep-desktop-space-8);
+}
+.tokensHeading {
+  justify-content: space-between;
+  padding: var(--ep-desktop-space-15) var(--ep-desktop-space-20);
+  border-bottom: var(--ep-desktop-stroke-border) solid var(--border);
+}
+.tokensHeading h2 { margin: 0; font-size: var(--ep-desktop-type-size-heading); font-weight: var(--ep-desktop-type-weight-heading); }
+.tokensToolbar { padding: var(--ep-desktop-space-12) var(--ep-desktop-space-20); }
+.tokenSearch { position: relative; flex: 0 1 320px; min-width: 0; margin-right: auto; }
+.tokenSearch svg {
+  position: absolute;
+  inset: 0 auto 0 var(--ep-desktop-space-10);
+  margin: auto;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+.tokensDialog button, .tokensDialog input, .tokensDialog textarea {
+  min-height: var(--ep-desktop-control-standard);
+  padding: var(--ep-desktop-space-6) var(--ep-desktop-space-9);
+  border: var(--ep-desktop-stroke-border) solid var(--control-border);
+  border-radius: var(--radius);
+  font: inherit;
+  background: var(--background);
+  color: var(--foreground);
+}
+.tokenSearch input { width: 100%; padding-inline-start: var(--ep-desktop-control-standard); }
+.tokensDialog button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ep-desktop-space-6);
+  cursor: pointer;
+}
+.tokensDialog button:not(.tokenPrimary):hover:enabled { background: var(--accent); }
+.tokensDialog .tokenPrimary { color: var(--primary-foreground); background: var(--primary); border-color: var(--primary); white-space: nowrap; }
+.tokensDialog .tokenPrimary:hover:enabled { opacity: var(--ep-desktop-opacity-primary-hover); }
+.tokensDialog .tokenIcon, .tokensDialog .tokenName, .tokensDialog .tokenCopy { background: transparent; border-color: transparent; }
+.tokensDialog .tokenIcon { width: var(--ep-desktop-control-standard); padding: 0; }
+.tokensDialog .tokenName { font-weight: var(--ep-desktop-type-weight-semibold); text-align: left; overflow-wrap: anywhere; }
+.tokenTableWrap {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  padding: 0 var(--ep-desktop-space-20) var(--ep-desktop-space-12);
+}
+.tokenTable { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: 100%; text-align: left; }
+.tokenColName { width: 28%; }
+.tokenColType { width: var(--token-type-track); }
+.tokenColActions { width: var(--token-actions-track); }
+.tokenTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--background);
+  font-weight: var(--ep-desktop-type-weight-label);
+}
+.tokenTable th, .tokenTable td {
+  padding: var(--ep-desktop-space-6) var(--ep-desktop-space-8);
+  border-bottom: var(--ep-desktop-stroke-border) solid var(--border);
+}
+.tokenTable th:last-child, .tokenTable td:last-child { text-align: right; }
+.tokenTable th, .tokenTable td:nth-child(2), .tokenResolved, .tokensDialog .tokenCopy { color: var(--muted-foreground); }
+.tokenValue { font-family: var(--ep-desktop-type-family-code); overflow-wrap: anywhere; flex-wrap: wrap; }
+.tokenSwatch { flex: none; width: 13px; height: 13px; border: var(--ep-desktop-stroke-border) solid var(--control-border); border-radius: var(--ep-desktop-radius-tiny); }
+.tokenCopy { white-space: nowrap; }
+.tokenTable .tokenEditRow td { padding: 0; text-align: left; background: var(--accent); }
+.tokenRowEditor {
+  display: grid;
+  grid-template-columns: 28% var(--token-type-track) minmax(0, 1fr) var(--token-actions-track);
+  align-items: center;
+  padding-block: var(--ep-desktop-space-6);
+}
+.tokenRowEditor > :not(.tokenRowError) { margin-inline: var(--ep-desktop-space-8); min-width: 0; }
+.tokenEditName { padding-inline: var(--ep-desktop-space-9); overflow-wrap: anywhere; }
+.tokensDialog .tokenEditValue { font-family: var(--ep-desktop-type-family-code); }
+.tokenRowEditor .tokenCancel { margin-left: 0; border-color: transparent; background: transparent; }
+.tokenRowActions { justify-content: flex-end; }
+.tokenRowEditor .tokenRowActions { flex-wrap: nowrap; gap: var(--ep-desktop-space-4); }
+.tokenRowError { grid-column: 1 / -1; margin: var(--ep-desktop-space-8) var(--ep-desktop-space-16); }
+.tokenForm { display: grid; gap: var(--ep-desktop-space-14); margin: var(--ep-desktop-space-14) var(--ep-desktop-space-20); padding: var(--ep-desktop-space-12); background: var(--accent); border-radius: var(--radius); overflow: auto; }
+.tokenForm label { display: grid; min-width: 0; gap: var(--ep-desktop-space-6); color: var(--muted-foreground); }
+.tokenForm textarea { width: 100%; resize: vertical; font-family: var(--ep-desktop-type-family-code); }
+.tokenActions { flex-wrap: wrap; }
+.tokenCancel { margin-left: auto; }
+.tokenEmpty, .tokenNotice, .tokenError, .tokenRetry { margin: var(--ep-desktop-space-10) var(--ep-desktop-space-20); padding: var(--ep-desktop-space-7) 0; }
+.tokenRetry { align-self: flex-start; }
+.tokenEmpty { padding-bottom: var(--ep-desktop-space-16); color: var(--muted-foreground); }
+.tokenNotice { display: flex; align-items: center; justify-content: space-between; gap: var(--ep-desktop-space-10); }
+.tokenError { border-left: var(--ep-desktop-stroke-focus) solid currentColor; padding-left: var(--ep-desktop-space-10); }
+.tokensDialog textarea:focus-visible { outline: var(--ep-desktop-stroke-focus) solid var(--ring); outline-offset: var(--ep-desktop-stroke-focus); }
+
+@media (max-width: 760px) {
+  .tokensDialog { --token-type-track: 112px; --token-actions-track: 108px; }
+  .tokenRowEditor { grid-template-columns: 28% var(--token-type-track) minmax(0, 1fr); row-gap: var(--ep-desktop-space-6); }
+  .tokenRowActions { grid-column: 1 / -1; }
+}

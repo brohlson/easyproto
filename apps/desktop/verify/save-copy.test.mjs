@@ -82,13 +82,15 @@ for (const format of ["folder", "sqlite"]) {
       const button = (name) => page.getByRole("button", { name, exact: true });
       const settings = button("Settings");
       const save = button("Save a Copy…");
-      const toast = page.locator(".toast").getByText("Project copy saved", { exact: true });
+      const toast = page
+        .locator("[data-testid=toast]")
+        .getByText("Project copy saved", { exact: true });
       const heading = (name) =>
         page
           .frameLocator('iframe[title="Field notes"]')
           .getByRole("heading", { name, exact: true });
       const idle = () =>
-        page.waitForFunction(() => !document.querySelector(".brand-home")?.disabled);
+        page.waitForFunction(() => !document.querySelector("[data-testid=brand-home]")?.disabled);
       await heading("Before the dialog").waitFor();
       if (format === "sqlite") {
         await app.evaluate(({ BrowserWindow }) =>
@@ -194,7 +196,9 @@ for (const format of ["folder", "sqlite"]) {
       await idle();
       await settings.click();
       await save.click();
-      await page.waitForFunction(() => document.querySelector(".brand-home")?.disabled);
+      await page.waitForFunction(
+        () => document.querySelector("[data-testid=brand-home]")?.disabled,
+      );
       await page.evaluate(() => window.easyProto.goHome());
       assert.equal((await context()).activationId, active.activationId);
       const committedWhileChoosing = {
@@ -226,7 +230,7 @@ for (const format of ["folder", "sqlite"]) {
       assert.equal(saved.revision, receipt.structuredContent.revision);
       await heading("Saved from the dialog").waitFor();
       if (evidence) {
-        await page.locator('.artboard-preview[data-loaded="true"]').waitFor();
+        await page.locator('[data-testid=artboard-preview][data-loaded="true"]').waitFor();
         await page.screenshot({
           path: join(evidence, `success-${format}.png`),
           animations: "disabled",

@@ -28,7 +28,7 @@ function raw(url, options, body = "{}") {
 }
 
 async function pinchCanvas(page, deltaY) {
-  const { x, y, width, height } = await page.locator(".canvas").boundingBox();
+  const { x, y, width, height } = await page.locator("[data-testid=canvas]").boundingBox();
   await page.mouse.move(x + width / 2, y + height / 2);
   // Chromium delivers a trackpad pinch as a wheel event with Ctrl set.
   await page.keyboard.down("Control");
@@ -502,8 +502,8 @@ test(
       await mkdir(evidence, { recursive: true });
       await fitCanvas(desktop);
       await desktop.waitForFunction(() => {
-        const canvas = document.querySelector(".canvas").getBoundingClientRect();
-        return [...document.querySelectorAll(".artboard-label")].every((label) => {
+        const canvas = document.querySelector("[data-testid=canvas]").getBoundingClientRect();
+        return [...document.querySelectorAll("[data-testid=artboard-label]")].every((label) => {
           const bounds = label.getBoundingClientRect();
           return bounds.top >= canvas.top && bounds.right <= canvas.right;
         });
@@ -518,8 +518,8 @@ test(
       await desktop.waitForFunction(() => innerWidth === 660);
       await fitCanvas(desktop);
       await desktop.waitForFunction(() => {
-        const canvas = document.querySelector(".canvas").getBoundingClientRect();
-        return [...document.querySelectorAll(".artboard-label")].every((label) => {
+        const canvas = document.querySelector("[data-testid=canvas]").getBoundingClientRect();
+        return [...document.querySelectorAll("[data-testid=artboard-label]")].every((label) => {
           const bounds = label.getBoundingClientRect();
           return (
             bounds.top >= canvas.top && bounds.left >= canvas.left && bounds.right <= canvas.right
@@ -584,9 +584,9 @@ test(
     await activeLabel().waitFor();
     assert.equal(await activityLabel().count(), 1);
     const preview = desktop.locator(`[data-id="${artboardId}"] iframe`);
-    const runner = activeLabel().locator(".edge-runner-highlight");
+    const runner = activeLabel().locator("[data-testid=edge-runner-highlight]");
     assert.equal(
-      await desktop.locator('.artboard-working-overlay[data-working="true"]').count(),
+      await desktop.locator('[data-testid=artboard-working-overlay][data-working="true"]').count(),
       1,
     );
     assert.equal(await preview.evaluate((element) => element.getAnimations().length), 0);
@@ -635,7 +635,7 @@ test(
     assert.equal((await setActivity("idle", parallelActivity)).working, false);
     await activeLabel().waitFor({ state: "hidden" });
     assert.equal(
-      await desktop.locator('.artboard-working-overlay[data-working="true"]').count(),
+      await desktop.locator('[data-testid=artboard-working-overlay][data-working="true"]').count(),
       0,
     );
     assert.equal(await preview.evaluate((element) => getComputedStyle(element).opacity), "1");
@@ -1265,7 +1265,7 @@ test(
     const device = (name) => deviceMenu.getByRole("button", { name });
     assert.equal(
       await desktop
-        .locator(".react-flow__controls, .react-flow__attribution, .resize-handle")
+        .locator(".react-flow__controls, .react-flow__attribution, [data-testid=resize-handle]")
         .count(),
       0,
     );
@@ -1380,7 +1380,8 @@ test(
             .backgroundColor,
           headerHeight: getComputedStyle(document.querySelector("header")).height,
           interfaceSize: getComputedStyle(document.documentElement).fontSize,
-          labelSize: getComputedStyle(document.querySelector(".artboard-label")).fontSize,
+          labelSize: getComputedStyle(document.querySelector("[data-testid=artboard-label]"))
+            .fontSize,
           inter: inter?.status,
         };
       });
@@ -1445,7 +1446,9 @@ test(
     await desktop.waitForFunction(() => innerWidth === 660);
     await checkWorkspaceHeader(desktop, { dark: true, compact: true });
     await desktop.waitForFunction(
-      () => document.querySelector(".settings-button").getBoundingClientRect().right <= innerWidth,
+      () =>
+        document.querySelector("[data-testid=settings-button]").getBoundingClientRect().right <=
+        innerWidth,
       undefined,
       { timeout: 5000 },
     );
@@ -1578,7 +1581,8 @@ test(
     const edit = (kind) => desktop.getByRole("textbox", { name: kind + " name", exact: true });
     const title = (kind, name) =>
       desktop.getByRole("button", { name: "Rename " + kind + " " + name, exact: true });
-    const row = (name) => desktop.locator(".home").getByRole("button", { name, exact: true });
+    const row = (name) =>
+      desktop.locator("[data-testid=home]").getByRole("button", { name, exact: true });
 
     await launch();
     await connect();
@@ -1629,12 +1633,12 @@ test(
 
     const artboard = title("artboard", "Field notes");
     const node = desktop.locator(".react-flow__node");
-    const dimensions = node.locator(".artboard-dimensions");
+    const dimensions = node.locator("[data-testid=artboard-dimensions]");
     const frame = desktop.frames().find((item) => item.url() === previewUrl);
     const frameSize = () => frame.evaluate(() => [innerWidth, innerHeight]);
     const transform = () => desktop.locator(".react-flow__viewport").getAttribute("style");
     await fitCanvas(desktop);
-    await desktop.waitForFunction(() => !!document.querySelector(".artboard-meta"));
+    await desktop.waitForFunction(() => !!document.querySelector("[data-testid=artboard-meta]"));
     const before = await transform();
     await artboard.dblclick();
     assert.equal(await transform(), before);
@@ -1668,7 +1672,7 @@ test(
     const startingWidth = (await node.boundingBox()).width;
     const zoom = () =>
       node
-        .locator(".artboard-meta")
+        .locator("[data-testid=artboard-meta]")
         .evaluate((element) => 1 / Number(element.style.getPropertyValue("--inverse-zoom")));
     async function zoomTo(deltaY, reached) {
       for (let i = 0; i < 22; i++) {
@@ -1679,7 +1683,9 @@ test(
           (previous) =>
             1 /
               Number(
-                document.querySelector(".artboard-meta").style.getPropertyValue("--inverse-zoom"),
+                document
+                  .querySelector("[data-testid=artboard-meta]")
+                  .style.getPropertyValue("--inverse-zoom"),
               ) !==
             previous,
           previous,
@@ -1770,16 +1776,20 @@ test(
     const original = await call("get_artboard", { ...duplicateScope, artboardId });
     await desktop.keyboard.press("Meta+d");
     assert.equal((await snapshot()).artboards.length, 1);
-    await desktop.locator(".react-flow__node .artboard").click({ position: { x: 40, y: 40 } });
+    await desktop
+      .locator(".react-flow__node [data-testid=artboard]")
+      .click({ position: { x: 40, y: 40 } });
     await desktop.locator(".react-flow__node.selected").waitFor();
     await sketchTitle.dblclick();
     await edit("Artboard").press("Meta+d");
     await edit("Artboard").press("Escape");
     assert.equal((await snapshot()).artboards.length, 1);
     await desktop.evaluate(() => {
-      const canv = document.querySelector(".canvas");
+      const canv = document.querySelector("[data-testid=canvas]");
       const inspect = () => {
-        const preview = canv.querySelector('.artboard-preview:has(iframe[title="Sketches copy"])');
+        const preview = canv.querySelector(
+          '[data-testid=artboard-preview]:has(iframe[title="Sketches copy"])',
+        );
         if (!preview || window.easyProtoPreviewEntry) return;
         window.easyProtoPreviewEntry = {
           loaded: preview.dataset.loaded,
@@ -1803,7 +1813,7 @@ test(
       opacity: "0",
       layout: [540, 360],
     });
-    const copyPreview = copyNode.locator('.artboard-preview[data-loaded="true"]');
+    const copyPreview = copyNode.locator('[data-testid=artboard-preview][data-loaded="true"]');
     await copyPreview.waitFor();
     assert.equal(
       await copyPreview.evaluate((element) => getComputedStyle(element).transitionDuration),
@@ -1811,8 +1821,8 @@ test(
     );
     await desktop.waitForFunction(
       (id) =>
-        getComputedStyle(document.querySelector(`[data-id="${id}"] .artboard-preview`)).opacity ===
-        "1",
+        getComputedStyle(document.querySelector(`[data-id="${id}"] [data-testid=artboard-preview]`))
+          .opacity === "1",
       duplicate.id,
     );
     assert.equal(await desktop.locator(".react-flow__node.selected").count(), 1);
@@ -1869,7 +1879,7 @@ test(
     const reopened = (await snapshot()).artboards.find(({ id }) => id === duplicate.id);
     assert.deepEqual([reopened.x, reopened.y], [duplicate.x, duplicate.y]);
     const sourceNode = desktop.locator(`.react-flow__node[data-id="${artboardId}"]`);
-    await sourceNode.locator(".artboard").click({ position: { x: 15, y: 35 } });
+    await sourceNode.locator("[data-testid=artboard]").click({ position: { x: 15, y: 35 } });
     await sourceNode.and(desktop.locator(".react-flow__node.selected")).waitFor();
     const copied = await sourceNode.evaluate((element) => {
       const data = new DataTransfer();
@@ -1932,7 +1942,7 @@ test(
     const deletionStart = await snapshot();
     await desktop.keyboard.press("Delete");
     assert.equal((await snapshot()).revision, deletionStart.revision);
-    await sourceNode.locator(".artboard").click({ position: { x: 15, y: 35 } });
+    await sourceNode.locator("[data-testid=artboard]").click({ position: { x: 15, y: 35 } });
     await sourceNode.and(desktop.locator(".react-flow__node.selected")).waitFor();
     await sketchTitle.dblclick();
     await edit("Artboard").press("ArrowRight");
@@ -1973,7 +1983,9 @@ test(
       .frameLocator('iframe[title="Sketches"]')
       .getByRole("heading", { name: "Make room for ideas." })
       .waitFor();
-    const restoredPreview = sourceNode.locator('.artboard-preview[data-loaded="true"]');
+    const restoredPreview = sourceNode.locator(
+      '[data-testid=artboard-preview][data-loaded="true"]',
+    );
     await restoredPreview.waitFor();
     assert.deepEqual(
       await restoredPreview.evaluate((element) => {
@@ -2035,7 +2047,7 @@ test(
       selectedNodes.evaluateAll((nodes) => nodes.map((item) => item.dataset.id));
     const groupIds = groupBoards.map(({ id }) => id);
     const selectionCount = desktop.getByText("2 artboards selected", { exact: true });
-    const visualOutline = desktop.locator(".artboard-group-outline");
+    const visualOutline = desktop.locator("[data-testid=artboard-group-outline]");
     const spot = { x: 35, y: 35 };
     const beforeKeyboard = await snapshot();
     await left.focus();
@@ -2048,7 +2060,7 @@ test(
     assert.deepEqual(await selectedIds(), groupIds);
     assert.equal(
       await right
-        .locator(".editable-name")
+        .locator("[data-testid=editable-name]")
         .evaluate((element) => getComputedStyle(element).textDecorationLine),
       "underline",
     );
@@ -2094,7 +2106,9 @@ test(
     const selectionOutline = desktop.locator(".react-flow__nodesselection-rect");
     const verifyOutline = () =>
       visualOutline.evaluate((group) => {
-        const artboards = [...document.querySelectorAll(".react-flow__node.selected .artboard")];
+        const artboards = [
+          ...document.querySelectorAll(".react-flow__node.selected [data-testid=artboard]"),
+        ];
         const bounds = artboards.map((artboard) => artboard.getBoundingClientRect());
         const rect = group.getBoundingClientRect();
         const groupStyle = getComputedStyle(group);
@@ -2352,7 +2366,7 @@ test(
     const activeBefore = await call("get_context");
     const camera = () => desktop.locator(".react-flow__viewport").getAttribute("style");
     const beforePagePan = await camera();
-    const area = await desktop.locator(".canvas").boundingBox();
+    const area = await desktop.locator("[data-testid=canvas]").boundingBox();
     await desktop.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
     await desktop.mouse.wheel(26, 18);
     await desktop.waitForFunction(
@@ -2493,7 +2507,7 @@ test(
     assert.equal((await snapshot()).revision, renamedByMenu.revision + 1);
     await left.press("Shift+F10");
     await actions.waitFor();
-    await desktop.locator(".canvas-actions > span").click();
+    await desktop.locator("[data-testid=canvas-actions] > span").click();
     await actions.waitFor({ state: "hidden" });
     assert.deepEqual(await selectedIds(), [groupIds[0]]);
 
@@ -2588,7 +2602,7 @@ test(
     await selectionCount.waitFor();
     const beforeFooterDelete = await snapshot();
     await desktop
-      .locator(".canvas-actions")
+      .locator("[data-testid=canvas-actions]")
       .getByRole("button", { name: "Delete", exact: true })
       .click();
     const footerDeleted = await waitForRevision(desktop, beforeFooterDelete.revision + 1);
@@ -2748,7 +2762,7 @@ test(
     await desktop.waitForFunction(() => innerWidth === 1180);
     assert.deepEqual(await insets(), [20, 20, 20, 20]);
     const search = tokens.getByRole("searchbox", { name: "Search tokens" });
-    await tokens.locator(".token-search svg").waitFor();
+    await tokens.locator("[data-testid=token-search] svg").waitFor();
     await search.fill("blue");
     assert.equal(
       await tokens.getByRole("button", { name: "color.action", exact: true }).count(),
@@ -2771,7 +2785,7 @@ test(
     const typePicker = editRow.getByRole("combobox", { name: "Type" });
     assert.equal(
       await editRow
-        .locator(".token-row-actions")
+        .locator("[data-testid=token-row-actions]")
         .evaluate(
           (actions) =>
             new Set([...actions.children].map((button) => button.getBoundingClientRect().top)).size,
@@ -2803,20 +2817,20 @@ test(
     await typePicker.selectOption("color");
     await value.fill("#ff0000");
     await editRow.getByRole("button", { name: "Save token", exact: true }).click();
-    await tokens.locator(".toast").getByText("Tokens saved.").waitFor();
+    await tokens.locator("[data-testid=toast]").getByText("Tokens saved.").waitFor();
     const savedTokens = await call("get_tokens", activeScopeForPages);
     assert.equal(savedTokens.revision, seeded.revision + 1);
     assert.match(savedTokens.css, /--ep-color-action: var\(--ep-color-blue\);/);
     if (evidence) await desktop.screenshot({ path: join(evidence, "token-manager.png") });
     await tokens.getByRole("button", { name: "Copy CSS for color.action" }).click();
-    await tokens.locator(".toast").getByText("CSS copied", { exact: true }).waitFor();
+    await tokens.locator("[data-testid=toast]").getByText("CSS copied", { exact: true }).waitFor();
     assert.equal(
       await app.evaluate(({ clipboard }) => clipboard.readText()),
       "var(--ep-color-action)",
     );
     if (evidence) await desktop.screenshot({ path: join(evidence, "token-copy-toast.png") });
     await tokens.getByRole("button", { name: "Dismiss notification" }).click();
-    await tokens.locator(".toast").waitFor({ state: "hidden" });
+    await tokens.locator("[data-testid=toast]").waitFor({ state: "hidden" });
 
     const imported = join(root, "import.tokens.json");
     const exportedJson = join(root, "export.tokens.json");
@@ -2836,7 +2850,7 @@ test(
     await tokens.getByRole("button", { name: "Import JSON…" }).click();
     const text = tokens.getByLabel("Design tokens JSON");
     await desktop.waitForFunction(() =>
-      document.querySelector(".tokens-dialog textarea")?.value.includes("42"),
+      document.querySelector("[data-testid=tokens-dialog] textarea")?.value.includes("42"),
     );
     assert.equal(await text.inputValue(), await readFile(imported, "utf8"));
     await tokens.getByRole("button", { name: "Export saved JSON…" }).click();
@@ -2916,7 +2930,7 @@ test(
     await gutter.click();
     await reopenedTokens.getByRole("button", { name: "Delete token", exact: true }).click();
     await gutter.waitFor({ state: "detached" });
-    await reopenedTokens.locator(".toast").waitFor();
-    await reopenedTokens.locator(".toast").waitFor({ state: "hidden", timeout: 6500 });
+    await reopenedTokens.locator("[data-testid=toast]").waitFor();
+    await reopenedTokens.locator("[data-testid=toast]").waitFor({ state: "hidden", timeout: 6500 });
   },
 );

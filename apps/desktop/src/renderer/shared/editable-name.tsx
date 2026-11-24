@@ -1,3 +1,4 @@
+import controls from "./controls.module.css";
 import { useLayoutEffect, useRef, useState } from "react";
 
 type SaveName = (value: string) => void;
@@ -49,7 +50,9 @@ export function EditableName({
     <button
       ref={button}
       type="button"
-      className="editable-name nodrag nopan"
+      className={`${controls.editableName} nodrag nopan`}
+      data-testid="editable-name"
+      data-name-kind={kind}
       aria-label={`Rename ${kind} ${name}`}
       aria-disabled={disabled}
       title={`${name} · Double-click to rename`}
@@ -66,7 +69,8 @@ export function EditableName({
   ) : (
     <input
       ref={input}
-      className="name-input nodrag nopan"
+      className={`${controls.nameInput} nodrag nopan`}
+      data-name-kind={kind}
       aria-label={`${kind === "artboard" ? "Artboard" : "Project"} name`}
       maxLength={100}
       value={value}

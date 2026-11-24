@@ -157,7 +157,7 @@ test(
     await revision(initial.revision + 3);
     await waitViewport(400, 290);
 
-    const canvas = await page.locator(".canvas").boundingBox();
+    const canvas = await page.locator("[data-testid=canvas]").boundingBox();
     const renderedBefore = await iframe.boundingBox();
     await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
     await page.keyboard.down("Control");

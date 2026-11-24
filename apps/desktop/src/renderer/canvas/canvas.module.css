@@ -1,0 +1,93 @@
+.artboardMenu { inset: auto; width: 184px; max-height: calc(100dvh - 16px); }
+.artboardMenu button:disabled { color: var(--muted-foreground); cursor: default; }
+
+.emptyPage {
+  position: absolute; inset: 0; display: grid; place-items: center; margin: 0;
+  color: var(--muted-foreground); pointer-events: none;
+}
+
+.canvas {
+  --selection-outline-width: var(--ep-desktop-stroke-selection);
+  position: relative; min-width: 0; min-height: 0; background: var(--canvas);
+}
+.canvas :global(.react-flow) {
+  --xy-background-color: var(--canvas);
+  --xy-selection-background-color: color-mix(in srgb, var(--ring) calc(var(--ep-desktop-opacity-marquee-fill) * 100%), transparent);
+  --xy-selection-border: var(--ep-desktop-stroke-border) solid color-mix(in srgb, var(--ring) calc(var(--ep-desktop-opacity-marquee-outline) * 100%), transparent);
+}
+.canvas :global(.react-flow__nodesselection-rect) {
+  background: transparent;
+  border: 0;
+}
+.artboardGroupOutline {
+  position: absolute;
+  pointer-events: none;
+  outline: var(--selection-outline-width) dashed color-mix(in srgb, var(--ring) calc(var(--ep-desktop-opacity-marquee-outline) * 100%), transparent);
+}
+.artboard { position: relative; outline: var(--ep-desktop-stroke-border) solid var(--artboard-border); box-shadow: var(--shadow); }
+:global(.react-flow__node.selected) .artboard, :global(.react-flow__node):focus-visible .artboard { outline: var(--selection-outline-width) solid var(--ring); }
+:global(.react-flow__node):focus-visible .artboardLabel button[data-name-kind] { text-decoration: underline; text-underline-offset: 3px; }
+.artboardMeta {
+  position: absolute; bottom: 100%; left: 0; width: var(--label-width); padding-bottom: var(--ep-desktop-space-6);
+  transform: scale(var(--inverse-zoom)); transform-origin: bottom left; pointer-events: none;
+}
+:global(.react-flow__node.selected) { z-index: 1001 !important; }
+:global(.react-flow__node):focus-within { z-index: 1002 !important; }
+.artboardLabel {
+  display: flex; justify-content: space-between; align-items: center; gap: var(--ep-desktop-space-6);
+  color: var(--foreground); font-size: var(--ep-desktop-type-size-detail);
+}
+.artboardLabel [data-name-kind] { background: var(--canvas); pointer-events: auto; }
+.artboardDimensions {
+  flex: none; display: flex; align-items: center; gap: var(--ep-desktop-space-4); min-height: var(--ep-desktop-control-target); padding: var(--ep-desktop-space-2) var(--ep-desktop-space-4);
+  border: 0; border-radius: var(--ep-desktop-radius-small); background: var(--canvas); color: var(--muted-foreground);
+  font: inherit; font-weight: var(--ep-desktop-type-weight-medium); font-variant-numeric: tabular-nums; white-space: nowrap;
+  pointer-events: auto; cursor: pointer;
+}
+.artboardDimensions:hover:not([aria-disabled="true"]), .artboardDimensions:has(+ :popover-open) {
+  background: var(--accent); color: var(--foreground);
+}
+.presetPanel {
+  inset: auto; position-area: bottom span-left;
+  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline, --preset-inset;
+  position-visibility: anchors-visible;
+  width: 254px; max-height: min(420px, calc(100dvh - 24px)); margin: var(--ep-desktop-space-5) 0;
+}
+@position-try --preset-inset {
+  position-area: none; inset: 12px 12px auto auto;
+}
+.presetRow > :first-child { flex: 1; }
+.presetSize { font-size: var(--ep-desktop-type-size-caption); font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
+.inactiveCheck { visibility: hidden; }
+.resizeHandle {
+  position: absolute; right: 0; bottom: 0; z-index: 2; touch-action: none;
+  display: grid; place-items: center; width: var(--ep-desktop-control-target); height: var(--ep-desktop-control-target); padding: 0;
+  border: var(--ep-desktop-stroke-border) solid var(--ring); border-radius: var(--ep-desktop-radius-small);
+  background: var(--background); color: var(--foreground); cursor: nwse-resize;
+}
+.resizeHandle[aria-disabled="true"] { opacity: var(--ep-desktop-opacity-disabled); }
+.artboardWorkingOverlay {
+  position: absolute; inset: 0; overflow: hidden; display: grid; place-items: center;
+  pointer-events: none; background: var(--working-scrim); backdrop-filter: blur(var(--ep-desktop-space-3));
+  color: var(--foreground); opacity: 0; visibility: hidden;
+}
+.artboardWorkingOverlay[data-working="true"] { opacity: 1; visibility: visible; }
+.artboardWorkingIndicator {
+  display: flex; flex-direction: column; align-items: center; gap: var(--ep-desktop-space-12);
+  width: 144px; flex: none; transform: scale(var(--activity-scale));
+  font-size: var(--ep-desktop-type-size-detail); font-weight: var(--ep-desktop-type-weight-label); white-space: nowrap;
+}
+.edgeRunner { display: block; width: var(--ep-desktop-control-row); height: var(--ep-desktop-control-row); }
+.edgeRunnerTrack { opacity: var(--ep-desktop-opacity-working-track); }
+.edgeRunnerHighlight { stroke-dasharray: 12 88; }
+
+.artboardPreview { opacity: 0; pointer-events: none; }
+.artboardPreview[data-loaded="true"] { opacity: 1; }
+.artboard iframe { display: block; border: 0; background: var(--ep-desktop-surface-preview-paper); pointer-events: none; color-scheme: light; }
+@media (prefers-reduced-motion: no-preference) {
+  .artboardPreview { transition: opacity var(--ep-desktop-motion-preview-fade) ease-out; }
+  .artboardWorkingOverlay { transition: opacity var(--ep-desktop-motion-preview-fade) ease-out, visibility var(--ep-desktop-motion-preview-fade); }
+  .artboardWorkingOverlay[data-working="true"] .edgeRunnerHighlight { animation: edge-runner var(--ep-desktop-motion-edge-runner) linear infinite; }
+}
+@keyframes edge-runner { to { stroke-dashoffset: -100; } }
+@media (prefers-color-scheme: dark) { .artboard iframe { color-scheme: dark; } }

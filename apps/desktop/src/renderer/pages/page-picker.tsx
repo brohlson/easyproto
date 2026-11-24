@@ -1,6 +1,8 @@
+import controls from "../shared/controls.module.css";
+import pageStyles from "./pages.module.css";
 import { Check, ChevronDown, Pencil, Plus, Settings, Trash2, X } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import type { Artboard, Page } from "../shared/model";
+import type { Artboard, Page } from "../../shared/model";
 
 function PageActions({
   page,
@@ -31,10 +33,11 @@ function PageActions({
   }
 
   return (
-    <div className="page-actions">
+    <div className={pageStyles.pageActions}>
       <button
         ref={trigger}
-        className="page-icon-button page-actions-trigger"
+        className={`${pageStyles.pageIconButton} ${pageStyles.pageActionsTrigger}`}
+        data-testid="page-icon-button"
         type="button"
         aria-label={`Page settings for ${page.name}`}
         title={`Page settings for ${page.name}`}
@@ -60,7 +63,7 @@ function PageActions({
         ref={menu}
         id={id}
         popover="auto"
-        className="menu-panel page-actions-menu"
+        className={`${controls.menuPanel} ${pageStyles.pageActionsMenu}`}
         role="menu"
         aria-label={`Page actions for ${page.name}`}
         onToggle={(event) => {
@@ -94,7 +97,7 @@ function PageActions({
         <button
           type="button"
           role="menuitem"
-          className="menu-row"
+          className={controls.menuRow}
           disabled={disabled}
           onClick={() => {
             dismiss();
@@ -106,7 +109,7 @@ function PageActions({
         <button
           type="button"
           role="menuitem"
-          className="menu-row"
+          className={controls.menuRow}
           disabled={disabled || !canDelete}
           title={canDelete ? undefined : "Keep at least one page"}
           onClick={() => {
@@ -207,7 +210,8 @@ export function PagePicker({
       <button
         ref={trigger}
         type="button"
-        className="page-trigger page-picker-trigger"
+        className={`${controls.pageTrigger} ${pageStyles.pagePickerTrigger}`}
+        data-testid="page-picker-trigger"
         aria-label={`Pages, current page ${active.name}`}
         title={active.name}
         popoverTarget="pages"
@@ -220,7 +224,7 @@ export function PagePicker({
         ref={panel}
         id="pages"
         popover="auto"
-        className="menu-panel pages-panel"
+        className={`${controls.menuPanel} ${pageStyles.pagesPanel}`}
         role="group"
         aria-label="Pages"
         onToggle={(event) => {
@@ -230,12 +234,12 @@ export function PagePicker({
           }
         }}
       >
-        <div className="menu-section">
+        <div className={controls.menuSection} data-page-menu-section>
           {pages.map((page) =>
             rename?.pageId === page.id ? (
               <form
                 key={page.id}
-                className="page-rename"
+                className={pageStyles.pageRename}
                 onKeyDown={(event) => {
                   if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
                   event.preventDefault();
@@ -267,7 +271,8 @@ export function PagePicker({
                   onChange={(event) => setRename({ ...rename, name: event.currentTarget.value })}
                 />
                 <button
-                  className="page-icon-button"
+                  className={pageStyles.pageIconButton}
+                  data-testid="page-icon-button"
                   type="submit"
                   aria-label="Save page name"
                   title="Save page name"
@@ -276,7 +281,8 @@ export function PagePicker({
                   <Check size={14} aria-hidden="true" />
                 </button>
                 <button
-                  className="page-icon-button"
+                  className={pageStyles.pageIconButton}
+                  data-testid="page-icon-button"
                   type="button"
                   aria-label="Cancel rename"
                   title="Cancel rename"
@@ -287,10 +293,10 @@ export function PagePicker({
                 </button>
               </form>
             ) : (
-              <div className="page-picker-row" key={page.id}>
+              <div className={pageStyles.pagePickerRow} key={page.id}>
                 <button
                   type="button"
-                  className="menu-row page-row page-picker-choice"
+                  className={`${controls.menuRow} ${controls.pageRow} ${pageStyles.pagePickerChoice}`}
                   title={page.name}
                   aria-current={page.id === active.id ? "page" : undefined}
                   disabled={disabled}
@@ -299,7 +305,7 @@ export function PagePicker({
                     onSwitch(page.id);
                   }}
                 >
-                  <span className="page-row-indicator" aria-hidden="true">
+                  <span className={pageStyles.pageRowIndicator} aria-hidden="true">
                     {page.id === active.id && <Check size={13} />}
                   </span>
                   <span>{page.name}</span>
@@ -329,10 +335,10 @@ export function PagePicker({
             ),
           )}
         </div>
-        <div className="menu-section">
+        <div className={controls.menuSection} data-page-menu-section>
           {adding ? (
             <form
-              className="page-form"
+              className={pageStyles.pageForm}
               onSubmit={async (event) => {
                 event.preventDefault();
                 const name = draft?.trim();
@@ -351,7 +357,7 @@ export function PagePicker({
                 required
                 onChange={(event) => setDraft(event.target.value)}
               />
-              <div className="page-form-actions">
+              <div className={pageStyles.pageFormActions}>
                 <button
                   type="button"
                   disabled={disabled}
@@ -371,7 +377,7 @@ export function PagePicker({
             <button
               ref={add}
               type="button"
-              className="menu-row page-picker-add"
+              className={`${controls.menuRow} ${pageStyles.pagePickerAdd}`}
               disabled={disabled}
               onClick={() => {
                 setRename(undefined);
@@ -385,7 +391,7 @@ export function PagePicker({
       </div>
       <dialog
         ref={deletionDialog}
-        className="page-delete-dialog"
+        className={pageStyles.pageDeleteDialog}
         aria-labelledby="page-delete-title"
         aria-describedby="page-delete-description"
         onCancel={(event) => {
@@ -403,13 +409,13 @@ export function PagePicker({
               You can undo this with ⌘Z.
             </p>
             {deletionError && <p role="alert">{deletionError}</p>}
-            <div className="page-delete-actions">
+            <div className={pageStyles.pageDeleteActions}>
               <button type="button" autoFocus disabled={disabled} onClick={closeDeletion}>
                 Cancel
               </button>
               <button
                 type="button"
-                className="page-delete-confirm"
+                className={pageStyles.pageDeleteConfirm}
                 disabled={disabled}
                 onClick={async () => {
                   if (await deletion.save()) {

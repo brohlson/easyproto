@@ -1,6 +1,7 @@
+import previewStyles from "./web-preview.module.css";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { WebPreviewInfo } from "@easy-proto/preview";
-import type { Scene } from "../shared/model";
+import type { Scene } from "../../shared/model";
 
 export function WebPreviewDialog({
   scene,
@@ -80,40 +81,36 @@ export function WebPreviewDialog({
   return (
     <dialog
       ref={dialog}
-      className="web-preview-dialog"
+      className={previewStyles.webPreviewDialog}
       aria-labelledby="web-preview-title"
       onCancel={(event) => {
         event.preventDefault();
         void dismiss();
       }}
     >
-      <div className="web-preview-eyebrow">Local preview</div>
+      <div className={previewStyles.webPreviewEyebrow}>Local preview</div>
       <h2 id="web-preview-title">Share this page.</h2>
       <p>
         Export a read-only live preview of <strong>{page?.name}</strong>. Sync again to update the
         same link.
       </p>
-      <div className="web-preview-summary">
+      <div className={previewStyles.webPreviewSummary}>
         <strong>{page?.name}</strong>
         <span>
           {count} {count === 1 ? "artboard" : "artboards"}
         </span>
       </div>
-      <div role="status" className="web-preview-status">
+      <div role="status" className={previewStyles.webPreviewStatus}>
         {checking ? "Connecting to local preview…" : busy ? "Preparing preview…" : notice}
       </div>
-      {error && (
-        <p role="alert" className="web-preview-error">
-          {error}
-        </p>
-      )}
+      {error && <p role="alert">{error}</p>}
       {info && !info.configured && (
         <p>
           Start the development environment with <code>pnpm local:dev</code> to sync pages locally.
         </p>
       )}
       {info?.url && (
-        <label className="web-preview-link">
+        <label className={previewStyles.webPreviewLink}>
           Preview link
           <input
             aria-label="Preview link"
@@ -123,7 +120,7 @@ export function WebPreviewDialog({
           />
         </label>
       )}
-      <div className="web-preview-actions">
+      <div className={previewStyles.webPreviewActions}>
         <button type="button" onClick={() => void dismiss()}>
           {busy ? "Cancel export" : "Close"}
         </button>
@@ -139,14 +136,14 @@ export function WebPreviewDialog({
         )}
         <button
           type="button"
-          className="web-preview-sync"
+          className={previewStyles.webPreviewSync}
           disabled={checking || busy || !info?.configured || !count}
           onClick={() => void act("sync")}
         >
           Sync page
         </button>
       </div>
-      <p className="web-preview-note">
+      <p className={previewStyles.webPreviewNote}>
         Only this page is shared. Local source files stay on your Mac.
       </p>
     </dialog>

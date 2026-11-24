@@ -88,21 +88,21 @@ test(
     await status.waitFor();
     await page.waitForFunction((id) => {
       const board = document.querySelector(`[data-id="${id}"]`).getBoundingClientRect();
-      const canvas = document.querySelector(".canvas").getBoundingClientRect();
+      const canvas = document.querySelector("[data-testid=canvas]").getBoundingClientRect();
       return Math.abs(board.x + board.width / 2 - canvas.x - canvas.width / 2) < 2;
     }, artboardId);
     assert.equal((await call("get_context")).structuredContent.activePageId, savedPage.page.id);
-    assert.equal(await node.locator(".artboard-preview").getAttribute("aria-busy"), "true");
+    assert.equal(
+      await node.locator("[data-testid=artboard-preview]").getAttribute("aria-busy"),
+      "true",
+    );
     const preview = node.locator("iframe");
     const originalFrame = page.frameLocator('iframe[title="Target"]');
     await originalFrame.getByRole("heading", { name: "Ready for ideas" }).waitFor();
-    assert.equal(await originalFrame.locator(".edge-runner").count(), 0);
+    assert.equal(await originalFrame.locator("[data-testid=edge-runner]").count(), 0);
     const documentHandle = await originalFrame.locator("html").elementHandle();
-    const runner = status.locator(".edge-runner-highlight");
-    assert.equal(
-      await runner.evaluate((element) => getComputedStyle(element).animationName),
-      "edge-runner",
-    );
+    const runner = status.locator("[data-testid=edge-runner-highlight]");
+    assert.equal(await runner.evaluate((element) => element.getAnimations().length), 1);
     const sequence = await page.evaluate(
       async () => (await window.easyProto.getScene()).agentFocus.sequence,
     );
@@ -152,7 +152,7 @@ test(
       .frameLocator('iframe[title="Target"]')
       .getByRole("heading", { name: "Updated ideas" })
       .waitFor();
-    assert.equal(await originalFrame.locator(".edge-runner").count(), 0);
+    assert.equal(await originalFrame.locator("[data-testid=edge-runner]").count(), 0);
     await status.waitFor({ state: "hidden" });
     // A capture can show progress in chrome without contaminating the artboard PNG.
     const capture = await call("capture_artboard", { artboardId, revision });

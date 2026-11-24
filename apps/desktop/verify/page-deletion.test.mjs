@@ -90,7 +90,9 @@ for (const storage of ["folder", "sqlite"]) {
       const context = (await client.callTool({ name: "get_context" })).structuredContent;
       const { activationId } = context;
       async function openMenu() {
-        await page.waitForFunction(() => !document.querySelector(".page-picker-trigger")?.disabled);
+        await page.waitForFunction(
+          () => !document.querySelector("[data-testid=page-picker-trigger]")?.disabled,
+        );
         if (!(await menu.isVisible())) await picker.click();
       }
       async function openActions(name) {
@@ -117,7 +119,9 @@ for (const storage of ["folder", "sqlite"]) {
       const focused = (locator) =>
         locator.evaluate((element) => document.activeElement === element);
       const pickerFocused = () =>
-        page.waitForFunction(() => document.activeElement?.matches(".page-picker-trigger"));
+        page.waitForFunction(() =>
+          document.activeElement?.matches("[data-testid=page-picker-trigger]"),
+        );
       const initial = (await scene()).revision;
       await openMenu();
       await (
@@ -181,7 +185,9 @@ for (const storage of ["folder", "sqlite"]) {
       assert.equal((await scene()).revision, initial + 2);
       assert.ok(
         await page.evaluate(() =>
-          document.activeElement?.matches(".page-picker-trigger, .page-icon-button"),
+          document.activeElement?.matches(
+            "[data-testid=page-picker-trigger], [data-testid=page-icon-button]",
+          ),
         ),
       );
       await openMenu();
