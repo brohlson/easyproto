@@ -11,7 +11,7 @@
     "verify": "pnpm typecheck && pnpm build && node --test worker.test.mjs local-security.test.mjs && pnpm demo:verify",
     "demo:build": "vite build --config vite.demo.config.ts",
     "demo:verify": "pnpm demo:build && node --test viewer.test.mjs",
-    "demo:start": "node server.mjs"
+    "demo:start": "node demo/server.mjs"
   },
   "dependencies": {
     "@easy-proto/preview": "workspace:*",

@@ -1,55 +1,8 @@
 import { Brand, Select } from "@easy-proto/ui";
-import {
-  createRootRoute,
-  createRoute,
-  createRouter,
-  Link,
-  Outlet,
-  RouterProvider,
-} from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
-import faviconUrl from "@easy-proto/ui/fold.svg?url";
-import { startCamera } from "./camera";
-import { type Frame, type Page, type Scope, frameLabels, scopeLabels } from "./page";
-import "./style.css";
-import { Landing, SharedCanvas } from "./shared-pages";
-
-const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-if (favicon) favicon.href = faviconUrl;
-
-const payload = document.querySelector<HTMLScriptElement>("#page-data");
-let firstPage = payload?.textContent
-  ? { path: location.pathname, data: JSON.parse(payload.textContent) as Page }
-  : undefined;
-payload?.remove();
-
-async function loadPage({
-  location,
-  abortController,
-}: {
-  location: { pathname: string };
-  abortController: AbortController;
-}) {
-  if (firstPage?.path === location.pathname) {
-    const { data } = firstPage;
-    firstPage = undefined;
-    return data;
-  }
-  const response = await fetch(location.pathname, {
-    headers: { Accept: "application/json" },
-    credentials: "same-origin",
-    signal: abortController.signal,
-  });
-  if (!response.ok) return { kind: "unavailable" } as const;
-  return (await response.json()) as Page;
-}
-
-const rootRoute = createRootRoute({
-  component: Outlet,
-  errorComponent: LayoutError,
-  notFoundComponent: LayoutError,
-});
+import { startCamera } from "../canvas/camera";
+import { type Frame, type DemoPage, type Scope, frameLabels, scopeLabels } from "./page";
 
 function Header({ meta }: { meta: string }) {
   return (
@@ -62,13 +15,7 @@ function Header({ meta }: { meta: string }) {
   );
 }
 
-function Layout({ view }: { view: Page }) {
-  useLayoutEffect(() => {
-    document.title =
-      view.kind === "page-preview" ? `${view.projectName} - ${view.pageName}` : "Easy Proto";
-  }, [view]);
-  if (view.kind === "landing") return <Landing />;
-  if (view.kind === "page-preview") return <SharedCanvas view={view} />;
+export function Demo({ view }: { view: DemoPage }) {
   const meta =
     view.kind === "viewer"
       ? view.title
@@ -83,7 +30,7 @@ function Layout({ view }: { view: Page }) {
   );
 }
 
-function LayoutError() {
+export function DemoError() {
   return (
     <>
       <Header meta="Local demo" />
@@ -109,12 +56,8 @@ function Unavailable() {
   );
 }
 
-function Content({ view }: { view: Page }) {
+function Content({ view }: { view: DemoPage }) {
   switch (view.kind) {
-    case "landing":
-      return <Landing />;
-    case "page-preview":
-      return <SharedCanvas view={view} />;
     case "home":
       return <Home view={view} />;
     case "inbox":
@@ -132,7 +75,7 @@ function Content({ view }: { view: Page }) {
   }
 }
 
-function Home({ view }: { view: Extract<Page, { kind: "home" }> }) {
+function Home({ view }: { view: Extract<DemoPage, { kind: "home" }> }) {
   return (
     <Panel title="Sign in to publish">
       <p>Enter the demo account email to get a sign-in link in the local inbox.</p>
@@ -145,7 +88,7 @@ function Home({ view }: { view: Extract<Page, { kind: "home" }> }) {
   );
 }
 
-function Inbox({ view }: { view: Extract<Page, { kind: "inbox" }> }) {
+function Inbox({ view }: { view: Extract<DemoPage, { kind: "inbox" }> }) {
   return (
     <Panel title="Local inbox">
       {view.link ? (
@@ -165,7 +108,7 @@ function Inbox({ view }: { view: Extract<Page, { kind: "inbox" }> }) {
   );
 }
 
-function Confirm({ view }: { view: Extract<Page, { kind: "confirm" }> }) {
+function Confirm({ view }: { view: Extract<DemoPage, { kind: "confirm" }> }) {
   const [secret] = useState(() => location.hash.slice(1));
   useLayoutEffect(() => {
     if (location.hash) history.replaceState(history.state, "", location.pathname);
@@ -186,7 +129,7 @@ function Confirm({ view }: { view: Extract<Page, { kind: "confirm" }> }) {
   );
 }
 
-function Publisher({ view }: { view: Extract<Page, { kind: "publisher" }> }) {
+function Publisher({ view }: { view: Extract<DemoPage, { kind: "publisher" }> }) {
   const [scope, setScope] = useState<Scope>("canvas");
   const [frame, setFrame] = useState<Frame>("none");
   return (
@@ -246,7 +189,7 @@ function Publisher({ view }: { view: Extract<Page, { kind: "publisher" }> }) {
   );
 }
 
-function Created({ view }: { view: Extract<Page, { kind: "created" }> }) {
+function Created({ view }: { view: Extract<DemoPage, { kind: "created" }> }) {
   const [copyLabel, setCopyLabel] = useState("Copy link");
   const input = useRef<HTMLInputElement>(null);
   async function copy() {
@@ -275,7 +218,7 @@ function Created({ view }: { view: Extract<Page, { kind: "created" }> }) {
   );
 }
 
-function Viewer({ view }: { view: Extract<Page, { kind: "viewer" }> }) {
+function Viewer({ view }: { view: Extract<DemoPage, { kind: "viewer" }> }) {
   const viewport = useRef<HTMLElement>(null);
   const controls = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => startCamera(viewport.current!, controls.current!), [view]);
@@ -324,37 +267,3 @@ function Viewer({ view }: { view: Extract<Page, { kind: "viewer" }> }) {
     </>
   );
 }
-
-function pageRoute<const Path extends string>(path: Path) {
-  const route = createRoute({
-    getParentRoute: () => rootRoute,
-    path,
-    loader: loadPage,
-    component: RoutePage,
-  });
-  function RoutePage() {
-    return <Layout view={route.useLoaderData()} />;
-  }
-  return route;
-}
-
-const routeTree = rootRoute.addChildren([
-  pageRoute("/"),
-  pageRoute("/demo"),
-  pageRoute("/p/$previewId"),
-  pageRoute("/dev/inbox"),
-  pageRoute("/auth/continue"),
-  pageRoute("/publish"),
-  pageRoute("/publish/create"),
-  pageRoute("/s/$shareId"),
-]);
-
-const router = createRouter({ routeTree });
-
-declare module "@tanstack/react-router" {
-  interface Register {
-    router: typeof router;
-  }
-}
-
-createRoot(document.getElementById("root")!).render(<RouterProvider router={router} />);

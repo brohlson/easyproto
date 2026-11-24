@@ -125,7 +125,7 @@ async function form(request) {
 }
 
 export async function startWeb(port = 8787) {
-  const shell = readFileSync(new URL("dist/index.html", import.meta.url), "utf8");
+  const shell = readFileSync(new URL("../dist/index.html", import.meta.url), "utf8");
   const mount = '<div id="root"></div>';
   if (!shell.includes(mount)) throw new Error("Build the web app with pnpm web:build.");
   const database = initDatabase();
@@ -169,7 +169,7 @@ export async function startWeb(port = 8787) {
       if (!post && asset) {
         let body;
         try {
-          body = readFileSync(new URL(`dist/assets/${asset[1]}`, import.meta.url));
+          body = readFileSync(new URL(`../dist/assets/${asset[1]}`, import.meta.url));
         } catch (error) {
           if (error.code === "ENOENT") return deny();
           throw error;

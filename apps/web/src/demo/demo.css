@@ -1,0 +1,74 @@
+.panel {
+  max-width: 440px;
+  margin: clamp(48px, 16vh, 144px) auto 0;
+  padding: 0 20px 48px;
+}
+.panel .ep-select-field {
+  width: 100%;
+  margin-block-end: 7px;
+}
+button.secondary {
+  border-color: var(--line);
+  background: var(--control);
+  color: var(--ink);
+}
+.row {
+  display: flex;
+  gap: 8px;
+  margin: 5px 0 14px;
+}
+.shares {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.shares li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.device {
+  --frame-edge: 0px;
+  position: relative;
+}
+.device iframe {
+  display: block;
+  border: 0;
+  pointer-events: none;
+  background: #edf4f0;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.device.phone,
+.device.laptop {
+  border: var(--frame-edge) solid #252525;
+  background: #252525;
+  box-shadow:
+    0 0 0 1px #666,
+    0 10px 32px #0003;
+}
+.device.phone {
+  --frame-edge: 12px;
+  border-radius: 30px;
+  overflow: hidden;
+}
+.device.phone iframe {
+  border-radius: 19px;
+}
+.device.laptop {
+  --frame-edge: 14px;
+  border-radius: 17px 17px 6px 6px;
+}
+.device.laptop::after {
+  content: "";
+  position: absolute;
+  height: 12px;
+  left: -45px;
+  right: -45px;
+  bottom: -20px;
+  background: #777;
+  border-radius: 4px 4px 12px 12px;
+}

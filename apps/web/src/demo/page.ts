@@ -8,21 +8,8 @@ export type Board = {
 };
 export type Frame = "none" | "phone" | "laptop";
 export type Scope = "canvas" | "overview" | "today";
-import type { PreviewManifest } from "@easy-proto/preview";
-export type SharedPage = Omit<PreviewManifest, "artboards" | "revision"> & {
-  kind: "page-preview";
-  id: string;
-  updatedAt: string;
-  artboards: (Omit<
-    PreviewManifest["artboards"][number],
-    "document" | "stylesheet" | "tokens" | "assets"
-  > & {
-    iframeUrl: string;
-  })[];
-};
-export type Page =
-  | { kind: "landing" }
-  | SharedPage
+
+export type DemoPage =
   | { kind: "home"; email: string }
   | { kind: "inbox"; email: string; link?: string }
   | { kind: "confirm"; action: string; button: string; details: string }

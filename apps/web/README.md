@@ -2,6 +2,12 @@
 
 The landing page collects waitlist emails in local Cloudflare D1. A read-only page canvas at `/p/<id>` renders the selected page’s sanitized HTML and CSS in opaque, scriptless iframes. Syncing a page again updates its existing URL. Visitors can pan, zoom, and fit the page.
 
+## Source layout
+
+- `src/app.tsx` connects routes to the landing page, shared viewer, and legacy demo. Each feature keeps its own styles. Both viewers use `src/canvas/` for pan and zoom.
+- `worker/index.ts` owns request dispatch and error handling. The adjacent modules own waitlist signup, desktop publishing, public previews and artifacts, and the site shell.
+- `demo/` contains the standalone Node server and HTML artboards for the legacy demo. The Worker continues to serve the current sharing workflow.
+
 ## Start locally
 
 Use the repository’s pinned Node and pnpm toolchain:

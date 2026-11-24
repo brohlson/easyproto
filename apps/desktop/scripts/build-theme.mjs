@@ -10,7 +10,7 @@ const generated =
 const names = new Set(rows.map(({ cssName }) => cssName));
 const root = new URL("../../../", import.meta.url);
 for await (const path of glob(
-  ["packages/ui/*.css", "apps/desktop/src/renderer/**/*.css", "apps/web/*.css"],
+  ["packages/ui/*.css", "apps/desktop/src/renderer/**/*.css", "apps/web/src/**/*.css"],
   { cwd: fileURLToPath(root), exclude: ["packages/ui/theme.tokens.css"] },
 )) {
   const styles = await readFile(new URL(path, root), "utf8");

@@ -411,3 +411,9 @@ The working tree based on `8461af2` generates one checked-in theme stylesheet fr
 The checks compare a built desktop renderer and a published `/p/:id` page using the same header assertions for typography, alignment, spacing, foreground, surface and Inter loading. Electron and Chromium passed the regular and compact widths in Light and Dark. The web check uses the production client and Worker handler with disposable D1 and R2 adapters, and verifies a live HTML artboard. [Design check](dogfooding.md#shared-workspace-header)
 
 Root `pnpm verify` passed all 64 tests. The next shared UI change should use these parity checks when promoting a primitive used by both apps.
+
+## Web feature organization
+
+The working tree based on `9bbb619` separates the landing page, shared viewer and legacy demo under `apps/web/src`. The standalone demo server and its boards live in `apps/web/demo`. The Worker keeps its entry point, route dispatch and error handling in `worker/index.ts`, with feature modules for waitlist signup, publishing, previews and artifacts, and the site shell. Routes, storage bindings, permissions and UI behavior are unchanged.
+
+`pnpm web:verify` passed nine checks, including the published-page and legacy demo Chromium coverage. `pnpm local:verify` passed all seven launcher and desktop-to-Worker checks. Browser captures of the old and reorganized landing page were pixel-identical at 1180, 660 and 390 CSS px in Light and Dark. Lint, formatting, generated-theme validation and whitespace checks passed. The next organization pass can focus on the desktop renderer feature boundaries.

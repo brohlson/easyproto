@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chromium } from "playwright";
-import { startWeb } from "./server.mjs";
+import { startWeb } from "./demo/server.mjs";
 
 function getCookie(response) {
   return response.headers.get("set-cookie").split(";")[0];
