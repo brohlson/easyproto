@@ -1,6 +1,5 @@
 import type { PublicPreview } from "./previews.ts";
 import { headers } from "./http.ts";
-import { publicOrigin } from "./seo.ts";
 
 function policy(frameOrigin: string) {
   return `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src ${frameOrigin}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`;
@@ -22,7 +21,6 @@ export async function serveSite(
 ) {
   const url = new URL(request.url);
   const home = url.pathname === "/" && !sharedPage;
-  const indexable = home && url.origin === publicOrigin;
   const asset = sharedPage ? "/shared-preview.html" : home ? "/index.html" : url.pathname;
   const requestHeaders = new Headers(request.headers);
   if (sharedPage) {
@@ -56,8 +54,6 @@ export async function serveSite(
   secured.headers.set("Content-Security-Policy", policy(frameOrigin));
   if (sharedPage)
     for (const [name, value] of Object.entries(headers)) secured.headers.set(name, value);
-  if (!indexable && secured.headers.get("Content-Type")?.startsWith("text/html"))
-    secured.headers.set("X-Robots-Tag", headers["X-Robots-Tag"]);
   secured.headers.set("Referrer-Policy", "no-referrer");
   secured.headers.set("X-Content-Type-Options", "nosniff");
   return secured;

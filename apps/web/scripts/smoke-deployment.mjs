@@ -27,7 +27,8 @@ const expected = buildId(await readFile(index, "utf8"));
 async function smoke() {
   const document = await fetch(viewer, { signal: AbortSignal.timeout(10000) });
   assert.equal(document.status, 200);
-  assert.equal(document.headers.has("x-robots-tag"), staging);
+  if (staging) assert.match(document.headers.get("x-robots-tag") ?? "", /\bnoindex\b/);
+  else assert.equal(document.headers.get("x-robots-tag"), null);
   const html = await document.text();
   assert.equal(buildId(html), expected);
   assert.match(html, /<h1 id="landing-title">Easy Proto<\/h1>/);
@@ -36,6 +37,7 @@ async function smoke() {
   const chunk = await fetch(viewer + script, { signal: AbortSignal.timeout(10000) });
   assert.equal(chunk.status, 200);
   assert.match(chunk.headers.get("content-type") ?? "", /javascript/);
+  assert.match(chunk.headers.get("x-robots-tag") ?? "", /\bnoindex\b/);
   assert.equal(
     (await fetch(viewer + "/shared-preview.html", { signal: AbortSignal.timeout(10000) })).status,
     404,

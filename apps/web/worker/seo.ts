@@ -1,7 +1,19 @@
 import { homeUrl } from "../src/landing/content.ts";
+import { headers } from "./http.ts";
 
 export const publicOrigin = new URL(homeUrl).origin;
 const sitemapUrl = new URL("sitemap.xml", homeUrl).href;
+
+export function indexingPolicy(url: URL, response: Response) {
+  const homepage = url.origin === publicOrigin && url.pathname === "/";
+  if (homepage && (response.ok || response.status === 304)) return response;
+
+  const directive = headers["X-Robots-Tag"];
+  if (response.headers.get("X-Robots-Tag") === directive) return response;
+  const tagged = new Response(response.body, response);
+  tagged.headers.set("X-Robots-Tag", directive);
+  return tagged;
+}
 
 export function crawlFile(request: Request, url: URL) {
   const production = url.origin === publicOrigin;

@@ -105,6 +105,7 @@ test("only the public homepage is indexable and its discovery metadata is in the
   const response = await call(production, "/?source=test");
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-robots-tag"), null);
+  assert.equal((await call(production, "/", { method: "HEAD" })).headers.get("x-robots-tag"), null);
   const markup = await response.text();
   const tagline =
     "Easy Proto is a free, open-source tool that brings prototyping, design tokens, and component management into a single workspace.";
@@ -120,16 +121,26 @@ test("only the public homepage is indexable and its discovery metadata is in the
   assert.match(markup, /id="__NEXT_DATA__"/);
   for (const [, attributes] of markup.matchAll(/<script\b([^>]*)>/g))
     assert.match(attributes, /\bsrc="\/_next\/static\/|\btype="application\/(?:json|ld\+json)"/);
+  const [, script] = markup.match(/src="(\/_next\/static\/[^"]+\.js)"/);
+  const chunk = await call(production, script);
+  assert.equal(chunk.status, 200);
+  assert.match(chunk.headers.get("x-robots-tag"), /noindex/);
 
   const robots = await call(production, "/robots.txt");
-  assert.match(await robots.text(), /Sitemap: https:\/\/easyproto\.app\/sitemap\.xml/);
+  assert.equal(
+    await robots.text(),
+    "User-agent: *\nAllow: /\nSitemap: https://easyproto.app/sitemap.xml\n",
+  );
   const sitemap = await call(production, "/sitemap.xml");
   assert.match(sitemap.headers.get("content-type"), /application\/xml/);
   assert.deepEqual(
     [...(await sitemap.text()).matchAll(/<loc>([^<]*)<\/loc>/g)].map((match) => match[1]),
     [production + "/"],
   );
-  assert.equal((await call(production, "/index.html")).headers.get("location"), production + "/");
+  const alias = await call(production, "/index.html");
+  assert.equal(alias.status, 308);
+  assert.equal(alias.headers.get("location"), production + "/");
+  assert.match(alias.headers.get("x-robots-tag"), /noindex/);
   assert.equal((await call(production, "/made-up-page")).status, 404);
   for (const origin of [production, staging]) {
     assert.equal((await call(origin, "/shared-preview.html")).status, 404);
@@ -179,6 +190,9 @@ test("hosted shares protect metadata and resources, keep the link on sync, and r
   const api = origin + "/api/previews/" + plain.id;
   const getJson = async (cookie) => (await call(api, { headers: cookie ? { cookie } : {} })).json();
   const publicView = await getJson();
+  const publicShell = await call(url);
+  assert.equal(publicShell.status, 200);
+  assert.match(publicShell.headers.get("x-robots-tag"), /noindex/);
   const oldDocument = publicView.artboards[0].iframeUrl;
   assert.equal(new URL(oldDocument).origin, artifacts);
   assert.equal((await call(oldDocument)).status, 200);
@@ -236,7 +250,10 @@ test("hosted shares protect metadata and resources, keep the link on sync, and r
     const res = await call(link);
     assert.equal(res.status, 200);
     assert.match(res.headers.get("cache-control"), /no-store/);
-    assert.equal((await call(link, { method: "HEAD" })).status, 200);
+    assert.match(res.headers.get("x-robots-tag"), /noindex/);
+    const head = await call(link, { method: "HEAD" });
+    assert.equal(head.status, 200);
+    assert.match(head.headers.get("x-robots-tag"), /noindex/);
     assert.equal((await call(new URL(link.pathname, origin))).status, 404);
   }
   assert.equal(

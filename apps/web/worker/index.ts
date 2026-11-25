@@ -5,7 +5,7 @@ import { serveSite } from "./site.ts";
 import { joinWaitlist } from "./waitlist.ts";
 import { admit, hostedSite, isLoopback, limitReached } from "./hosted-access.ts";
 import { hostedArtifact, hostedPreview } from "./hosted-viewer.ts";
-import { crawlFile, publicOrigin } from "./seo.ts";
+import { crawlFile, indexingPolicy, publicOrigin } from "./seo.ts";
 
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
@@ -67,7 +67,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 export default {
   async fetch(request: Request, env: Env) {
     try {
-      return await handleRequest(request, env);
+      return indexingPolicy(new URL(request.url), await handleRequest(request, env));
     } catch (failure) {
       if (failure instanceof Error && failure.message === "BODY_LIMIT")
         return error("This page exceeds the local preview size limit.", 413);
