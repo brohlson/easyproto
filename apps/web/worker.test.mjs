@@ -401,6 +401,57 @@ test("the homepage keeps its first paint when JavaScript loads", async (t) => {
   }
 });
 
+test("published boards show the Fold until the iframe loads and respect reduced motion", async (t) => {
+  const origin = "http://127.0.0.1:8787";
+  const { env, sync } = await fixture(t);
+  const { id } = await (await sync()).json();
+  const page = await browserPage(t, env, origin);
+  const boardUrl = "**/preview-artifacts/**/index.html";
+
+  for (const reducedMotion of ["no-preference", "reduce"]) {
+    await page.emulateMedia({ reducedMotion });
+    const release = Promise.withResolvers();
+    await page.route(boardUrl, async (route) => {
+      await release.promise;
+      await route.fallback();
+    });
+
+    try {
+      await page.goto(`${origin}/p/${id}`, { waitUntil: "domcontentloaded" });
+      const frame = page.locator("iframe");
+      const loading = page.getByRole("status", { name: "Loading Home" });
+      const highlight = loading.getByTestId("edge-runner-highlight");
+      await highlight.waitFor();
+      assert.equal(
+        await highlight.evaluate((path) => path.getAnimations().length),
+        reducedMotion === "reduce" ? 0 : 1,
+      );
+      assert.equal(await frame.evaluate((element) => getComputedStyle(element).opacity), "0");
+      await frame.evaluate((element) => {
+        element.addEventListener("transitionend", (event) => {
+          if (event.propertyName === "opacity") element.dataset.fadeComplete = "true";
+        });
+      });
+
+      release.resolve();
+      await loading.waitFor({ state: "detached" });
+      await page.frameLocator("iframe").getByRole("heading", { name: "Live board" }).waitFor();
+      if (reducedMotion === "no-preference") {
+        await page.locator('iframe[data-fade-complete="true"]').waitFor();
+      } else {
+        assert.equal(
+          await frame.evaluate((element) => getComputedStyle(element).transitionDuration),
+          "0s",
+        );
+      }
+      assert.equal(await frame.evaluate((element) => getComputedStyle(element).opacity), "1");
+    } finally {
+      release.resolve();
+      await page.unroute(boardUrl);
+    }
+  }
+});
+
 test("the web home and published page share the desktop header and the waitlist confirms signup", async (t) => {
   const origin = "http://127.0.0.1:8787";
   const { database, env, sync } = await fixture(t);

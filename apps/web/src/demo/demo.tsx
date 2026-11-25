@@ -1,6 +1,7 @@
 import { Brand, Select } from "@easy-proto/ui";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { BoardPreview } from "../canvas/board-preview";
 import { startCamera } from "../canvas/camera";
 import chrome from "../chrome.module.css";
 import canvas from "../canvas/canvas.module.css";
@@ -245,13 +246,13 @@ function Viewer({ view }: { view: Extract<DemoPage, { kind: "viewer" }> }) {
                 </span>
               </figcaption>
               <div className={styles.device} data-frame={view.frame}>
-                <iframe
+                <BoardPreview
+                  key={view.id}
+                  className={styles.preview}
                   title={board.name}
                   src={`/s/${view.id}/boards/${board.id}`}
                   width={board.width}
                   height={board.height}
-                  sandbox=""
-                  tabIndex={-1}
                 />
               </div>
             </figure>

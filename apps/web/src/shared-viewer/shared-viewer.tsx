@@ -1,5 +1,6 @@
 import { Brand, WorkspaceHeader, WorkspaceLabel } from "@easy-proto/ui";
 import { useLayoutEffect, useRef } from "react";
+import { BoardPreview } from "../canvas/board-preview";
 import { startCamera } from "../canvas/camera";
 import chrome from "../chrome.module.css";
 import canvas from "../canvas/canvas.module.css";
@@ -54,13 +55,13 @@ export function SharedCanvas({ view }: { view: SharedPage }) {
                   {board.width} × {board.height}
                 </span>
               </figcaption>
-              <iframe
+              <BoardPreview
+                key={board.iframeUrl}
+                className={styles.preview}
                 src={board.iframeUrl}
                 title={board.name}
                 width={board.width}
                 height={board.height}
-                sandbox=""
-                tabIndex={-1}
               />
             </figure>
           ))}

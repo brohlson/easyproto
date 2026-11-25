@@ -505,3 +505,9 @@ EasyProtoMocks revision 406 contains the inspected **Restart to Update** dialog 
 ## Homepage-only indexing
 
 The working tree based on `ed91101` applies `X-Robots-Tag: noindex, nofollow` at the Worker entry point for routes outside the production homepage. The sitemap continues to list only the homepage, and crawlers can fetch routes to see the directive. All seven non-browser Worker checks passed against the isolated indexing change using the existing static export. Web and Worker TypeScript checks, focused lint, and formatting also passed in the development checkout. The full verification command stopped when Cloudflare type generation tried to bind to loopback in the sandbox. Infrastructure owns the next deployment and smoke check on staging and production.
+
+## Web board loading
+
+The working tree based on `1cbb799` shows the centered Fold on a canvas-colored placeholder for each loading board in the shared viewer and local demo. Each iframe fades in over 180 ms after load, matching the Mac canvas timing. Reduced Motion uses a static Fold and reveals the iframe immediately.
+
+The **Shared Page** artboard was updated through MCP in the live EasyProtoMocks working copy at revision 408. The inspected 1280 × 800 capture showed a loading board alongside a rendered board and reported zero unresolved dependencies. The Next.js export, Worker and demo builds passed. All 15 web tests passed, including a Chromium test that holds an iframe response and verifies the loading state, completed fade, and reduced-motion reveal. The sandbox blocked Chromium startup and loopback, so the browser checks ran outside it. Infrastructure owns deployment and the hosted smoke check.

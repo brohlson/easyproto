@@ -1,0 +1,30 @@
+.preview {
+  position: relative;
+  background: var(--canvas);
+  pointer-events: none;
+}
+.preview iframe {
+  display: block;
+  border: 0;
+  opacity: 0;
+}
+.preview[data-loaded="true"] iframe {
+  opacity: 1;
+}
+.loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+}
+.icon {
+  width: min(var(--ep-desktop-control-row), 50%);
+  height: var(--ep-desktop-control-row);
+  max-height: 50%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .preview iframe {
+    transition: opacity var(--ep-desktop-motion-preview-fade) ease-out;
+  }
+}

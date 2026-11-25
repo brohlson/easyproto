@@ -32,14 +32,13 @@
 .sharedViewport figcaption span {
   font-size: 11px;
 }
-.sharedViewport iframe {
-  display: block;
-  border: 0;
-  pointer-events: none;
-  background: white;
+.preview {
   box-shadow:
     0 0 0 1px var(--line),
     0 3px 12px #00000009;
+}
+.preview iframe {
+  background: var(--ep-desktop-surface-preview-paper);
 }
 .zoomLabel {
   display: flex;

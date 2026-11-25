@@ -35,12 +35,11 @@ button.secondary {
   --frame-edge: 0px;
   position: relative;
 }
-.device iframe {
-  display: block;
-  border: 0;
-  pointer-events: none;
-  background: #edf4f0;
+.preview {
   box-shadow: 0 0 0 1px var(--line);
+}
+.preview iframe {
+  background: #edf4f0;
 }
 .device[data-frame="phone"],
 .device[data-frame="laptop"] {
@@ -55,8 +54,9 @@ button.secondary {
   border-radius: 30px;
   overflow: hidden;
 }
-.device[data-frame="phone"] iframe {
+.device[data-frame="phone"] .preview {
   border-radius: 19px;
+  overflow: hidden;
 }
 .device[data-frame="laptop"] {
   --frame-edge: 14px;
